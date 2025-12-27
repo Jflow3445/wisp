@@ -1,0 +1,61 @@
+# env / secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+*.ovpn
+
+# databases / dumps
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.rdb
+
+# logs / backups
+logs/
+*.log
+backups/
+backup*/
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+
+# daloradius sensitive runtime config
+wifi-portal/daloradius/app/common/includes/daloradius.conf.php
+wifi-portal/daloradius/app/operators/.htpasswd
+
+# pay-portal runtime secrets & runtime data
+pay-portal/env.php
+pay-portal/data/
+pay-portal/diag.php
+pay-portal/status-debug.php
+
+# stray backup variants
+*.bad
+*.bad.*
+
+# daloradius secrets / runtime config / backups
+wifi-portal/daloradius/.htpasswd
+wifi-portal/daloradius/app/common/includes/daloradius.conf.php
+wifi-portal/daloradius/app/common/includes/daloradius.conf.php.*
+wifi-portal/daloradius/app/operators/.htpasswd
+
+# daloradius library config (can include DB creds) + backups
+wifi-portal/daloradius/library/daloradius.conf.php
+wifi-portal/daloradius/library/daloradius.conf.php.*

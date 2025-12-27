@@ -1,0 +1,40 @@
+<?php
+declare(strict_types=1);
+header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__.'/lib/db.php';
+require_once __DIR__.'/lib/wallet.php';
+require_once __DIR__.'/lib/plans_radius.php';
+require_once __DIR__.'/lib/radius.php';
+require_once __DIR__.'/lib/common.php';
+
+$msisdn=normalize_msisdn((string)($_GET['msisdn']??'')); 
+if($msisdn==='') json_out(['ok'=>false,'error'=>'msisdn required'],422);
+
+$bal   = wallet_balance($msisdn);
+$plans = array_values(radius_fetch_plans());
+
+// Recent wallet history
+$lg=$PDO->prepare("SELECT type,amount_cents,ref,notes,created_at FROM ledger WHERE msisdn=:m ORDER BY id DESC LIMIT 10");
+$lg->execute([':m'=>$msisdn]); 
+$ledger=$lg->fetchAll();
+
+// Active plan from FreeRADIUS
+$active = radius_get_active_plan($msisdn);
+
+// (Optional) fallback to local purchases if FR had nothing
+if (!$active) {
+  $st=$PDO->prepare("SELECT plan_code,expires_at FROM purchases WHERE msisdn=:m AND status='applied' AND (expires_at IS NULL OR expires_at>=NOW()) ORDER BY id DESC LIMIT 1");
+  $st->execute([':m'=>$msisdn]); 
+  $row=$st->fetch();
+  if ($row) $active = ['plan_code'=>$row['plan_code'],'expires_at'=>$row['expires_at']];
+}
+
+json_out([
+  'ok'=>true,
+  'msisdn'=>msisdn_display($msisdn), "msisdn_canonical"=>$msisdn,
+  'balance_cents'=>$bal,
+  'balance_ghs'=>round($bal/100,2),
+  'active'=>$active,
+  'plans'=>$plans,
+  'ledger'=>$ledger
+]);

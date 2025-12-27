@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>NISTER Wi-Fi — Hotspot Network</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root{
+      --bg:#020617;--card:#020617;--accent:#22d3ee;--muted:#9ca3af;--ink:#e5e7eb;--border:#1f2933;--chip:#0b1120;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      min-height:100vh;
+      font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;
+      background:radial-gradient(circle at top,#0b1120 0,#020617 55%,#000 100%);
+      color:var(--ink);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+    }
+    .shell{
+      width:100%;
+      max-width:880px;
+      border-radius:20px;
+      border:1px solid var(--border);
+      background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(2,6,23,.98));
+      box-shadow:0 30px 80px rgba(0,0,0,.65);
+      padding:26px 22px 22px;
+    }
+    .header{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin-bottom:14px;
+    }
+    .dot{
+      width:10px;height:10px;border-radius:50%;
+      background:var(--accent);
+      box-shadow:0 0 20px rgba(34,211,238,.9);
+    }
+    .brand{
+      font-weight:600;
+      letter-spacing:.04em;
+      font-size:14px;
+      text-transform:uppercase;
+      color:#e5e7eb;
+    }
+    .badge{
+      margin-left:auto;
+      font-size:11px;
+      padding:3px 10px;
+      border-radius:999px;
+      background:rgba(15,23,42,.9);
+      border:1px solid rgba(55,65,81,.9);
+      color:var(--muted);
+    }
+    h1{
+      font-size:24px;
+      margin-bottom:4px;
+    }
+    .subtitle{
+      font-size:13px;
+      color:var(--muted);
+      margin-bottom:18px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);
+      gap:18px;
+    }
+    .card{
+      border-radius:14px;
+      border:1px solid rgba(31,41,55,.9);
+      background:radial-gradient(circle at top left,rgba(34,211,238,.06),rgba(15,23,42,.96));
+      padding:14px 14px 12px;
+    }
+    .card h2{
+      font-size:14px;
+      margin-bottom:6px;
+    }
+    .card p{
+      font-size:13px;
+      color:var(--muted);
+      line-height:1.5;
+    }
+    ol,ul{margin-left:17px;margin-top:4px}
+    li{font-size:13px;color:var(--muted);margin-bottom:3px}
+    .tagline{
+      font-size:12px;
+      color:var(--muted);
+      margin-top:12px;
+    }
+    .pill-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:8px;
+    }
+    .pill{
+      font-size:11px;
+      padding:3px 8px;
+      border-radius:999px;
+      border:1px solid rgba(55,65,81,.9);
+      background:var(--chip);
+      color:#e5e7eb;
+    }
+    .footer{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      border-top:1px solid rgba(31,41,55,.85);
+      margin-top:14px;
+      padding-top:10px;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .footer span{
+      font-size:11px;
+      color:var(--muted);
+    }
+    .links{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+    .link{
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid rgba(55,65,81,.9);
+      background:rgba(15,23,42,.96);
+      color:var(--accent);
+      text-decoration:none;
+    }
+    .link:hover{border-color:var(--accent);}
+    @media (max-width:720px){
+      .grid{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header class="header">
+    <div class="dot"></div>
+    <div class="brand">NISTER Wi-Fi</div>
+    <div class="badge">wifi.nister.org — public landing</div>
+  </header>
+
+  <main>
+    <h1>Welcome to the NISTER Wi-Fi hotspot network</h1>
+    <p class="subtitle">
+      This is the public information page for our hotspot service. If you are trying to get online
+      on-site, please connect to the NISTER Wi-Fi network and you’ll be redirected automatically.
+    </p>
+
+    <section class="grid">
+      <article class="card">
+        <h2>How to connect when you are on-site</h2>
+        <p>When you are within coverage of a NISTER Wi-Fi hotspot:</p>
+        <ol>
+          <li>Join the Wi-Fi network called <strong>NISTER Wi-Fi</strong> (or the SSID shown on your voucher).</li>
+          <li>Open any website in your browser — you will be redirected to the login page.</li>
+          <li>Enter your phone number and Wi-Fi password to sign in.</li>
+          <li>After a successful login, you can use the internet normally.</li>
+        </ol>
+        <p style="margin-top:6px;">
+          To view your data balance or expiry while connected, open any browser and visit
+          <strong>https://wifi.nister.org</strong>. The local router will show your live status page.
+        </p>
+      </article>
+
+      <article class="card">
+        <h2>If you are seeing this page</h2>
+        <p>You are currently reaching our <strong>central server</strong>, not a local hotspot router. This usually means:</p>
+        <ul>
+          <li>You are <strong>not</strong> on the NISTER Wi-Fi network (for example, you are on mobile data or another ISP), or</li>
+          <li>You are testing wifi.nister.org from outside hotspot coverage.</li>
+        </ul>
+        <p style="margin-top:6px;">
+          That’s expected. Hotspot login and account status only work while your device is connected
+          to a NISTER Wi-Fi access point on-site.
+        </p>
+        <div class="pill-row">
+          <span class="pill">Hotspot login works only on-site</span>
+          <span class="pill">Status page is served from the router</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="card" style="margin-top:16px;">
+      <h2>Support &amp; abuse reporting</h2>
+      <p>
+        For help with vouchers, connectivity problems, or unexpected usage, contact the NISTER Wi-Fi
+        support team with your phone number, approximate time of connection, and a brief description
+        of the issue.
+      </p>
+      <ul style="margin-top:6px;">
+        <li>Email: <a href="mailto:support@nister.org" style="color:#22d3ee;text-decoration:none;">support@nister.org</a></li>
+        <li>Website: <a href="https://nister.org" style="color:#22d3ee;text-decoration:none;">https://nister.org</a></li>
+      </ul>
+      <p style="margin-top:8px;font-size:12px;color:#9ca3af;">
+        Abuse or security concerns (suspicious logins, phishing, fraud) can also be reported via these channels.
+      </p>
+    </section>
+
+    <p class="tagline">
+      NISTER aims to provide fair, metered broadband access for students, homes, and small businesses,
+      with transparent usage and clear account status.
+    </p>
+  </main>
+
+  <footer class="footer">
+    <span>© <span id="year"></span> NISTER. All rights reserved.</span>
+    <div class="links">
+      <a class="link" href="https://nister.org" target="_blank" rel="noopener">Main site</a>
+      <a class="link" href="https://pay.nister.org" target="_blank" rel="noopener">Top-up portal</a>
+    </div>
+  </footer>
+</div>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>
