@@ -12,21 +12,16 @@ $ADDR_LIST       = 'HS_NOPAID';                           // firewall address-li
 $ENFORCE_UNIQUE  = false;                                 // false=update password if exists
 /* ---------------------------- */
 
-function fail($msg, $username = '', $dst = '') {
-  http_response_code(400);
+function fail($code, $username = '', $dst = '', $name = '') {
   $back = 'https://wifi.nister.org/signup.html';
-  if ($username !== '') { $back .= '?username='.rawurlencode($username); }
-  if ($dst !== '')      { $back .= (strpos($back,'?')===false?'?':'&').'dst='.rawurlencode($dst); }
-  echo "<!doctype html><meta charset='utf-8'><title>Signup error</title>
-  <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:2rem}
-  .card{max-width:560px;margin:auto;border:1px solid #ddd;border-radius:12px;padding:24px}
-  .err{background:#fee;border:1px solid #f88;padding:12px;border-radius:8px;margin-bottom:16px;color:#900}
-  .btn{display:inline-block;padding:10px 16px;border-radius:8px;border:1px solid #888;text-decoration:none}
-  </style>
-  <div class='card'><h2>Could not create account</h2>
-  <div class='err'>".htmlspecialchars($msg,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')."</div>
-  <p><a class='btn' href='".htmlspecialchars($back,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')."'>Go back</a></p></div>";
-  @file_put_contents('/tmp/signup_debug.log', "success-branch ".date('c')."\n", FILE_APPEND);
+  $params = ['err' => $code];
+  if ($username !== '') { $params['username'] = $username; }
+  if ($name !== '')     { $params['name'] = $name; }
+  if ($dst !== '')      { $params['dst'] = $dst; }
+  $url = $back . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+
+  header('Cache-Control: no-store');
+  header('Location: ' . $url, true, 303);
   exit;
 }
 
@@ -38,9 +33,21 @@ $mac  = isset($_POST['mac'])      ? trim($_POST['mac'])      : '';
 $dst  = isset($_POST['dst'])      ? (string)$_POST['dst']    : '';
 
 if ($name === '' || $user === '' || $pass === '') {
-  fail('Please fill all required fields (name, phone, password).', $user, $dst);
+  fail('missing_fields', $user, $dst, $name);
 }
 $user = preg_replace('/\s+/', '', $user); // normalize (remove spaces)
+if (!preg_match('/^\d{9,15}$/', $user)) {
+  fail('invalid_phone', $user, $dst, $name);
+}
+if (strlen($name) < 2) {
+  fail('invalid_name', $user, $dst, $name);
+}
+if (strlen($name) > 80) {
+  fail('name_too_long', $user, $dst, $name);
+}
+if (strlen($pass) < 6) {
+  fail('weak_password', $user, $dst, $name);
+}
 
 header('Cache-Control: no-store');
 
@@ -59,7 +66,8 @@ try {
   $stmt->execute([$user]);
   if ($row = $stmt->fetch()) {
     if ($ENFORCE_UNIQUE) {
-      throw new Exception('An account with this phone already exists.');
+      $pdo->rollBack();
+      fail('account_exists', $user, $dst, $name);
     }
     $upd = $pdo->prepare("UPDATE radcheck SET value = ? WHERE id = ?");
     $upd->execute([$pass, $row['id']]);
@@ -109,7 +117,15 @@ try {
   exit;
 
 
+} catch (PDOException $e) {
+  if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }
+  error_log('Signup error for '.$user.': '.$e->getMessage());
+  if ($e->getCode() === '23000') {
+    fail('account_exists', $user, $dst, $name);
+  }
+  fail('server_error', $user, $dst, $name);
 } catch (Throwable $e) {
   if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }
-  fail('Database error: '.$e->getMessage(), $user, $dst);
+  error_log('Signup error for '.$user.': '.$e->getMessage());
+  fail('server_error', $user, $dst, $name);
 }
