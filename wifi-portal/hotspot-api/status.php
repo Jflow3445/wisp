@@ -279,13 +279,10 @@ $st = $pdo->prepare("SELECT groupname
                       WHERE username IN (:a,:b)
                    ORDER BY (groupname='nopaid') ASC, priority ASC, groupname ASC
                       LIMIT 1");
-$v = nister_username_variants($username);
+$v = nister_username_variants((string)$u);
 $u1 = $v[0];
 $u2 = $v[1] ?? $v[0];
 $st->execute([':a'=>$u1, ':b'=>$u2]);
-if (!headers_sent()) { header('X-Nister-Debug-g: '.(isset($g)?$g:'NULL')); }
-error_log("[status.php] g=".var_export($g,true));
-          $st->execute([':u'=>$u]);
           $group = $st->fetchColumn() ?: $group;
           if ($group) {
             $st2 = $pdo->prepare("SELECT value FROM radgroupreply WHERE groupname=:g AND attribute='Nister-Plan-Name' LIMIT 1");
@@ -331,25 +328,121 @@ if ($wantPlain) {
     $username = isset($_GET['username']) ? trim((string)$_GET['username']) : '';
     if ($username === '') { header('Content-Type: text/plain; charset=utf-8'); echo "NOPAID\n"; exit; }
     try {
+        $days = isset($_GET['days']) ? max(1, (int)$_GET['days']) : $BILLING_DAYS_DEFAULT;
         $dsn = "mysql:host={$DB_HOST};dbname={$DB_NAME};charset=utf8mb4";
         $pdo = new PDO($dsn, $DB_USER, $DB_PASS, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
+        $v = nister_username_variants($username);
+        $u1 = $v[0];
+        $u2 = $v[1] ?? $v[0];
         $st = $pdo->prepare("SELECT attribute, value
                                FROM radreply
-                              WHERE username=:u
-                                AND attribute IN ('Expiration','Mikrotik-Address-List')");
-        $st->execute([':u' => $username]);
+                              WHERE username IN (:a,:b)
+                                AND attribute IN ('Expiration','Mikrotik-Address-List',
+                                                  'Nister-Quota-Bytes',
+                                                  'Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')");
+        $st->execute([':a' => $u1, ':b' => $u2]);
         $attrs = [];
         foreach ($st as $row) $attrs[$row['attribute']] = $row['value'];
 
+        $group = null;
+        $st = $pdo->prepare("SELECT groupname
+                               FROM radusergroup
+                              WHERE username IN (:a,:b)
+                           ORDER BY (groupname='nopaid') ASC, priority ASC, groupname ASC
+                              LIMIT 1");
+        $st->execute([':a'=>$u1, ':b'=>$u2]);
+        $group = $st->fetchColumn() ?: null;
+
+        $quotaBytes = null;
+        if (isset($attrs['Nister-Quota-Bytes']) && $attrs['Nister-Quota-Bytes'] !== '') {
+            $quotaBytes = (int)$attrs['Nister-Quota-Bytes'];
+        } else {
+            $hi = (int)($attrs['Mikrotik-Total-Limit-Gigawords'] ?? 0);
+            $lo = (int)($attrs['Mikrotik-Total-Limit'] ?? 0);
+            if ($hi || $lo) $quotaBytes = (int)($hi * 4294967296 + $lo);
+        }
+        if ($quotaBytes === null && $group) {
+            $st = $pdo->prepare("SELECT attribute, value
+                                   FROM radgroupreply
+                                  WHERE groupname=:g
+                                    AND attribute IN ('Nister-Quota-Bytes',
+                                                     'Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')");
+            $st->execute([':g'=>$group]);
+            $gattrs = [];
+            foreach ($st as $row) $gattrs[$row['attribute']] = $row['value'];
+            if (isset($gattrs['Nister-Quota-Bytes']) && $gattrs['Nister-Quota-Bytes'] !== '') {
+                $quotaBytes = (int)$gattrs['Nister-Quota-Bytes'];
+            } else {
+                $hi = (int)($gattrs['Mikrotik-Total-Limit-Gigawords'] ?? 0);
+                $lo = (int)($gattrs['Mikrotik-Total-Limit'] ?? 0);
+                if ($hi || $lo) $quotaBytes = (int)($hi * 4294967296 + $lo);
+            }
+        }
+
+        $tz = new DateTimeZone($TIMEZONE);
+        $expiry = null;
+        if (isset($attrs['Expiration'])) {
+            $ts = strtotime($attrs['Expiration']);
+            if ($ts !== false) {
+                $expiry = new DateTime('@' . $ts);
+                $expiry->setTimezone($tz);
+            }
+        }
+        $periodStart = ($expiry instanceof DateTime) ? (clone $expiry)->modify("-{$days} days")
+                                                     : (new DateTime('now', $tz))->modify("-{$days} days");
+
+        $colExists = function(string $col) use ($pdo, $DB_NAME): bool {
+            try {
+                $q = "SELECT 1 FROM information_schema.columns
+                      WHERE table_schema = :db AND table_name = :t AND column_name = :c";
+                $st = $pdo->prepare($q);
+                $st->execute([':db'=>$DB_NAME, ':t'=>'radacct', ':c'=>$col]);
+                return (bool)$st->fetchColumn();
+            } catch (Throwable $e) {
+                return false;
+            }
+        };
+        $hasInOctetsGw  = $colExists('acctinputoctetsgigawords');
+        $hasOutOctetsGw = $colExists('acctoutputoctetsgigawords');
+        $hasInGw        = $colExists('acctinputgigawords');
+        $hasOutGw       = $colExists('acctoutputgigawords');
+        $sumExpr = "(acctinputoctets + acctoutputoctets)";
+        if ($hasInOctetsGw && $hasOutOctetsGw) {
+            $sumExpr .= " + COALESCE(acctinputoctetsgigawords,0) * 4294967296
+                          + COALESCE(acctoutputoctetsgigawords,0) * 4294967296";
+        } elseif ($hasInGw && $hasOutGw) {
+            $sumExpr .= " + COALESCE(acctinputgigawords,0) * 4294967296
+                          + COALESCE(acctoutputgigawords,0) * 4294967296";
+        }
+        $usedBytes = 0;
+        try {
+            $sql = "SELECT COALESCE(SUM($sumExpr), 0) AS used_bytes
+                    FROM radacct
+                    WHERE username IN (:a,:b)
+                      AND (
+                            (acctstarttime IS NOT NULL AND acctstarttime >= :pstart)
+                         OR (acctstoptime  IS NOT NULL AND acctstoptime  >= :pstart)
+                         OR acctstoptime IS NULL
+                      )";
+            $st = $pdo->prepare($sql);
+            $st->execute([':a'=>$u1, ':b'=>$u2, ':pstart'=>$periodStart->format('Y-m-d H:i:s')]);
+            $usedBytes = (int)($st->fetchColumn() ?: 0);
+        } catch (Throwable $e) { $usedBytes = 0; }
+
         $paid = false;
         if (isset($attrs['Mikrotik-Address-List']) && strtoupper($attrs['Mikrotik-Address-List']) === 'HS_ACTIVE') $paid = true;
-        if (!$paid && isset($attrs['Expiration'])) { $ts = strtotime($attrs['Expiration']); if ($ts && $ts >= time()) $paid = true; }
+        if (!$paid && $expiry instanceof DateTime) {
+            $paid = ($expiry->getTimestamp() >= time());
+        }
+        $expired = ($expiry instanceof DateTime) ? ($expiry->getTimestamp() < time()) : false;
+        $exhausted = ($quotaBytes !== null) ? ($usedBytes >= $quotaBytes) : false;
+        $canBrowse = $paid && !$expired && !$exhausted;
 
         header('Content-Type: text/plain; charset=utf-8');
-        echo $paid ? "PAID\n" : "NOPAID\n";
+        echo $canBrowse ? "PAID\n" : "NOPAID\n";
         exit;
     } catch (Throwable $e) {
         header('Content-Type: text/plain; charset=utf-8'); echo "NOPAID\n"; exit;
@@ -395,6 +488,9 @@ $username = isset($_GET['username']) ? trim((string)$_GET['username']) : '';
 if ($username === '') jerr('missing_username');
 $realm = isset($_GET['realm']) ? trim((string)$_GET['realm']) : '';
 $days  = isset($_GET['days']) ? max(1, (int)$_GET['days']) : $BILLING_DAYS_DEFAULT;
+$variants = nister_username_variants($username);
+$u1 = $variants[0];
+$u2 = $variants[1] ?? $variants[0];
 
 // ------------------------ DB CONNECT --------------------
 try {
@@ -413,8 +509,8 @@ try {
 
 // 1) Per-user overrides (radreply)
 try {
-    $st  = $pdo->prepare("SELECT attribute, value FROM radreply WHERE username = :u");
-    $st->execute([':u' => $username]);
+    $st  = $pdo->prepare("SELECT attribute, value FROM radreply WHERE username IN (:a,:b)");
+    $st->execute([':a' => $u1, ':b' => $u2]);
 } catch (Throwable $e) {
     jerr('query_failed', 200, ['where' => 'radreply']);
 }
@@ -428,10 +524,8 @@ try {
                       WHERE username IN (:a,:b)
                    ORDER BY (groupname='nopaid') ASC, priority ASC, groupname ASC
                       LIMIT 1");
-$v = nister_username_variants($username);
-$u1 = $v[0];
-$u2 = $v[1] ?? $v[0];
-$st->execute([':a'=>$u1, ':b'=>$u2]);$groups = array_column($st->fetchAll(), 'groupname');
+    $st->execute([':a'=>$u1, ':b'=>$u2]);
+    $groups = array_column($st->fetchAll(), 'groupname');
 } catch (Throwable $e) {
     $groups = [];
 }
@@ -442,10 +536,10 @@ $st = $pdo->prepare("
   SELECT rug.groupname, rug.priority, rgr.attribute, rgr.value
   FROM radusergroup AS rug
   JOIN radgroupreply AS rgr ON rgr.groupname = rug.groupname
-  WHERE rug.username = :u
+  WHERE rug.username IN (:a,:b)
   ORDER BY rug.priority ASC, rug.groupname ASC
 ");
-$st->execute([':u' => $username]);
+$st->execute([':a' => $u1, ':b' => $u2]);
 
 $groupAttrs = [];
 foreach ($st as $row) {
@@ -531,14 +625,14 @@ try {
     // Windowed sum (anchored on period start)
     $sql = "SELECT COALESCE(SUM($sumExpr), 0) AS used_bytes
             FROM radacct
-            WHERE username = :u
+            WHERE username IN (:a,:b)
               AND (
                     (acctstarttime IS NOT NULL AND acctstarttime >= :pstart)
                  OR (acctstoptime  IS NOT NULL AND acctstoptime  >= :pstart)
                  OR acctstoptime IS NULL
               )";
     $st = $pdo->prepare($sql);
-    $st->execute([':u' => $username, ':pstart' => $periodStart->format('Y-m-d H:i:s')]);
+    $st->execute([':a' => $u1, ':b' => $u2, ':pstart' => $periodStart->format('Y-m-d H:i:s')]);
     $row = $st->fetch();
     $usedBytes = (int)($row['used_bytes'] ?? 0);
 } catch (Throwable $e1) {
@@ -546,9 +640,9 @@ try {
     try {
         $sql2 = "SELECT COALESCE(SUM($sumExpr), 0) AS used_bytes
                  FROM radacct
-                 WHERE username = :u";
+                 WHERE username IN (:a,:b)";
         $st2 = $pdo->prepare($sql2);
-        $st2->execute([':u' => $username]);
+        $st2->execute([':a' => $u1, ':b' => $u2]);
         $row2 = $st2->fetch();
         $usedBytes = (int)($row2['used_bytes'] ?? 0);
     } catch (Throwable $e2) {
@@ -671,6 +765,16 @@ try {
         $out['quota_bytes'] = (int)(($hi ?? 0) * 4294967296 + ($lo ?? 0));
     }
 } catch (Throwable $e) { /* keep existing values */ }
+$finalQuota = array_key_exists('quota_bytes', $out) ? $out['quota_bytes'] : $quotaBytes;
+$finalUsed  = array_key_exists('used_bytes', $out) ? $out['used_bytes'] : $usedBytes;
+$finalExpired = $expired;
+$finalExhausted = ($finalQuota !== null) ? ((int)$finalUsed >= (int)$finalQuota) : false;
+$finalPaid = (!$finalExpired) && (($expiry instanceof DateTime) || ($finalQuota !== null));
+$out['state'] = $finalPaid ? 'PAID' : 'UNPAID';
+$out['can_browse'] = ($finalPaid && !$finalExpired && !$finalExhausted);
+if (!isset($out['addrlist']) || $out['addrlist'] === '') {
+    $out['addrlist'] = $out['can_browse'] ? 'HS_ACTIVE' : 'HS_LIMITED';
+}
 $json = json_encode($out, JSON_UNESCAPED_SLASHES);
 
 if ($callback) {
@@ -691,11 +795,14 @@ if ($wantPlain) {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
         // Pull only what's needed
+        $v = nister_username_variants($username);
+        $u1 = $v[0];
+        $u2 = $v[1] ?? $v[0];
         $st = $pdo->prepare("SELECT attribute, value
                                FROM radreply
-                              WHERE username=:u
+                              WHERE username IN (:a,:b)
                                 AND attribute IN ('Expiration','Mikrotik-Address-List')");
-        $st->execute([':u' => $username]);
+        $st->execute([':a' => $u1, ':b' => $u2]);
         $attrs = [];
         foreach ($st as $row) { $attrs[$row['attribute']] = $row['value']; }
 
@@ -797,8 +904,13 @@ $st->execute([':a'=>$u1, ':b'=>$u2]);$g = $st->fetchColumn();
       if ($pdo && $username) {
         $attrs = [];
         // user overrides
-        $st = $pdo->prepare("SELECT attribute,value FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')");
-        $st->execute([':u'=>$username]);
+        $v = nister_username_variants($username);
+        $u1 = $v[0];
+        $u2 = $v[1] ?? $v[0];
+        $st = $pdo->prepare("SELECT attribute,value FROM radreply
+                             WHERE username IN (:a,:b)
+                               AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')");
+        $st->execute([':a'=>$u1, ':b'=>$u2]);
         foreach ($st as $row) $attrs[$row['attribute']] = $row['value'];
         // group defaults if missing
         if ($group) {
@@ -819,6 +931,38 @@ $st->execute([':a'=>$u1, ':b'=>$u2]);$g = $st->fetchColumn();
     if ($group) $data['group'] = $group;
     if ($plan)  $data['plan_name'] = $plan;
     if ($quota !== null) $data['quota_bytes'] = $quota;
+
+    // Recompute can_browse/state after quota updates
+    $expRaw = isset($data['expiry_str']) ? trim((string)$data['expiry_str']) : '';
+    $expired = false;
+    if ($expRaw !== '') {
+      $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+      $tz = new DateTimeZone('UTC');
+      $formats = [
+        DateTimeInterface::RFC1123,
+        'Y-m-d H:i:s \G\M\T',
+        'M d Y H:i:s',
+        'Y-m-d H:i:s',
+      ];
+      $exp = null;
+      foreach ($formats as $fmt) {
+        $dt = DateTimeImmutable::createFromFormat($fmt, $expRaw, $tz);
+        if ($dt instanceof DateTimeImmutable) { $exp = $dt; break; }
+      }
+      if (!$exp) {
+        try { $exp = new DateTimeImmutable($expRaw, $tz); } catch (Throwable $e) { $exp = null; }
+      }
+      if ($exp instanceof DateTimeImmutable) $expired = ($now >= $exp);
+    }
+
+    $quotaBytes = (isset($data['quota_bytes']) && is_numeric($data['quota_bytes'])) ? (int)$data['quota_bytes'] : null;
+    $usedBytes  = (isset($data['used_bytes']) && is_numeric($data['used_bytes'])) ? (int)$data['used_bytes'] : 0;
+    $exhausted  = ($quotaBytes !== null) ? ($usedBytes >= $quotaBytes) : false;
+    $statePaid  = (isset($data['state']) && $data['state'] === 'PAID');
+    if (!$statePaid && ($expRaw !== '' || $quotaBytes !== null)) $statePaid = true;
+    $canBrowse = ($statePaid && !$expired && !$exhausted);
+    $data['can_browse'] = $canBrowse;
+    $data['state'] = $canBrowse ? 'PAID' : 'UNPAID';
 
     // Also expose which file handled this (helps verify right docroot)
     $data['_script'] = __FILE__;
@@ -952,10 +1096,13 @@ try {
         }
     }
     if (!$found && isset($username) && $username) {
+        $v = nister_username_variants($username);
+        $u1 = $v[0];
+        $u2 = $v[1] ?? $v[0];
         $qq = $pdo->prepare("SELECT attribute,value FROM radreply
-                             WHERE username=:u
+                             WHERE username IN (:a,:b)
                                AND attribute IN ('Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')");
-        $qq->execute([':u'=>$username]);
+        $qq->execute([':a'=>$u1, ':b'=>$u2]);
         foreach ($qq as $row) {
             if ($row['attribute']==='Mikrotik-Total-Limit-Gigawords') $hi = (int)$row['value'];
             if ($row['attribute']==='Mikrotik-Total-Limit')           $lo = (int)$row['value'];

@@ -22,7 +22,7 @@ try{
   }
 
   // Fetch payment
-  $st = $PDO->prepare("SELECT id, ref, msisdn, amount_cents, status FROM payments WHERE ref=:r LIMIT 1");
+  $st = $PDO->prepare("SELECT id, ref, msisdn, amount_cents, amount, status FROM payments WHERE ref=:r LIMIT 1");
   $st->execute([':r'=>$ref]);
   $p = $st->fetch(PDO::FETCH_ASSOC);
   if (!$p) throw new RuntimeException('not found');
@@ -37,7 +37,10 @@ try{
 
   // APPROVE: credit accounts + ledger, then mark payments approved
   $msisdn = (string)$p['msisdn'];
-  $amtc   = (int)$p['amount_cents'];
+  $amtc   = (int)($p['amount_cents'] ?? 0);
+  if ($amtc <= 0 && isset($p['amount'])) {
+    $amtc = (int)round(((float)$p['amount']) * 100);
+  }
   if ($amtc <= 0) throw new RuntimeException('bad amount');
 
   // Ensure tables exist (lightweight)

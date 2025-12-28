@@ -1,9 +1,14 @@
 <?php
-require_once __DIR__.'/env.php';
+require_once __DIR__.'/lib/common.php';
 header('Content-Type: application/json; charset=utf-8');
 
+$env = array_merge(
+  env_load('/etc/pay.env'),
+  env_load(__DIR__.'/.env')
+);
+$expected = $env['ADMIN_DEPOSIT_SECRET'] ?? getenv('ADMIN_DEPOSIT_SECRET') ?? ($_ENV['ADMIN_DEPOSIT_SECRET'] ?? '');
 $secret = $_GET['secret'] ?? $_SERVER['HTTP_X_ADMIN_SECRET'] ?? '';
-if (!isset($_ENV['ADMIN_DEPOSIT_SECRET']) || $secret!==$_ENV['ADMIN_DEPOSIT_SECRET']){
+if ($expected === '' || !hash_equals((string)$expected, (string)$secret)){
   http_response_code(403); echo json_encode(['ok'=>false,'error'=>'forbidden']); exit;
 }
 
@@ -28,21 +33,36 @@ if ($action==='decline'){
 $msisdn = $j['msisdn']; $amount_cents=(int)$j['amount_cents'];
 $ref = 'MNL-'.date('YmdHis').'-'.substr(bin2hex(random_bytes(4)),0,8);
 $note = 'MoMo deposit approved';
-$credited=false; $db_error=null;
+$credited=false; $db_error=null; $pdo=null;
 
 try{
-  if (!function_exists('rdb_pdo')){
-    @require_once __DIR__.'/lib/radius.php';
-    if (!function_exists('rdb_pdo')) @require_once __DIR__.'/lib/plans_radius.php';
+  $db_dsn  = $env['DB_DSN']  ?? getenv('DB_DSN')  ?? '';
+  $db_user = $env['DB_USER'] ?? getenv('DB_USER') ?? '';
+  $db_pass = $env['DB_PASS'] ?? getenv('DB_PASS') ?? '';
+  if ($db_dsn === '') {
+    $db_host = $env['DB_HOST'] ?? getenv('DB_HOST') ?: '127.0.0.1';
+    $db_name = $env['DB_NAME'] ?? getenv('DB_NAME') ?: 'radius';
+    $db_dsn = "mysql:host={$db_host};dbname={$db_name};charset=utf8mb4";
   }
-  if (function_exists('rdb_pdo')){
-    $pdo = rdb_pdo();
+  if ($db_dsn !== '' && $db_user !== '') {
+    $pdo = new PDO($db_dsn, $db_user, $db_pass, [
+      PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,
+      PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC
+    ]);
+    $pdo->beginTransaction();
     $st=$pdo->prepare("INSERT INTO ledger (msisdn,type,amount_cents,ref,notes,created_at)
                        VALUES (:m,'deposit',:a,:r,:n,NOW())");
     $st->execute([':m'=>$msisdn,':a'=>$amount_cents,':r'=>$ref,':n'=>$note]);
+    $st=$pdo->prepare("INSERT INTO accounts (msisdn,balance_cents) VALUES (:m,:a)
+                       ON DUPLICATE KEY UPDATE balance_cents = balance_cents + VALUES(balance_cents)");
+    $st->execute([':m'=>$msisdn,':a'=>$amount_cents]);
+    $pdo->commit();
     $credited=true;
   }
-}catch(Throwable $e){ $db_error=$e->getMessage(); }
+}catch(Throwable $e){
+  if ($pdo instanceof PDO && $pdo->inTransaction()) $pdo->rollBack();
+  $db_error=$e->getMessage();
+}
 
 if (!$credited){
   @file_put_contents(__DIR__.'/data/ledger.jsonl',

@@ -52,7 +52,15 @@
       const map={}; for(const p of arr) if(p&&p.code) map[p.code]=p; window.NISTER.plansByCode=map;
 
       let code=null; if(j.active){ code = (typeof j.active==='string')? j.active : (j.active.groupname||j.active.code||j.active.plan_code||null); }
-      if(active){ active.textContent = code ? ((map[code]?.name)||code) : '—'; }
+      if(active){
+        if (code) {
+          active.textContent = (map[code]?.name)||code;
+        } else if (j.active && typeof j.active === 'object' && j.active.expires_at) {
+          active.textContent = 'Active • Expires ' + j.active.expires_at;
+        } else {
+          active.textContent = '—';
+        }
+      }
 
       if(typeof window.renderPlans==='function') window.renderPlans(j.msisdn||u, arr);
       if(Array.isArray(j.ledger) && typeof window._renderLedger==='function') window._renderLedger(j.ledger);

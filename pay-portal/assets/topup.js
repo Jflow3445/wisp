@@ -28,8 +28,11 @@
   // ---------- renderers ----------
   function renderActive(active){
     var el = $('#active'); if(!el) return;
-    if(active && active.plan_code){
-      el.textContent = (active.name||active.plan_code) + (active.expires_at? (' • Expires '+active.expires_at):'');
+    if (typeof active === 'string') {
+      el.textContent = active;
+    } else if(active && (active.plan_code || active.expires_at)){
+      var label = active.name || active.plan_code || 'Active';
+      el.textContent = label + (active.expires_at? (' • Expires '+active.expires_at):'');
     } else {
       el.textContent = 'No active plan';
     }

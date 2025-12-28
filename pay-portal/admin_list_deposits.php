@@ -1,8 +1,13 @@
 <?php
-require_once __DIR__.'/env.php';
+require_once __DIR__.'/lib/common.php';
 header('Content-Type: application/json; charset=utf-8');
+$env = array_merge(
+  env_load('/etc/pay.env'),
+  env_load(__DIR__.'/.env')
+);
+$expected = $env['ADMIN_DEPOSIT_SECRET'] ?? getenv('ADMIN_DEPOSIT_SECRET') ?? ($_ENV['ADMIN_DEPOSIT_SECRET'] ?? '');
 $secret = $_GET['secret'] ?? $_SERVER['HTTP_X_ADMIN_SECRET'] ?? '';
-if (!isset($_ENV['ADMIN_DEPOSIT_SECRET']) || $secret!==$_ENV['ADMIN_DEPOSIT_SECRET']){
+if ($expected === '' || !hash_equals((string)$expected, (string)$secret)){
   http_response_code(403); echo json_encode(['ok'=>false,'error'=>'forbidden']); exit;
 }
 $status = $_GET['status'] ?? 'pending';

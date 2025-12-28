@@ -1,5 +1,5 @@
 <?php
-ini_set('display_errors','1'); error_reporting(E_ALL);
+ini_set('display_errors','0'); error_reporting(E_ERROR|E_PARSE);
 
 /* ---------- config ---------- */
 $DB_DSN  = 'mysql:host=127.0.0.1;dbname=radius;charset=utf8mb4';

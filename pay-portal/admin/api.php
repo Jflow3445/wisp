@@ -38,12 +38,12 @@ try {
         SELECT
           SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending_cnt,
           SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved_cnt,
-          COALESCE(SUM(CASE WHEN status='approved' THEN amount*100 ELSE 0 END),0) AS approved_cents
+          COALESCE(SUM(CASE WHEN status='approved' THEN COALESCE(amount_cents, amount*100) ELSE 0 END),0) AS approved_cents
         FROM payments
       ")->fetch();
 
       $t = $PDO->query("
-        SELECT COALESCE(SUM(amount*100),0) AS cents
+        SELECT COALESCE(SUM(COALESCE(amount_cents, amount*100)),0) AS cents
         FROM payments
         WHERE status='approved' AND DATE(approved_at)=CURDATE()
       ")->fetch();
@@ -65,7 +65,7 @@ try {
       ")->fetch();
 
       $pay_series = $PDO->query("
-        SELECT DATE(approved_at) AS d, COALESCE(SUM(amount*100),0) AS cents
+        SELECT DATE(approved_at) AS d, COALESCE(SUM(COALESCE(amount_cents, amount*100)),0) AS cents
         FROM payments
         WHERE status='approved' AND approved_at IS NOT NULL
         GROUP BY DATE(approved_at)

@@ -64,10 +64,19 @@ function radius_apply_plan__old(string $msisdn, array $plan, DateTimeImmutable $
 function nister_sum_used_bytes(PDO $r, array $users, DateTimeImmutable $startAt, ?DateTimeImmutable $endAt=null): int {
     if (empty($users)) return 0;
     $ph = implode(",", array_fill(0, count($users), "?"));
-    $sql = "SELECT COALESCE(SUM(acctinputoctets+acctoutputoctets + 4294967296*(acctinputgigawords+acctoutputgigawords)),0)
+    $sql = "SELECT COALESCE(SUM(
+                COALESCE(acctinputoctets,0)+COALESCE(acctoutputoctets,0)
+                + 4294967296*(COALESCE(acctinputgigawords,0)+COALESCE(acctoutputgigawords,0))
+            ),0)
             FROM radacct
-            WHERE username IN ($ph) AND acctstarttime >= ?";
+            WHERE username IN ($ph)
+              AND (
+                    (acctstarttime IS NOT NULL AND acctstarttime >= ?)
+                 OR (acctstoptime  IS NOT NULL AND acctstoptime  >= ?)
+                 OR acctstoptime IS NULL
+              )";
     $params = $users;
+    $params[] = $startAt->format('Y-m-d H:i:s');
     $params[] = $startAt->format('Y-m-d H:i:s');
     if ($endAt) { $sql .= " AND acctstarttime <= ?"; $params[] = $endAt->format('Y-m-d H:i:s'); }
     $st = $r->prepare($sql);
@@ -83,20 +92,38 @@ function nister_sum_used_bytes(PDO $r, array $users, DateTimeImmutable $startAt,
 function nister_current_total_quota(PDO $r, array $users, ?string $group): ?int {
     if (!empty($users)) {
         $ph = implode(",", array_fill(0, count($users), "?"));
-        $st = $r->prepare("SELECT `value` FROM radreply WHERE attribute='Nister-Quota-Bytes' AND username IN ($ph)
-                           ORDER BY username LIMIT 1");
+        $st = $r->prepare("SELECT attribute, `value`
+                           FROM radreply
+                           WHERE attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')
+                             AND username IN ($ph)");
         $st->execute($users);
-        $v = $st->fetchColumn();
-        if ($v !== false && $v !== null && $v !== '') return (int)$v;
+        $vals = [];
+        while ($row = $st->fetch()) { $vals[$row['attribute']] = $row['value']; }
+        if (isset($vals['Nister-Quota-Bytes']) && $vals['Nister-Quota-Bytes'] !== '') {
+            return (int)$vals['Nister-Quota-Bytes'];
+        }
+        if (isset($vals['Mikrotik-Total-Limit-Gigawords']) || isset($vals['Mikrotik-Total-Limit'])) {
+            $hi = (int)($vals['Mikrotik-Total-Limit-Gigawords'] ?? 0);
+            $lo = (int)($vals['Mikrotik-Total-Limit'] ?? 0);
+            if ($hi || $lo) return (int)($hi * 4294967296 + $lo);
+        }
     }
     if ($group) {
         foreach (['radgroupreply','radgroupcheck'] as $tbl) {
-            $st = $r->prepare("SELECT `value` FROM {$tbl}
-                               WHERE groupname=:g AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit')
-                               ORDER BY FIELD(attribute,'Nister-Quota-Bytes','Mikrotik-Total-Limit') LIMIT 1");
+            $st = $r->prepare("SELECT attribute, `value` FROM {$tbl}
+                               WHERE groupname=:g
+                                 AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')");
             $st->execute([':g'=>$group]);
-            $v = $st->fetchColumn();
-            if ($v !== false && $v !== null && $v !== '') return (int)$v;
+            $vals = [];
+            while ($row = $st->fetch()) { $vals[$row['attribute']] = $row['value']; }
+            if (isset($vals['Nister-Quota-Bytes']) && $vals['Nister-Quota-Bytes'] !== '') {
+                return (int)$vals['Nister-Quota-Bytes'];
+            }
+            if (isset($vals['Mikrotik-Total-Limit-Gigawords']) || isset($vals['Mikrotik-Total-Limit'])) {
+                $hi = (int)($vals['Mikrotik-Total-Limit-Gigawords'] ?? 0);
+                $lo = (int)($vals['Mikrotik-Total-Limit'] ?? 0);
+                if ($hi || $lo) return (int)($hi * 4294967296 + $lo);
+            }
         }
     }
     return null;
@@ -116,19 +143,20 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
     $targets = nister_username_variants($msisdn);
 
     // Current group (if any) and Expiration (for window math)
-    $st = $r->prepare("SELECT groupname FROM radusergroup WHERE username=:u ORDER BY priority ASC LIMIT 1");
-    $st->execute([':u'=>$msisdn]);
+    $ph = implode(",", array_fill(0, count($targets), "?"));
+    $st = $r->prepare("SELECT groupname FROM radusergroup WHERE username IN ($ph) ORDER BY priority ASC LIMIT 1");
+    $st->execute($targets);
     $currGroup = $st->fetchColumn() ?: null;
 
-    $st = $r->prepare("SELECT `value` FROM radreply WHERE username=:u AND attribute='Expiration' LIMIT 1");
-    $st->execute([':u'=>$msisdn]);
+    $st = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Expiration' LIMIT 1");
+    $st->execute($targets);
     $currExpStr = $st->fetchColumn() ?: null;
     $currExp = $currExpStr ? DateTimeImmutable::createFromFormat('M d Y H:i:s', $currExpStr, $tz) : null;
 
     // Duration for current window: user override -> group -> default(30)
     $currDur = null;
-    $st = $r->prepare("SELECT `value` FROM radreply WHERE username=:u AND attribute='Nister-Duration-Days' LIMIT 1");
-    $st->execute([':u'=>$msisdn]);
+    $st = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Nister-Duration-Days' LIMIT 1");
+    $st->execute($targets);
     $vd = $st->fetchColumn();
     if ($vd !== false && $vd !== null && $vd !== '') $currDur = (int)$vd;
     if ($currDur === null && $currGroup) {
@@ -182,25 +210,27 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
 }
 function radius_get_active_plan(string $msisdn): ?array {
   $r = rdb_pdo();
+  $targets = nister_username_variants($msisdn);
+  $ph = implode(",", array_fill(0, count($targets), "?"));
 
   // Group (plan code)
   $g = null;
-  $st = $r->prepare("SELECT groupname FROM radusergroup WHERE username=:u ORDER BY priority ASC LIMIT 1");
-  $st->execute([':u'=>$msisdn]);
+  $st = $r->prepare("SELECT groupname FROM radusergroup WHERE username IN ($ph) ORDER BY priority ASC LIMIT 1");
+  $st->execute($targets);
   $g = $st->fetchColumn() ?: null;
   if (!$g) {
     // No group -> maybe not applied through group model; still try to surface expiration
     $exp = null;
-    $st2 = $r->prepare("SELECT `value` FROM radreply WHERE username=:u AND attribute='Expiration' LIMIT 1");
-    $st2->execute([':u'=>$msisdn]);
+    $st2 = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Expiration' LIMIT 1");
+    $st2->execute($targets);
     $exp = $st2->fetchColumn() ?: null;
     return $exp ? ['plan_code'=>null,'expires_at'=>$exp] : null;
   }
 
   // Expiration
   $exp = null;
-  $st2 = $r->prepare("SELECT `value` FROM radreply WHERE username=:u AND attribute='Expiration' LIMIT 1");
-  $st2->execute([':u'=>$msisdn]);
+  $st2 = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Expiration' LIMIT 1");
+  $st2->execute($targets);
   $exp = $st2->fetchColumn() ?: null;
 
   // Gather plan attrs from group tables

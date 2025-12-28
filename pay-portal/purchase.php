@@ -30,18 +30,19 @@ try {
     ],402);
   }
 
-  // Create purchase record (pending)
-  $PDO->prepare("INSERT INTO purchases(msisdn,plan_code,price_cents,status)
-                 VALUES(:m,:c,:p,'pending')")
-      ->execute([':m'=>$msisdn,':c'=>$plan['code'],':p'=>$price]);
-  $pid=(int)$PDO->lastInsertId();
-
-  // Compute expiry (end of day)
-  $days=(int)($plan['duration_days'] ?? (int)($ENV['VALID_DAYS'] ?? 30));
-  $expires=(new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get())))
-              ->modify('+'.$days.' days')->setTime(23,59,59);
-
+  $pid = null;
   try {
+    // Create purchase record (pending)
+    $PDO->prepare("INSERT INTO purchases(msisdn,plan_code,price_cents,status)
+                   VALUES(:m,:c,:p,'pending')")
+        ->execute([':m'=>$msisdn,':c'=>$plan['code'],':p'=>$price]);
+    $pid=(int)$PDO->lastInsertId();
+
+    // Compute expiry (end of day)
+    $days=(int)($plan['duration_days'] ?? (int)($ENV['VALID_DAYS'] ?? 30));
+    $expires=(new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get())))
+                ->modify('+'.$days.' days')->setTime(23,59,59);
+
     // Include plan code so we can set radusergroup
     $applyPlan = [
       'code'         => $plan['code'],
@@ -52,15 +53,33 @@ try {
     ];
     radius_apply_plan($msisdn, $applyPlan, $expires);
 
-    $PDO->prepare("UPDATE purchases SET status='applied', activated_at=NOW(), expires_at=:e WHERE id=:id")
-        ->execute([':e'=>$expires->format('Y-m-d H:i:s'), ':id'=>$pid]);
+    $actualExpires = $expires;
+    try {
+      $active = radius_get_active_plan($msisdn);
+      if ($active && !empty($active['expires_at'])) {
+        $expRaw = (string)$active['expires_at'];
+        $tz = new DateTimeZone(date_default_timezone_get());
+        $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $expRaw, $tz);
+        if (!$dt) $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $expRaw, $tz);
+        if (!$dt) {
+          try { $dt = new DateTimeImmutable($expRaw, $tz); } catch (Throwable $e) { $dt = null; }
+        }
+        if ($dt instanceof DateTimeImmutable) $actualExpires = $dt;
+      }
+    } catch (Throwable $e) { /* keep computed expiry */ }
 
-    json_out(['ok'=>true,'ref'=>$ref,'purchase_id'=>$pid,'status'=>'applied','expires_at'=>$expires->format('Y-m-d H:i:s')]);
+    $expiresStr = $actualExpires->format('Y-m-d H:i:s');
+    $PDO->prepare("UPDATE purchases SET status='applied', activated_at=NOW(), expires_at=:e WHERE id=:id")
+        ->execute([':e'=>$expiresStr, ':id'=>$pid]);
+
+    json_out(['ok'=>true,'ref'=>$ref,'purchase_id'=>$pid,'status'=>'applied','expires_at'=>$expiresStr]);
 
   } catch (Throwable $e) {
-    // Refund on failure
-    wallet_credit($msisdn, $price, $ref.'-REFUND', 'Auto-refund: apply failed');
-    $PDO->prepare("UPDATE purchases SET status='failed' WHERE id=:id")->execute([':id'=>$pid]);
+    // Refund on failure after debit
+    wallet_credit($msisdn, $price, $ref.'-REFUND', 'Auto-refund: purchase failed');
+    if ($pid) {
+      $PDO->prepare("UPDATE purchases SET status='failed' WHERE id=:id")->execute([':id'=>$pid]);
+    }
     json_out(['ok'=>false,'error'=>'apply_failed','details'=>$e->getMessage()],500);
   }
 
