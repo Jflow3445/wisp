@@ -56,9 +56,9 @@
         if (code) {
           active.textContent = (map[code]?.name)||code;
         } else if (j.active && typeof j.active === 'object' && j.active.expires_at) {
-          active.textContent = 'Active • Expires ' + j.active.expires_at;
+          active.textContent = 'Active | Expires ' + j.active.expires_at;
         } else {
-          active.textContent = '—';
+          active.textContent = 'No active plan';
         }
       }
 

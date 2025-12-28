@@ -21,28 +21,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Nister Admin · Login</title>
+  <title>Nister Admin - Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
-    :root{color-scheme:light dark}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:0;background:#f8fafc;display:grid;place-items:center;min-height:100dvh}
-    .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;max-width:420px;width:92%}
-    h1{margin:.2rem 0 1rem;font-size:1.25rem}
-    .muted{color:#64748b}
-    label{display:block;margin:.6rem 0 .25rem}
-    input[type=text],input[type=password]{width:100%;padding:.6rem;border:1px solid #cbd5e1;border-radius:8px}
-    .btn{margin-top:.8rem;display:inline-block;padding:.5rem .8rem;border:1px solid #cbd5e1;border-radius:8px;background:#fff;cursor:pointer}
-    .err{color:#dc2626;margin:.5rem 0}
-    .ok{color:#16a34a;margin:.5rem 0}
+    :root{
+      --bg:#f4f1ea;
+      --ink:#1c2329;
+      --muted:#5f6a76;
+      --accent:#0f766e;
+      --card:#fffdfa;
+      --line:#e2d6c8;
+      --shadow-soft:0 12px 30px rgba(27,35,42,.08);
+      --font-display:"Fraunces",serif;
+      --font-body:"Sora",sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:var(--font-body);
+      color:var(--ink);
+      background:linear-gradient(180deg,var(--bg) 0%,#efe8de 100%);
+      min-height:100vh;
+      display:grid;
+      place-items:center;
+      padding:24px;
+    }
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:24px;
+      max-width:420px;
+      width:100%;
+      box-shadow:var(--shadow-soft);
+    }
+    h1{
+      font-family:var(--font-display);
+      margin:.2rem 0 .6rem;
+      font-size:1.6rem;
+    }
+    .muted{color:var(--muted);margin-bottom:14px}
+    label{display:block;margin:.8rem 0 .3rem;font-weight:600}
+    input[type=text],input[type=password]{
+      width:100%;
+      padding:.7rem .8rem;
+      border:1px solid var(--line);
+      border-radius:12px;
+      font-size:1rem;
+    }
+    input:focus{outline:2px solid rgba(15,118,110,.2);border-color:var(--accent)}
+    .btn{
+      margin-top:1rem;
+      width:100%;
+      padding:.75rem;
+      border:0;
+      border-radius:12px;
+      background:linear-gradient(135deg,var(--accent),#0f8a7f);
+      color:#fff;
+      font-weight:600;
+      cursor:pointer;
+    }
+    .err{color:#b91c1c;margin:.6rem 0}
+    .ok{color:#15803d;margin:.6rem 0}
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Nister Admin</h1>
-    <div class="muted">Sign in to continue.</div>
+    <div class="muted">Sign in to manage payments and approvals.</div>
 
     <?php if ($msg==='logged_out'): ?>
       <div class="ok">You have been logged out.</div>

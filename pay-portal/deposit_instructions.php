@@ -41,7 +41,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
     <a href="<?=$waHref?>" target="_blank" rel="noopener"
        class="nister-wa-btn"
        style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;padding:10px 14px;border:1px solid rgba(148,163,184,.35);border-radius:12px;">
-      <span>💬 WhatsApp Support</span>
+      <span>WhatsApp Support</span>
       <span style="opacity:.75">(<?=h($number)?>)</span>
     </a>
   </div>
