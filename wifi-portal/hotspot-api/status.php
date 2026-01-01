@@ -1,5 +1,32 @@
 <?php
 declare(strict_types=1);
+if (!defined('NISTER_STATUS_FAILSAFE')) {
+  define('NISTER_STATUS_FAILSAFE', 1);
+  ini_set('display_errors', '0');
+  error_reporting(E_ALL);
+  register_shutdown_function(function () {
+    $err = error_get_last();
+    if (!$err) return;
+    $fatal = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR];
+    if (!in_array($err['type'], $fatal, true)) return;
+
+    while (ob_get_level() > 0) {
+      ob_end_clean();
+    }
+
+    $plainParam = $_GET['plain'] ?? '';
+    $plain = ($plainParam !== '' && !in_array(strtolower((string)$plainParam), ['0','false','no'], true));
+    if (!headers_sent()) {
+      header('Content-Type: '.($plain ? 'text/plain' : 'application/json').'; charset=utf-8');
+    }
+    if ($plain) {
+      echo "NOPAID\n";
+    } else {
+      echo json_encode(['ok'=>false,'error'=>'server_error'], JSON_UNESCAPED_SLASHES);
+    }
+    exit;
+  });
+}
 if (!headers_sent()) {
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
     header('Pragma: no-cache');
@@ -784,6 +811,7 @@ if ($callback) {
     header('Content-Type: application/json; charset=utf-8');
     echo $json;
 }
+exit;
 // Support plain=1 for MikroTik (return "PAID\n" or "NOPAID\n")
 $plainParam = isset($_GET['plain']) ? trim((string)$_GET['plain']) : '';
 $wantPlain  = ($plainParam !== '' && !in_array(strtolower($plainParam), ['0','false','no'], true));

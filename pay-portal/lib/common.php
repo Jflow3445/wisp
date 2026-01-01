@@ -1,6 +1,18 @@
 <?php
 declare(strict_types=1);
 
+if (!function_exists('str_contains')) {
+  function str_contains(string $haystack, string $needle): bool {
+    return $needle === '' || strpos($haystack, $needle) !== false;
+  }
+}
+
+if (!function_exists('str_starts_with')) {
+  function str_starts_with(string $haystack, string $needle): bool {
+    return $needle === '' || strncmp($haystack, $needle, strlen($needle)) === 0;
+  }
+}
+
 /** Load simple KEY=VALUE .env */
 function env_load(string $path): array {
   if (!is_file($path)) return [];
@@ -17,17 +29,34 @@ function env_load(string $path): array {
 
 /** Boot app timezone/env */
 function app_boot(): array {
-  $env=env_load(__DIR__.'/../.env');
-  date_default_timezone_set($env['APP_TIMEZONE']??'Africa/Accra');
+  $env = array_merge(
+    env_load('/etc/pay.env'),
+    env_load(__DIR__.'/../.env')
+  );
+  $tz = $env['APP_TIMEZONE'] ?? getenv('APP_TIMEZONE') ?? ($_ENV['APP_TIMEZONE'] ?? null);
+  date_default_timezone_set($tz ?: 'Africa/Accra');
   return $env;
 }
 
 /** DSN PDO for pay app */
 function db_pdo(array $env): PDO {
+  $dsn  = $env['DB_DSN'] ?? getenv('DB_DSN') ?? ($_ENV['DB_DSN'] ?? '');
+  $user = $env['DB_USER'] ?? getenv('DB_USER') ?? ($_ENV['DB_USER'] ?? '');
+  $pass = $env['DB_PASS'] ?? getenv('DB_PASS') ?? ($_ENV['DB_PASS'] ?? '');
+  if ($dsn === '') {
+    $host = $env['DB_HOST'] ?? getenv('DB_HOST') ?? ($_ENV['DB_HOST'] ?? '');
+    $name = $env['DB_NAME'] ?? getenv('DB_NAME') ?? ($_ENV['DB_NAME'] ?? '');
+    if ($host !== '' && $name !== '') {
+      $dsn = "mysql:host={$host};dbname={$name};charset=utf8mb4";
+    }
+  }
+  if ($dsn === '' || $user === '') {
+    throw new RuntimeException('DB not configured (DB_DSN/DB_USER)');
+  }
   return new PDO(
-    $env['DB_DSN']??'',
-    $env['DB_USER']??'',
-    $env['DB_PASS']??'',
+    $dsn,
+    $user,
+    $pass,
     [
       PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,
       PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,
