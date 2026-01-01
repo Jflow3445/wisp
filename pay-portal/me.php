@@ -13,16 +13,25 @@ try {
   $msisdn = normalize_msisdn((string)($_GET['msisdn'] ?? ''));
   if ($msisdn === '') json_out(['ok'=>false,'error'=>'msisdn required'], 422);
 
-  $bal = wallet_balance($msisdn);
+  $walletOk = true;
+  $walletErr = null;
+  $bal = 0;
+  $ledger = [];
+  try {
+    $bal = wallet_balance($msisdn);
+
+    // Recent wallet history
+    $lg = $PDO->prepare("SELECT type,amount_cents,ref,notes,created_at FROM ledger WHERE msisdn=:m ORDER BY id DESC LIMIT 10");
+    $lg->execute([':m'=>$msisdn]);
+    $ledger = $lg->fetchAll();
+  } catch (Throwable $e) {
+    $walletOk = false;
+    $walletErr = ($e->getMessage() === 'wallet_tables_missing') ? 'wallet_tables_missing' : 'wallet_error';
+  }
 
   $plans = [];
   try { $plans = array_values(radius_fetch_plans()); }
   catch (Throwable $e) { $plans = []; }
-
-  // Recent wallet history
-  $lg = $PDO->prepare("SELECT type,amount_cents,ref,notes,created_at FROM ledger WHERE msisdn=:m ORDER BY id DESC LIMIT 10");
-  $lg->execute([':m'=>$msisdn]);
-  $ledger = $lg->fetchAll();
 
   // Active plan from FreeRADIUS
   $active = null;
@@ -46,6 +55,8 @@ try {
     'msisdn'=>msisdn_display($msisdn), "msisdn_canonical"=>$msisdn,
     'balance_cents'=>$bal,
     'balance_ghs'=>round($bal/100,2),
+    'wallet_ok'=>$walletOk,
+    'wallet_error'=>$walletErr,
     'active'=>$active,
     'plans'=>$plans,
     'ledger'=>$ledger

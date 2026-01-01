@@ -15,7 +15,7 @@ if (!function_exists('str_starts_with')) {
 
 /** Load simple KEY=VALUE .env */
 function env_load(string $path): array {
-  if (!is_file($path)) return [];
+  if (!is_file($path) || !is_readable($path)) return [];
   $out=[];
   foreach (file($path, FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) as $line) {
     if (preg_match('~^\s*#~',$line)) continue;
@@ -29,10 +29,17 @@ function env_load(string $path): array {
 
 /** Boot app timezone/env */
 function app_boot(): array {
-  $env = array_merge(
-    env_load('/etc/pay.env'),
-    env_load(__DIR__.'/../.env')
-  );
+  $paths = [
+    '/etc/pay.env',
+    __DIR__.'/../.env',
+  ];
+  $docroot = $_SERVER['DOCUMENT_ROOT'] ?? '';
+  if ($docroot !== '') $paths[] = rtrim($docroot, "/\\") . '/.env';
+  $paths[] = '/var/www/pay/.env';
+  $env = [];
+  foreach ($paths as $p) {
+    $env = array_merge($env, env_load($p));
+  }
   $tz = $env['APP_TIMEZONE'] ?? getenv('APP_TIMEZONE') ?? ($_ENV['APP_TIMEZONE'] ?? null);
   date_default_timezone_set($tz ?: 'Africa/Accra');
   return $env;

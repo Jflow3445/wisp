@@ -27,6 +27,7 @@ function wallet_bootstrap_tables(): void {
   static $ready = false;
   if ($ready) return;
   global $PDO;
+  $GLOBALS['__WALLET_TABLES_OK'] = false;
 
   $hasAccounts = null;
   $hasLedger = null;
@@ -39,6 +40,7 @@ function wallet_bootstrap_tables(): void {
   }
 
   if ($hasAccounts && $hasLedger) {
+    $GLOBALS['__WALLET_TABLES_OK'] = true;
     $ready = true;
     return;
   }
@@ -47,32 +49,51 @@ function wallet_bootstrap_tables(): void {
     return;
   }
 
-  if (!$hasAccounts) {
-    $PDO->exec("CREATE TABLE IF NOT EXISTS accounts (
-      msisdn VARCHAR(32) PRIMARY KEY,
-      balance_cents INT NOT NULL DEFAULT 0,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+  try {
+    if (!$hasAccounts) {
+      $PDO->exec("CREATE TABLE IF NOT EXISTS accounts (
+        msisdn VARCHAR(32) PRIMARY KEY,
+        balance_cents INT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+    if (!$hasLedger) {
+      $PDO->exec("CREATE TABLE IF NOT EXISTS ledger (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        msisdn VARCHAR(32) NOT NULL,
+        type VARCHAR(32) NOT NULL,
+        amount_cents INT NOT NULL,
+        ref VARCHAR(64) NULL,
+        notes TEXT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_msisdn_created (msisdn, created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+  } catch (Throwable $e) {
+    $ready = true;
+    return;
   }
-  if (!$hasLedger) {
-    $PDO->exec("CREATE TABLE IF NOT EXISTS ledger (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      msisdn VARCHAR(32) NOT NULL,
-      type VARCHAR(32) NOT NULL,
-      amount_cents INT NOT NULL,
-      ref VARCHAR(64) NULL,
-      notes TEXT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      KEY idx_msisdn_created (msisdn, created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+  try {
+    $hasAccounts = wallet_table_exists($PDO, 'accounts');
+    $hasLedger = wallet_table_exists($PDO, 'ledger');
+    $GLOBALS['__WALLET_TABLES_OK'] = ($hasAccounts && $hasLedger);
+  } catch (Throwable $e) {
+    $GLOBALS['__WALLET_TABLES_OK'] = false;
   }
   $ready = true;
 }
 
+function wallet_require_tables(): void {
+  wallet_bootstrap_tables();
+  if (empty($GLOBALS['__WALLET_TABLES_OK'])) {
+    throw new RuntimeException('wallet_tables_missing');
+  }
+}
+
 function wallet_balance(string $msisdn): int {
   global $PDO;
-  wallet_bootstrap_tables();
+  wallet_require_tables();
   $PDO->prepare("INSERT IGNORE INTO accounts(msisdn) VALUES(:m)")->execute([':m'=>$msisdn]);
   $st=$PDO->prepare("SELECT balance_cents FROM accounts WHERE msisdn=:m"); $st->execute([':m'=>$msisdn]);
   return (int)$st->fetchColumn();
@@ -81,7 +102,7 @@ function wallet_balance(string $msisdn): int {
 function wallet_credit(string $msisdn, int $cents, ?string $ref=null, ?string $notes=null): void {
   if ($cents<=0) throw new RuntimeException('credit must be positive');
   global $PDO;
-  wallet_bootstrap_tables();
+  wallet_require_tables();
   $PDO->beginTransaction();
   try {
     if ($ref) {
@@ -101,7 +122,7 @@ function wallet_credit(string $msisdn, int $cents, ?string $ref=null, ?string $n
 function wallet_try_debit(string $msisdn, int $cents, string $ref, ?string $notes=null): bool {
   if ($cents<=0) throw new RuntimeException('debit must be positive');
   global $PDO;
-  wallet_bootstrap_tables();
+  wallet_require_tables();
   $PDO->beginTransaction();
   try {
     $st=$PDO->prepare("UPDATE accounts SET balance_cents=balance_cents-:a WHERE msisdn=:m AND balance_cents>=:a");

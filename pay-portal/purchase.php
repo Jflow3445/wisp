@@ -21,7 +21,18 @@ try {
   $price = (int)$plan['price_cents'];
   $ref   = 'BUY-'.date('YmdHis').'-'.bin2hex(random_bytes(3));
 
-  if (!wallet_try_debit($msisdn,$price,$ref,"Buy plan {$plan['code']}")) {
+  try {
+    $debited = wallet_try_debit($msisdn,$price,$ref,"Buy plan {$plan['code']}");
+  } catch (Throwable $e) {
+    if ($e->getMessage() === 'wallet_tables_missing') {
+      json_out([
+        'ok'=>false,'error'=>'wallet_unavailable',
+        'message'=>'Wallet database not ready. Please contact support.',
+      ],503);
+    }
+    throw $e;
+  }
+  if (!$debited) {
     json_out([
       'ok'=>false,'error'=>'insufficient_funds',
       'message'=>'Not enough balance. Please deposit via MoMo and try again.',
