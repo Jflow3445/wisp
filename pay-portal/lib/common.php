@@ -46,10 +46,12 @@ function db_pdo(array $env): PDO {
   if ($dsn === '') {
     $host = $env['DB_HOST'] ?? getenv('DB_HOST') ?? ($_ENV['DB_HOST'] ?? '');
     $name = $env['DB_NAME'] ?? getenv('DB_NAME') ?? ($_ENV['DB_NAME'] ?? '');
-    if ($host !== '' && $name !== '') {
-      $dsn = "mysql:host={$host};dbname={$name};charset=utf8mb4";
-    }
+    if ($host === '') $host = '127.0.0.1';
+    if ($name === '') $name = 'radius';
+    $dsn = "mysql:host={$host};dbname={$name};charset=utf8mb4";
   }
+  if ($user === '') $user = 'radius';
+  if ($pass === '') $pass = 'BishopFelix@50Dolla';
   if ($dsn === '' || $user === '') {
     throw new RuntimeException('DB not configured (DB_DSN/DB_USER)');
   }
