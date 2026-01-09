@@ -49,12 +49,23 @@ function fail($msg, $user = '') {
   exit;
 }
 
-$user = isset($_POST['username']) ? trim($_POST['username']) : '';
-$current = (string)($_POST['current_password'] ?? $_POST['old_password'] ?? '');
-$pass = isset($_POST['password']) ? (string)$_POST['password'] : '';
-$pass2 = '';
-if (isset($_POST['password2'])) $pass2 = (string)$_POST['password2'];
-if (isset($_POST['password_confirm'])) $pass2 = (string)$_POST['password_confirm'];
+function pick(array $src, array $keys): string {
+  foreach ($keys as $k) {
+    if (isset($src[$k])) {
+      $v = trim((string)$src[$k]);
+      if ($v !== '') return $v;
+    }
+  }
+  return '';
+}
+
+$input = $_POST;
+if (!$input) $input = $_REQUEST;
+
+$user = pick($input, ['username', 'user', 'msisdn', 'phone', 'account']);
+$current = pick($input, ['current_password', 'current', 'old_password', 'oldpass', 'password_old', 'old']);
+$pass = pick($input, ['password', 'new_password', 'new_password1', 'newpass', 'pass', 'password_new', 'newpass1']);
+$pass2 = pick($input, ['password2', 'password_confirm', 'new_password2', 'newpass2', 'confirm_password', 'new_password_confirm']);
 
 if ($user === '' || $pass === '' || $current === '') {
   fail('Please provide your account, current password, and a new password.', $user);
