@@ -59,3 +59,8 @@ wifi-portal/daloradius/app/operators/.htpasswd
 # daloradius library config (can include DB creds) + backups
 wifi-portal/daloradius/library/daloradius.conf.php
 wifi-portal/daloradius/library/daloradius.conf.php.*
+
+# Local backups / hotfix artifacts
+*.bak*
+*.fixbak*
+deploy_check*.txt

@@ -1,6 +1,18 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/nister_pdo.php';
+// ---- Nister DB config (single source of truth) ----
+$__cfg = [];
+$__cfg_path = '/etc/nister/radius_db.php';
+if (is_readable($__cfg_path)) {
+  $__cfg = require $__cfg_path;
+  if (!is_array($__cfg)) $__cfg = [];
+}
 
+$db_host = $__cfg['host'] ?? '127.0.0.1';
+$db_name = $__cfg['db']   ?? 'radius';
+$db_user = $__cfg['user'] ?? 'radius';
+$db_pass = $__cfg['pass'] ?? '';
 /* env from /etc/pay.env */
 $ENV=[
   'PAYSTACK_PUBLIC'=>'','PAYSTACK_SECRET'=>'',
@@ -19,7 +31,7 @@ if (is_readable($envFile)){
 
 /* db */
 function pdo_conn(array $ENV): PDO {
-  return new PDO($ENV['DB_DSN'],$ENV['DB_USER'],$ENV['DB_PASS'],[
+  return new NisterPDO($ENV['DB_DSN'],$ENV['DB_USER'],$ENV['DB_PASS'],[
     PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,
     PDO::ATTR_EMULATE_PREPARES=>false,
@@ -72,7 +84,7 @@ if (!isset($PDO) || !($PDO instanceof PDO)) {
   if (!$db_dsn) $db_dsn = "mysql:host={$db_host};dbname={$db_name};charset=utf8mb4";
 
   try {
-    $PDO = new PDO(
+    $PDO = new NisterPDO(
       $db_dsn, $db_user, $db_pass,
       [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,

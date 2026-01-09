@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/nister_pdo.php';
 require_once __DIR__.'/common.php';
 
 /**
@@ -16,7 +17,7 @@ function rdb_pdo(): PDO {
     if ($dsn === '' || $u === '') {
       throw new RuntimeException('RADIUS DB not configured in .env');
     }
-    return new PDO(
+    return new NisterPDO(
       $dsn, $u, $p,
       [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]
     );

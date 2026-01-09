@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__.'/nister_pdo.php';
 require_once __DIR__.'/lib/common.php';
 header('Content-Type: application/json; charset=utf-8');
 
@@ -45,7 +46,7 @@ try{
     $db_dsn = "mysql:host={$db_host};dbname={$db_name};charset=utf8mb4";
   }
   if ($db_dsn !== '' && $db_user !== '') {
-    $pdo = new PDO($db_dsn, $db_user, $db_pass, [
+    $pdo = new NisterPDO($db_dsn, $db_user, $db_pass, [
       PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,
       PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC
     ]);

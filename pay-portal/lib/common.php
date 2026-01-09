@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/nister_pdo.php';
 if (!function_exists('str_contains')) {
   function str_contains(string $haystack, string $needle): bool {
     return $needle === '' || strpos($haystack, $needle) !== false;
@@ -47,9 +48,17 @@ function app_boot(): array {
 
 /** DSN PDO for pay app */
 function db_pdo(array $env): PDO {
-  $dsn  = $env['DB_DSN'] ?? getenv('DB_DSN') ?? ($_ENV['DB_DSN'] ?? '');
-  $user = $env['DB_USER'] ?? getenv('DB_USER') ?? ($_ENV['DB_USER'] ?? '');
-  $pass = $env['DB_PASS'] ?? getenv('DB_PASS') ?? ($_ENV['DB_PASS'] ?? '');
+  $get = static function(string $k) use ($env) {
+    if (isset($env[$k]) && $env[$k] !== false && $env[$k] !== null) return $env[$k];
+    if (isset($_ENV[$k]) && $_ENV[$k] !== false && $_ENV[$k] !== null) return $_ENV[$k];
+    $v = getenv($k);
+    return ($v === false) ? null : $v;
+  };
+
+  // Prefer PAY DB_*, then MYSQL_*, else fall back to RADIUS_* (your env has these)
+  $dsn  = (string)($get('DB_DSN') ?? $get('MYSQL_DSN') ?? $get('RADIUS_DSN') ?? '');
+  $user = (string)($get('DB_USER') ?? $get('MYSQL_USER') ?? $get('RADIUS_USER') ?? '');
+  $pass = (string)($get('DB_PASS') ?? $get('MYSQL_PASSWORD') ?? $get('RADIUS_PASS') ?? '');
   if ($dsn === '') {
     $host = $env['DB_HOST'] ?? getenv('DB_HOST') ?? ($_ENV['DB_HOST'] ?? '');
     $name = $env['DB_NAME'] ?? getenv('DB_NAME') ?? ($_ENV['DB_NAME'] ?? '');
@@ -62,15 +71,17 @@ function db_pdo(array $env): PDO {
   if ($dsn === '' || $user === '') {
     throw new RuntimeException('DB not configured (DB_DSN/DB_USER)');
   }
-  return new PDO(
-    $dsn,
-    $user,
-    $pass,
-    [
-      PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,
-      PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,
-    ]
-  );
+    $opts = [
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_EMULATE_PREPARES   => false,
+    PDO::ATTR_STRINGIFY_FETCHES  => false,
+  ];
+  if (defined('PDO::MYSQL_ATTR_MULTI_STATEMENTS')) {
+    $opts[PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
+  }
+
+  return new NisterPDO($dsn, $user, $pass, $opts);
 }
 
 /** JSON out + exit */
@@ -95,14 +106,24 @@ function from_any(array $srcs,string $k,$def=null){
 }
 
 /** Ghana-friendly MSISDN normalizer -> digits only, 0xxxxxxxxx -> 233xxxxxxxxx */
-function normalize_msisdn(string $s): string {
-  $d=preg_replace('/\D+/', '', $s);
-  if ($d==='') return '';
-  if (str_starts_with($d,'0') && strlen($d)>=10) {
-    $d='233'.substr($d,1);
-  }
+function normalize_msisdn($raw) {
+  $d = preg_replace('/\D+/', '', (string)$raw);
+  if ($d === '') return '';
+
+  // Strip leading international prefix "00"
+  if (strpos($d, '00') === 0) $d = substr($d, 2);
+
+  // Ghana canonical: 233 + 9 digits
+  if (preg_match('/^2330(\d{9})$/', $d, $m)) return '233'.$m[1];     // 2330xxxxxxxxx -> 233xxxxxxxxx
+  if (preg_match('/^0(\d{9})$/',    $d, $m)) return '233'.$m[1];     // 0xxxxxxxxx    -> 233xxxxxxxxx
+  if (preg_match('/^233(\d{9})$/',  $d, $m)) return '233'.$m[1];     // already canonical
+
+  // Salvage: if it contains ...233 + last 9 digits, use that
+  if (preg_match('/233(\d{9})$/', $d, $m)) return '233'.$m[1];
+
   return $d;
 }
+
 
 /** Read truthy GET/POST flag */
 function bool_param(string $k): bool {

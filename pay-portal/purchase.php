@@ -1,5 +1,49 @@
 <?php
 declare(strict_types=1);
+
+/**
+ * JSON bridge: the frontend posts application/json.
+ * Make JSON payload available to legacy $_POST/$_GET/$_REQUEST code paths.
+ */
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+  $ct = strtolower((string)($_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? ''));
+  if (strpos($ct, 'application/json') !== false) {
+    $raw = file_get_contents('php://input');
+    if ($raw !== false && trim($raw) !== '') {
+      $j = json_decode($raw, true);
+      if (is_array($j)) {
+        // normalize keys
+        $msisdn = (string)($j['msisdn'] ?? $j['username'] ?? $j['user'] ?? '');
+        $plan   = (string)($j['plan_code'] ?? $j['plan'] ?? '');
+
+        if ($msisdn !== '') {
+          $_POST['msisdn']    = $_POST['msisdn']    ?? $msisdn;
+          $_POST['username']  = $_POST['username']  ?? $msisdn;
+          $_GET['username']   = $_GET['username']   ?? $msisdn;   // in case code expects query param
+          $_REQUEST['msisdn'] = $_REQUEST['msisdn'] ?? $msisdn;
+          $_REQUEST['username']= $_REQUEST['username'] ?? $msisdn;
+        }
+        if ($plan !== '') {
+          $_POST['plan_code'] = $_POST['plan_code'] ?? $plan;
+          $_POST['plan']      = $_POST['plan']      ?? $plan;
+          $_REQUEST['plan_code']= $_REQUEST['plan_code'] ?? $plan;
+          $_REQUEST['plan']     = $_REQUEST['plan']      ?? $plan;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Crash logging (temporary but safe): catches fatals and logs them.
+ */
+register_shutdown_function(function(){
+  $e = error_get_last();
+  if ($e && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+    error_log("[purchase.php] FATAL: {$e['message']} @ {$e['file']}:{$e['line']}");
+  }
+});
+
 // Accept legacy "plan" from frontend as alias for "plan_code"
 if (!isset($_POST['plan_code']) && isset($_POST['plan'])) { $_POST['plan_code'] = $_POST['plan']; }
 require_once __DIR__.'/lib/db.php';
@@ -10,7 +54,9 @@ require_once __DIR__.'/lib/common.php';
 
 try {
   $in = array_merge($_POST, body_json());
-  $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+  
+    if (!isset($in["plan_code"]) && isset($in["plan"])) { $in["plan_code"] = $in["plan"]; }
+$msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
   $code   = (string)from_any([$in],'plan_code','');
   if ($msisdn==='' || $code==='') json_out(['ok'=>false,'error'=>'msisdn and plan_code required'],422);
 
@@ -64,6 +110,15 @@ try {
     ];
     radius_apply_plan($msisdn, $applyPlan, $expires);
 
+      // Force online users to re-auth so new Mikrotik-Address-List / limits apply immediately
+      if (function_exists('radius_try_disconnect')) {
+        try {
+          $envArr = (isset($ENV) && is_array($ENV)) ? $ENV : [];
+          radius_try_disconnect($msisdn, $envArr);
+        } catch (Throwable $e) { /* non-fatal */ }
+      }
+
+
     $actualExpires = $expires;
     try {
       $active = radius_get_active_plan($msisdn);
@@ -71,6 +126,7 @@ try {
         $expRaw = (string)$active['expires_at'];
         $tz = new DateTimeZone(date_default_timezone_get());
         $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $expRaw, $tz);
+        if (!$dt) $dt = DateTimeImmutable::createFromFormat('d M Y H:i:s', $expRaw, $tz);
         if (!$dt) $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $expRaw, $tz);
         if (!$dt) {
           try { $dt = new DateTimeImmutable($expRaw, $tz); } catch (Throwable $e) { $dt = null; }
