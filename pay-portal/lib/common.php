@@ -46,6 +46,31 @@ function app_boot(): array {
   return $env;
 }
 
+/** RADIUS DB params (dsn,user,pass) with /etc/nister/radius_db.php fallback */
+function nister_radius_db_params(array $env): array {
+  $cfg = [];
+  $cfgPath = '/etc/nister/radius_db.php';
+  if (is_readable($cfgPath)) {
+    $tmp = require $cfgPath;
+    if (is_array($tmp)) $cfg = $tmp;
+  }
+
+  $dsn = (string)($env['RADIUS_DSN'] ?? ($cfg['dsn'] ?? ''));
+  $host = (string)($env['RADIUS_HOST'] ?? ($cfg['host'] ?? '127.0.0.1'));
+  $db = (string)($env['RADIUS_DB'] ?? ($cfg['db'] ?? 'radius'));
+  $user = (string)($env['RADIUS_USER'] ?? ($cfg['user'] ?? ''));
+  $pass = (string)($env['RADIUS_PASS'] ?? ($cfg['pass'] ?? ''));
+
+  // Allow generic DB_* overrides when RADIUS_* is missing
+  if ($host === '') $host = (string)($env['DB_HOST'] ?? (getenv('DB_HOST') ?: '127.0.0.1'));
+  if ($db === '')   $db   = (string)($env['DB_NAME'] ?? (getenv('DB_NAME') ?: 'radius'));
+  if ($user === '') $user = (string)($env['DB_USER'] ?? (getenv('DB_USER') ?: ''));
+  if ($pass === '') $pass = (string)($env['DB_PASS'] ?? (getenv('DB_PASS') ?: ''));
+
+  if ($dsn === '') $dsn = "mysql:host={$host};dbname={$db};charset=utf8mb4";
+  return [$dsn, $user, $pass];
+}
+
 /** DSN PDO for pay app */
 function db_pdo(array $env): PDO {
   $get = static function(string $k) use ($env) {

@@ -11,11 +11,9 @@ if (!function_exists('rdb_pdo')) {
   if (!function_exists("rdb_pdo")) {
 function rdb_pdo(): PDO {
     $env = app_boot();
-    $dsn = $env['RADIUS_DSN'] ?? '';
-    $u   = $env['RADIUS_USER'] ?? '';
-    $p   = $env['RADIUS_PASS'] ?? '';
+    [$dsn, $u, $p] = nister_radius_db_params($env);
     if ($dsn === '' || $u === '') {
-      throw new RuntimeException('RADIUS DB not configured in .env');
+      throw new RuntimeException('RADIUS DB not configured (RADIUS_DSN/RADIUS_USER or /etc/nister/radius_db.php)');
     }
     return new NisterPDO(
       $dsn, $u, $p,

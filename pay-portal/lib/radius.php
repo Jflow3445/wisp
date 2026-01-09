@@ -6,10 +6,15 @@ require_once __DIR__.'/common.php';
 
 if (!function_exists("rdb_pdo")) {
 function rdb_pdo(): PDO {
-  $env=app_boot();
-  $dsn=$env['RADIUS_DSN']??''; $u=$env['RADIUS_USER']??''; $p=$env['RADIUS_PASS']??'';
-  if ($dsn===''||$u==='') throw new RuntimeException('RADIUS DB not configured in .env');
-  return new NisterPDO($dsn,$u,$p,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+  $env = app_boot();
+  [$dsn, $u, $p] = nister_radius_db_params($env);
+  if ($dsn === '' || $u === '') {
+    throw new RuntimeException('RADIUS DB not configured (RADIUS_DSN/RADIUS_USER or /etc/nister/radius_db.php)');
+  }
+  return new NisterPDO($dsn, $u, $p, [
+    PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC
+  ]);
 }
 }
 
@@ -534,7 +539,8 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
 
   // DB handle
   $pdo = null;
-  if (function_exists('radius_pdo')) $pdo = radius_pdo($ENV);
+  if (function_exists('rdb_pdo')) $pdo = rdb_pdo();
+  elseif (function_exists('radius_pdo')) $pdo = radius_pdo($ENV);
   elseif (function_exists('db_pdo')) $pdo = db_pdo($ENV);
   if (!$pdo instanceof PDO) return;
 

@@ -1,41 +1,18 @@
 <?php
-ini_set('display_errors','0'); error_reporting(E_ERROR|E_PARSE);
+declare(strict_types=1);
+ini_set('display_errors', '0');
+error_reporting(E_ERROR | E_PARSE);
 
-/* ---------- config ---------- */
-function radius_db_params(): array {
-  $cfg = [];
-  $cfgPath = '/etc/nister/radius_db.php';
-  if (is_readable($cfgPath)) {
-    $tmp = require $cfgPath;
-    if (is_array($tmp)) $cfg = $tmp;
-  }
-
-  $dsn  = (string)(getenv('RADIUS_DSN') ?: ($cfg['dsn'] ?? ''));
-  $host = (string)(getenv('RADIUS_HOST') ?: ($cfg['host'] ?? '127.0.0.1'));
-  $db   = (string)(getenv('RADIUS_DB') ?: ($cfg['db'] ?? 'radius'));
-  $user = (string)(getenv('RADIUS_USER') ?: ($cfg['user'] ?? ''));
-  $pass = (string)(getenv('RADIUS_PASS') ?: ($cfg['pass'] ?? ''));
-
-  if ($host === '') $host = (string)(getenv('DB_HOST') ?: '127.0.0.1');
-  if ($db === '')   $db   = (string)(getenv('DB_NAME') ?: 'radius');
-  if ($user === '') $user = (string)(getenv('DB_USER') ?: '');
-  if ($pass === '') $pass = (string)(getenv('DB_PASS') ?: '');
-
-  if ($dsn === '') $dsn = "mysql:host={$host};dbname={$db};charset=utf8mb4";
-  return [$dsn, $user, $pass];
-}
-
-[$DB_DSN, $DB_USER, $DB_PASS] = radius_db_params();
+require_once __DIR__ . '/_db.php';
 
 $LOGIN_URL = 'https://wifi.nister.org/login.html';
-/* ---------------------------- */
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 
-function fail($msg, $user = '') {
+function fail(string $msg, string $user = ''): void {
   http_response_code(400);
   $back = 'https://wifi.nister.org/change-password.html';
-  if ($user !== '') { $back .= '?username='.rawurlencode($user); }
+  if ($user !== '') { $back .= '?username=' . rawurlencode($user); }
   echo "<!doctype html><meta charset='utf-8'><title>Password update failed</title>
   <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:2rem}
@@ -49,7 +26,7 @@ function fail($msg, $user = '') {
   exit;
 }
 
-$user = isset($_POST['username']) ? trim($_POST['username']) : '';
+$user = isset($_POST['username']) ? trim((string)$_POST['username']) : '';
 $current = (string)($_POST['current_password'] ?? $_POST['old_password'] ?? '');
 $pass = isset($_POST['password']) ? (string)$_POST['password'] : '';
 $pass2 = '';
@@ -68,11 +45,7 @@ if ($pass2 !== '' && $pass2 !== $pass) {
 header('Cache-Control: no-store');
 
 try {
-  $pdo = new PDO($DB_DSN, $DB_USER, $DB_PASS, [
-    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    PDO::ATTR_EMULATE_PREPARES => false,
-  ]);
+  $pdo = hotspot_radius_pdo();
 
   $stmt = $pdo->prepare("SELECT id, value FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password' LIMIT 1");
   $stmt->execute([$user]);
@@ -103,5 +76,5 @@ try {
   <p><a class='btn' href='".h($login)."'>Go to Wi-Fi login</a></p></div>";
   exit;
 } catch (Throwable $e) {
-  fail('Database error: '.$e->getMessage(), $user);
+  fail('Database error: ' . $e->getMessage(), $user);
 }

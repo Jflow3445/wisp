@@ -2,14 +2,35 @@
 ini_set('display_errors','0'); error_reporting(E_ERROR|E_PARSE);
 
 /* ---------- config ---------- */
-$DB_DSN  = 'mysql:host=127.0.0.1;dbname=radius;charset=utf8mb4';
-$DB_USER = 'hotspot_api';
-$DB_PASS = 'BishopFelix@50Dolla';
+function radius_db_params(): array {
+  $cfg = [];
+  $cfgPath = '/etc/nister/radius_db.php';
+  if (is_readable($cfgPath)) {
+    $tmp = require $cfgPath;
+    if (is_array($tmp)) $cfg = $tmp;
+  }
+
+  $dsn  = (string)(getenv('RADIUS_DSN') ?: ($cfg['dsn'] ?? ''));
+  $host = (string)(getenv('RADIUS_HOST') ?: ($cfg['host'] ?? '127.0.0.1'));
+  $db   = (string)(getenv('RADIUS_DB') ?: ($cfg['db'] ?? 'radius'));
+  $user = (string)(getenv('RADIUS_USER') ?: ($cfg['user'] ?? ''));
+  $pass = (string)(getenv('RADIUS_PASS') ?: ($cfg['pass'] ?? ''));
+
+  if ($host === '') $host = (string)(getenv('DB_HOST') ?: '127.0.0.1');
+  if ($db === '')   $db   = (string)(getenv('DB_NAME') ?: 'radius');
+  if ($user === '') $user = (string)(getenv('DB_USER') ?: '');
+  if ($pass === '') $pass = (string)(getenv('DB_PASS') ?: '');
+
+  if ($dsn === '') $dsn = "mysql:host={$host};dbname={$db};charset=utf8mb4";
+  return [$dsn, $user, $pass];
+}
+
+[$DB_DSN, $DB_USER, $DB_PASS] = radius_db_params();
 
 $LOGIN_URL       = 'https://wifi.nister.org/login.html'; // MikroTik local login page
 $GROUP_ON_CREATE = 'nopaid';                              // matches your hotspot "nopaid" concept
 $ADDR_LIST       = 'HS_NOPAID';                           // firewall address-list for unpaid
-$ENFORCE_UNIQUE  = false;                                 // false=update password if exists
+$ENFORCE_UNIQUE  = true;                                  // do not overwrite existing passwords
 /* ---------------------------- */
 
 function fail($code, $username = '', $dst = '', $name = '') {

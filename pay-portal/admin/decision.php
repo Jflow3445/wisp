@@ -25,7 +25,13 @@ if($action==='approve'){
   if ($row['status']!=='approved') {
     $PDO->prepare("UPDATE payments SET status='approved',approved_at=NOW(),approved_by=:w,notes=IFNULL(:n,notes) WHERE ref=:r")
         ->execute([':w'=>$who,':n'=>$notes,':r'=>$ref]);
-    $cents=(int)round(((float)$row['amount'])*100);
+    $cents = 0;
+    if (isset($row['amount_cents']) && is_numeric($row['amount_cents'])) {
+      $cents = (int)$row['amount_cents'];
+    }
+    if ($cents <= 0 && isset($row['amount'])) {
+      $cents = (int)round(((float)$row['amount']) * 100);
+    }
     wallet_credit($row['msisdn'],$cents,$ref,'MoMo deposit approved');
   }
   json_out(['ok'=>true,'ref'=>$ref,'msisdn'=>$row['msisdn'],'status'=>'approved']);

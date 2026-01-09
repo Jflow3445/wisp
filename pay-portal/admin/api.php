@@ -272,7 +272,13 @@ try {
 
           // Inline credit (avoid nested transactions)
           $msisdn = (string)$row['msisdn'];
-          $amount_cents = (int)round(((float)$row['amount'])*100);
+          $amount_cents = 0;
+          if (isset($row['amount_cents']) && is_numeric($row['amount_cents'])) {
+            $amount_cents = (int)$row['amount_cents'];
+          }
+          if ($amount_cents <= 0 && isset($row['amount'])) {
+            $amount_cents = (int)round(((float)$row['amount']) * 100);
+          }
 
           // ensure account row exists
           $PDO->prepare("INSERT INTO accounts (msisdn,balance_cents) VALUES (:m,0)

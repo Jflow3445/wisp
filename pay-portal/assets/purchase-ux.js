@@ -33,7 +33,11 @@
         const r = await fetch('purchase.php',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({msisdn:msisdn,plan_code:code})});
         const j = await r.json().catch(()=>({ok:false,error:'Invalid JSON from server'}));
-        if(!r.ok || !j.ok) return alert('Purchase failed: '+(j.error||r.statusText||r.status));
+        if(!r.ok || !j.ok){
+          let msg = (j && (j.error || j.message)) || r.statusText || r.status;
+          if (j && j.details) msg += ' (' + j.details + ')';
+          return alert('Purchase failed: ' + msg);
+        }
         alert('Purchase successful.'+(j.expires_at?`\nExpires: ${j.expires_at}`:'')+(j.ref?`\nRef: ${j.ref}`:''));
         if(window.refreshUser) window.refreshUser(msisdn);
       }catch(err){ alert('Purchase error: '+err); }

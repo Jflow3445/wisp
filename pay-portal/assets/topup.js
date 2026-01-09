@@ -64,7 +64,11 @@
             body: JSON.stringify({ msisdn: typed, plan_code: code })
           });
           var j = await resp.json().catch(function(){ return {ok:false,error:'Invalid JSON'}; });
-          if(!resp.ok || !j.ok) alert('Purchase failed: ' + (j.error||resp.statusText));
+          if(!resp.ok || !j.ok){
+            var msg = (j && (j.error || j.message)) || resp.statusText || 'Error';
+            if (j && j.details) msg += ' (' + j.details + ')';
+            alert('Purchase failed: ' + msg);
+          }
           else { alert('Purchase successful.'); callRefreshUser(typed); }
         }catch(e){ alert('Network error: '+e.message); }
         finally{ this.disabled=false; this.textContent=old; }
