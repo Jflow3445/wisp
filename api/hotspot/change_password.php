@@ -98,11 +98,12 @@ try {
   if (!$found) fail('Account not found. Please sign up first.', $user);
   if (!$match) fail('Current password is incorrect.', $user);
 
-  $upd = $pdo->prepare("UPDATE radcheck SET value = ? WHERE username = ? AND attribute = 'Cleartext-Password'");
-  $ins = $pdo->prepare("INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)");
+  $upsert = $pdo->prepare(
+    "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
+     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
+  );
   foreach ($targets as $u) {
-    $upd->execute([$pass, $u]);
-    if ($upd->rowCount() < 1) $ins->execute([$u, $pass]);
+    $upsert->execute([$u, $pass]);
   }
 
   http_response_code(200);
