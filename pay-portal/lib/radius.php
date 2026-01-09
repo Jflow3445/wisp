@@ -105,8 +105,8 @@ function nister_fetch_expiration(PDO $r, array $users, DateTimeZone $tz): ?DateT
     $val = $st->fetchColumn();
     if ($val === false || $val === null || $val === '') continue;
     $v = (string)$val;
-    $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $v, $tz);
-    if (!$dt) $dt = DateTimeImmutable::createFromFormat('d M Y H:i:s', $v, $tz);
+    $dt = DateTimeImmutable::createFromFormat('d M Y H:i:s', $v, $tz);
+    if (!$dt) $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $v, $tz);
     if (!$dt) $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $v, $tz);
     if (!$dt) {
       try { $dt = new DateTimeImmutable($v, $tz); } catch (Throwable $e) { $dt = null; }
@@ -415,7 +415,7 @@ function radius_user_status(string $msisdn): array {
     'can_browse' => $canBrowse,
     'group' => $planGroup,
     'addrlist' => $addrList,
-    'expires_at' => $expiry ? $expiry->format('M d Y H:i:s') : null,
+    'expires_at' => $expiry ? $expiry->format('d M Y H:i:s') : null,
     'quota_bytes' => $quotaBytes,
     'used_bytes' => $usedBytes,
   ];
@@ -441,12 +441,12 @@ function radius_get_active_plan(string $msisdn): ?array {
   if (!$g) {
     // No group -> maybe not applied through group model; still try to surface expiration
     $exp = nister_fetch_expiration($r, $targets, $tz);
-    return $exp ? ['plan_code'=>null,'expires_at'=>$exp->format('M d Y H:i:s')] : null;
+    return $exp ? ['plan_code'=>null,'expires_at'=>$exp->format('d M Y H:i:s')] : null;
   }
 
   // Expiration
   $exp = nister_fetch_expiration($r, $targets, $tz);
-  $exp = $exp ? $exp->format('M d Y H:i:s') : null;
+  $exp = $exp ? $exp->format('d M Y H:i:s') : null;
 
   // Gather plan attrs from group tables
   $attrs = [];

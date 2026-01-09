@@ -125,8 +125,8 @@ $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($active && !empty($active['expires_at'])) {
         $expRaw = (string)$active['expires_at'];
         $tz = new DateTimeZone(date_default_timezone_get());
-        $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $expRaw, $tz);
-        if (!$dt) $dt = DateTimeImmutable::createFromFormat('d M Y H:i:s', $expRaw, $tz);
+        $dt = DateTimeImmutable::createFromFormat('d M Y H:i:s', $expRaw, $tz);
+        if (!$dt) $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $expRaw, $tz);
         if (!$dt) $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $expRaw, $tz);
         if (!$dt) {
           try { $dt = new DateTimeImmutable($expRaw, $tz); } catch (Throwable $e) { $dt = null; }
