@@ -31,6 +31,7 @@ $LOGIN_URL       = 'https://wifi.nister.org/login.html'; // MikroTik local login
 $GROUP_ON_CREATE = 'nopaid';                              // matches your hotspot "nopaid" concept
 $ADDR_LIST       = 'HS_NOPAID';                           // firewall address-list for unpaid
 $ENFORCE_UNIQUE  = true;                                  // do not overwrite existing passwords
+$DEFAULT_EXP_DAYS = 3650;                                 // keep nopaid accounts from auto-expiring
 /* ---------------------------- */
 
 function fail($code, $username = '', $dst = '', $name = '') {
@@ -44,6 +45,14 @@ function fail($code, $username = '', $dst = '', $name = '') {
   header('Cache-Control: no-store');
   header('Location: ' . $url, true, 303);
   exit;
+}
+
+function username_variants(string $u): array {
+  $d = preg_replace('/\D+/', '', $u);
+  if ($d === '') return [$u];
+  if (preg_match('/^233\d{9}$/', $d)) return [$d, '0' . substr($d, 3)];
+  if (preg_match('/^0\d{9}$/', $d))   return [$d, '233' . substr($d, 1)];
+  return [$d];
 }
 
 /* ----- read + validate form ----- */
@@ -82,39 +91,47 @@ try {
 
   $pdo->beginTransaction();
 
-  // Ensure/Update Cleartext-Password
-  $stmt = $pdo->prepare("SELECT id FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password' LIMIT 1");
-  $stmt->execute([$user]);
-  if ($row = $stmt->fetch()) {
-    if ($ENFORCE_UNIQUE) {
-      $pdo->rollBack();
-      fail('account_exists', $user, $dst, $name);
+  $targets = array_values(array_unique(array_filter(array_merge([$user], username_variants($user)))));
+
+  if ($ENFORCE_UNIQUE) {
+    $check = $pdo->prepare("SELECT username FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password' LIMIT 1");
+    foreach ($targets as $u) {
+      $check->execute([$u]);
+      if ($check->fetchColumn() !== false) {
+        $pdo->rollBack();
+        fail('account_exists', $user, $dst, $name);
+      }
     }
-    $upd = $pdo->prepare("UPDATE radcheck SET value = ? WHERE id = ?");
-    $upd->execute([$pass, $row['id']]);
-  } else {
-    $ins = $pdo->prepare("INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)");
-    $ins->execute([$user, $pass]);
   }
 
-  // Ensure Mikrotik-Address-List := HS_NOPAID
-  $stmt = $pdo->prepare("SELECT id FROM radreply WHERE username = ? AND attribute = 'Mikrotik-Address-List' LIMIT 1");
-  $stmt->execute([$user]);
-  if ($rr = $stmt->fetch()) {
-    $upd = $pdo->prepare("UPDATE radreply SET value = ? WHERE id = ?");
-    $upd->execute([$ADDR_LIST, $rr['id']]);
-  } else {
-    $ins = $pdo->prepare("INSERT INTO radreply (username, attribute, op, value) VALUES (?, 'Mikrotik-Address-List', ':=', ?)");
-    $ins->execute([$user, $ADDR_LIST]);
-  }
+  $expAt = (new DateTimeImmutable('now', new DateTimeZone('UTC')))
+    ->modify('+' . (int)$DEFAULT_EXP_DAYS . ' days')
+    ->setTime(23, 59, 59);
+  $expStr = $expAt->format('d M Y H:i:s');
 
-  // Ensure user is in group 'nopaid' (optional but useful for policy)
-  if ($GROUP_ON_CREATE !== '') {
-    $stmt = $pdo->prepare("SELECT id FROM radusergroup WHERE username = ? AND groupname = ? LIMIT 1");
-    $stmt->execute([$user, $GROUP_ON_CREATE]);
-    if (!$stmt->fetch()) {
-      $ins = $pdo->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES (?, ?, 1)");
-      $ins->execute([$user, $GROUP_ON_CREATE]);
+  $passUpsert = $pdo->prepare(
+    "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
+     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
+  );
+  $expUpsert = $pdo->prepare(
+    "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Expiration', ':=', ?)
+     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
+  );
+  $addrUpsert = $pdo->prepare(
+    "INSERT INTO radreply (username, attribute, op, value) VALUES (?, 'Mikrotik-Address-List', ':=', ?)
+     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
+  );
+  $groupUpsert = $pdo->prepare(
+    "INSERT INTO radusergroup (username, groupname, priority) VALUES (?, ?, 1)
+     ON DUPLICATE KEY UPDATE priority = VALUES(priority)"
+  );
+
+  foreach ($targets as $u) {
+    $passUpsert->execute([$u, $pass]);
+    $expUpsert->execute([$u, $expStr]);
+    $addrUpsert->execute([$u, $ADDR_LIST]);
+    if ($GROUP_ON_CREATE !== '') {
+      $groupUpsert->execute([$u, $GROUP_ON_CREATE]);
     }
   }
 

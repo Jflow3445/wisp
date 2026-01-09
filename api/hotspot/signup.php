@@ -4,9 +4,9 @@ declare(strict_types=1);
 /*
   Flow:
   - Validate inputs
-  - Create user in radcheck (Cleartext-Password)
+  - Create user in radcheck (Cleartext-Password + Expiration)
   - Set nopaid group + HS_NOPAID address list
-  - Return auto-post to MikroTik login
+  - Show registration success page
 */
 
 require_once __DIR__ . '/_db.php';
@@ -29,7 +29,16 @@ $LOGIN_URL       = 'https://wifi.nister.org/login.html';
 $GROUP_ON_CREATE = 'nopaid';
 $ADDR_LIST       = 'HS_NOPAID';
 $ENFORCE_UNIQUE  = true;
+$DEFAULT_EXP_DAYS = 3650; // keep nopaid accounts from auto-expiring
 // --------------
+
+function username_variants(string $u): array {
+  $d = preg_replace('/\D+/', '', $u);
+  if ($d === '') return [$u];
+  if (preg_match('/^233\d{9}$/', $d)) return [$d, '0' . substr($d, 3)];
+  if (preg_match('/^0\d{9}$/', $d))   return [$d, '233' . substr($d, 1)];
+  return [$d];
+}
 
 function fail(string $code, string $username = '', string $dst = '', string $name = ''): void {
   $back = 'https://wifi.nister.org/signup.html';
@@ -67,39 +76,47 @@ try {
   $pdo = hotspot_radius_pdo();
   $pdo->beginTransaction();
 
-  // Ensure/Update Cleartext-Password
-  $stmt = $pdo->prepare("SELECT id FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password' LIMIT 1");
-  $stmt->execute([$username]);
-  if ($row = $stmt->fetch()) {
-    if ($ENFORCE_UNIQUE) {
-      $pdo->rollBack();
-      fail('account_exists', $username, $dst, $name);
+  $targets = array_values(array_unique(array_filter(array_merge([$username], username_variants($username)))));
+
+  if ($ENFORCE_UNIQUE) {
+    $check = $pdo->prepare("SELECT username FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password' LIMIT 1");
+    foreach ($targets as $u) {
+      $check->execute([$u]);
+      if ($check->fetchColumn() !== false) {
+        $pdo->rollBack();
+        fail('account_exists', $username, $dst, $name);
+      }
     }
-    $upd = $pdo->prepare("UPDATE radcheck SET value = ? WHERE id = ?");
-    $upd->execute([$password, $row['id']]);
-  } else {
-    $ins = $pdo->prepare("INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)");
-    $ins->execute([$username, $password]);
   }
 
-  // Ensure Mikrotik-Address-List := HS_NOPAID
-  $stmt = $pdo->prepare("SELECT id FROM radreply WHERE username = ? AND attribute = 'Mikrotik-Address-List' LIMIT 1");
-  $stmt->execute([$username]);
-  if ($rr = $stmt->fetch()) {
-    $upd = $pdo->prepare("UPDATE radreply SET value = ? WHERE id = ?");
-    $upd->execute([$ADDR_LIST, $rr['id']]);
-  } else {
-    $ins = $pdo->prepare("INSERT INTO radreply (username, attribute, op, value) VALUES (?, 'Mikrotik-Address-List', ':=', ?)");
-    $ins->execute([$username, $ADDR_LIST]);
-  }
+  $expAt = (new DateTimeImmutable('now', new DateTimeZone('UTC')))
+    ->modify('+' . (int)$DEFAULT_EXP_DAYS . ' days')
+    ->setTime(23, 59, 59);
+  $expStr = $expAt->format('d M Y H:i:s');
 
-  // Ensure user is in group 'nopaid'
-  if ($GROUP_ON_CREATE !== '') {
-    $stmt = $pdo->prepare("SELECT id FROM radusergroup WHERE username = ? AND groupname = ? LIMIT 1");
-    $stmt->execute([$username, $GROUP_ON_CREATE]);
-    if (!$stmt->fetch()) {
-      $ins = $pdo->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES (?, ?, 1)");
-      $ins->execute([$username, $GROUP_ON_CREATE]);
+  $passUpsert = $pdo->prepare(
+    "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
+     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
+  );
+  $expUpsert = $pdo->prepare(
+    "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Expiration', ':=', ?)
+     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
+  );
+  $addrUpsert = $pdo->prepare(
+    "INSERT INTO radreply (username, attribute, op, value) VALUES (?, 'Mikrotik-Address-List', ':=', ?)
+     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
+  );
+  $groupUpsert = $pdo->prepare(
+    "INSERT INTO radusergroup (username, groupname, priority) VALUES (?, ?, 1)
+     ON DUPLICATE KEY UPDATE priority = VALUES(priority)"
+  );
+
+  foreach ($targets as $u) {
+    $passUpsert->execute([$u, $password]);
+    $expUpsert->execute([$u, $expStr]);
+    $addrUpsert->execute([$u, $ADDR_LIST]);
+    if ($GROUP_ON_CREATE !== '') {
+      $groupUpsert->execute([$u, $GROUP_ON_CREATE]);
     }
   }
 
@@ -117,10 +134,7 @@ try {
   fail('server_error', $username, $dst, $name);
 }
 
-/* Anti-race: give DB/Radius a beat so first PAP doesn't fail */
-usleep(800000); // 0.8s
-
-// Return tiny page that auto-posts credentials to MikroTik login.
+// Return a registration success page (no auto-login).
 header("Content-Type: text/html; charset=utf-8");
 header("Cache-Control: no-store");
 header("X-Robots-Tag: noindex");
@@ -129,19 +143,11 @@ header("X-Robots-Tag: noindex");
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Logging you in...</title>
+  <title>Registration successful</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
-<form id="L" action="<?= htmlspecialchars($linkLoginOnly, ENT_QUOTES) ?>" method="post" target="_top">
-  <input type="hidden" name="username" value="<?= htmlspecialchars($username, ENT_QUOTES) ?>">
-  <input type="hidden" name="password" value="<?= htmlspecialchars($password, ENT_QUOTES) ?>">
-  <input type="hidden" name="dst"      value="<?= htmlspecialchars($dst, ENT_QUOTES) ?>">
-  <input type="hidden" name="popup"    value="false">
-  <noscript><button type="submit">Continue</button></noscript>
-</form>
-<script>
-  setTimeout(function(){ document.getElementById("L").submit(); }, 30);
-</script>
+  <h2>Registration successful</h2>
+  <p>Your account has been created. Proceed to <a href="<?= htmlspecialchars($LOGIN_URL, ENT_QUOTES) ?>" target="_top">Wi-Fi login</a>.</p>
 </body>
 </html>
