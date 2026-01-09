@@ -103,6 +103,11 @@ function wallet_credit(string $msisdn, int $cents, ?string $ref=null, ?string $n
   if ($cents<=0) throw new RuntimeException('credit must be positive');
   global $PDO;
   wallet_require_tables();
+  if ($ref) {
+    $st = $PDO->prepare("SELECT 1 FROM ledger WHERE ref=:r LIMIT 1");
+    $st->execute([':r'=>$ref]);
+    if ($st->fetchColumn()) return; // idempotent credit by ref
+  }
   $PDO->beginTransaction();
   try {
     if ($ref) {

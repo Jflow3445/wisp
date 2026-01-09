@@ -7,7 +7,7 @@ $DB_USER = 'hotspot_api';
 $DB_PASS = 'BishopFelix@50Dolla';
 
 $LOGIN_URL       = 'https://wifi.nister.org/login.html'; // MikroTik local login page
-$GROUP_ON_CREATE = 'nopaid';                              // matches your hotspot “nopaid” concept
+$GROUP_ON_CREATE = 'nopaid';                              // matches your hotspot "nopaid" concept
 $ADDR_LIST       = 'HS_NOPAID';                           // firewall address-list for unpaid
 $ENFORCE_UNIQUE  = false;                                 // false=update password if exists
 /* ---------------------------- */

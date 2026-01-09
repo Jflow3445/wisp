@@ -44,7 +44,7 @@ header('X-Robots-Tag: noindex');
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Logging you in…</title>
+  <title>Logging you in...</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>

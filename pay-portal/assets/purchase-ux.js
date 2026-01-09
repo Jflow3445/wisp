@@ -45,7 +45,9 @@
     try{
       const r = await fetch('me.php?msisdn='+encodeURIComponent(u));
       if(!r.ok) return; const j = await r.json().catch(()=>({}));
-      const who=$('#who'), bal=$('#bal'), active=$('#active');
+      const who=$('#who');
+      const bal=$('#balance_stat') || $('#bal');
+      const active=$('#active');
       if(who) who.textContent = j.msisdn || u;
       if(bal && typeof j.balance_cents==='number') bal.textContent = formatCents(j.balance_cents);
       const arr = Array.isArray(j.plans)?j.plans:[];

@@ -12,7 +12,12 @@ declare(strict_types=1);
 $username = preg_replace("/\s+/", "", $_POST["username"] ?? "");
 $password = (string)($_POST["password"] ?? "");
 $dst      = (string)($_POST["dst"] ?? "");
-$linkLoginOnly = (string)($_POST["link_login_only"] ?? "https://wifi.nister.org/login");
+$defaultLogin = "https://wifi.nister.org/login";
+$linkLoginOnly = (string)($_POST["link_login_only"] ?? $defaultLogin);
+$u = parse_url($linkLoginOnly);
+if (!$u || !isset($u["scheme"], $u["host"]) || !in_array($u["host"], ["wifi.nister.org", "192.168.88.1"], true)) {
+  $linkLoginOnly = $defaultLogin;
+}
 
 // Minimal safety
 if ($username === "" || $password === "") {
@@ -27,7 +32,7 @@ if ($username === "" || $password === "") {
  * Some stacks (SQL -> FreeRADIUS, or your API layer) need a beat before the
  * NAS can authenticate the *brand new* user. A short sleep saves you from
  * the first-try \"invalid username/password\" even though the account exists.
- * Tune between 300–1500 ms as needed (start with 800 ms).
+ * Tune between 300-1500 ms as needed (start with 800 ms).
  * -----------------------------------------------------------------------*/
 usleep(800000); // 0.8 seconds
 
@@ -40,7 +45,7 @@ header("X-Robots-Tag: noindex");
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Logging you in…</title>
+  <title>Logging you in...</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>

@@ -8,7 +8,7 @@
  * - plan_name from Nister-Plan-Name else resolved group
  * - quota_bytes from Nister-Quota-Bytes or Mikrotik hi/lo (Gigawords + Total-Limit)
  * - used_bytes from radacct (schema-tolerant)
- * - can_browse = paid && !expired && !exhausted
+ * - can_browse = paid && !expired && !exhausted && !policy_limited
  *
  * Params:
  *   username=... (required)
@@ -135,6 +135,7 @@ function fetch_user_attrs(PDO $pdo, string $u1, string $u2): array {
 
 function fetch_group_attrs(PDO $pdo, string $u1, string $u2): array {
   // First attribute by priority wins (closest to priority=0 wins)
+  $out = [];
   $st = $pdo->prepare("
     SELECT rug.groupname, rug.priority, rgr.attribute, rgr.value
       FROM radusergroup AS rug
@@ -143,7 +144,19 @@ function fetch_group_attrs(PDO $pdo, string $u1, string $u2): array {
   ORDER BY (rug.groupname='nopaid') ASC, rug.priority ASC, rug.groupname ASC
   ");
   $st->execute([':a'=>$u1, ':b'=>$u2]);
-  $out = [];
+  foreach ($st as $row) {
+    $k = (string)$row['attribute'];
+    if (!array_key_exists($k, $out)) $out[$k] = (string)$row['value'];
+  }
+
+  $st = $pdo->prepare("
+    SELECT rug.groupname, rug.priority, rgc.attribute, rgc.value
+      FROM radusergroup AS rug
+      JOIN radgroupcheck AS rgc ON rgc.groupname = rug.groupname
+     WHERE rug.username IN (:a,:b)
+  ORDER BY (rug.groupname='nopaid') ASC, rug.priority ASC, rug.groupname ASC
+  ");
+  $st->execute([':a'=>$u1, ':b'=>$u2]);
   foreach ($st as $row) {
     $k = (string)$row['attribute'];
     if (!array_key_exists($k, $out)) $out[$k] = (string)$row['value'];
@@ -277,15 +290,35 @@ if ($expRaw !== null && trim($expRaw) !== '') {
 }
 
 $now = new DateTime('now', $tz);
+$durationDays = $days;
+if (isset($attrs['Nister-Duration-Days']) && trim((string)$attrs['Nister-Duration-Days']) !== '') {
+  $cand = (int)$attrs['Nister-Duration-Days'];
+  if ($cand > 0) $durationDays = $cand;
+}
 $periodStart = ($expiry instanceof DateTime)
-  ? (clone $expiry)->modify("-{$days} days")
-  : (clone $now)->modify("-{$days} days");
+  ? (clone $expiry)->modify("-{$durationDays} days")
+  : (clone $now)->modify("-{$durationDays} days");
 
 $quotaBytes = quota_bytes_from_attrs($attrs);
 $usedBytes  = compute_used_bytes($pdo, $u1, $u2, $periodStart->format('Y-m-d H:i:s'));
 
 $expired   = ($expiry instanceof DateTime) ? ($expiry <= $now) : false;
 $exhausted = ($quotaBytes !== null) ? ($usedBytes >= $quotaBytes) : false;
+
+$addrListAttr = null;
+if (isset($attrs['Mikrotik-Address-List']) && trim((string)$attrs['Mikrotik-Address-List']) !== '') {
+  $addrListAttr = (string)$attrs['Mikrotik-Address-List'];
+} elseif (isset($attrs['MT-Address-List']) && trim((string)$attrs['MT-Address-List']) !== '') {
+  $addrListAttr = (string)$attrs['MT-Address-List'];
+}
+$policyLimited = false;
+if ($addrListAttr !== null) {
+  $al = strtoupper($addrListAttr);
+  if (in_array($al, ['HS_LIMITED','HS_NOPAID'], true)) $policyLimited = true;
+}
+if ($group !== null && in_array(strtoupper((string)$group), ['HS_LIMITED','HS_NOPAID'], true)) {
+  $policyLimited = true;
+}
 
 // Paid heuristic:
 // - If group exists and not nopaid => paid
@@ -294,7 +327,7 @@ $paid = false;
 if ($group !== null && $group !== '' && strtolower($group) !== 'nopaid') $paid = true;
 if (!$paid && ($expiry instanceof DateTime || $quotaBytes !== null)) $paid = true;
 
-$canBrowse = $paid && !$expired && !$exhausted;
+$canBrowse = $paid && !$expired && !$exhausted && !$policyLimited;
 
 if ($wantPlain) {
   pexit($canBrowse ? "PAID" : "NOPAID");
@@ -319,7 +352,7 @@ $out = [
   'rate'             => $rate,
 
   // Always aligned with can_browse
-  'addrlist'         => $canBrowse ? 'HS_ACTIVE' : 'HS_LIMITED',
+  'addrlist'         => $addrListAttr ?? ($canBrowse ? 'HS_ACTIVE' : 'HS_LIMITED'),
 
   'quota_bytes'      => $quotaBytes, // null => Unlimited
   'used_bytes'       => $usedBytes,
