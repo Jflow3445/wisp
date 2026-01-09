@@ -8,6 +8,13 @@ require_once __DIR__ . '/_db.php';
 $LOGIN_URL = 'https://wifi.nister.org/login.html';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
+function username_variants(string $u): array {
+  $d = preg_replace('/\D+/', '', $u);
+  if ($d === '') return [$u];
+  if (preg_match('/^233\d{9}$/', $d)) return [$d, '0' . substr($d, 3)];
+  if (preg_match('/^0\d{9}$/', $d))   return [$d, '233' . substr($d, 1)];
+  return [$d];
+}
 
 function fail(string $msg, string $user = ''): void {
   http_response_code(400);
@@ -58,18 +65,26 @@ header('Cache-Control: no-store');
 try {
   $pdo = hotspot_radius_pdo();
 
-  $stmt = $pdo->prepare("SELECT id, value FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password' LIMIT 1");
-  $stmt->execute([$user]);
-  $row = $stmt->fetch();
-  if (!$row) {
-    fail('Account not found. Please sign up first.', $user);
+  $targets = array_values(array_unique(array_filter(array_merge([$user], username_variants($user)))));
+  $found = false;
+  $match = false;
+  $st = $pdo->prepare("SELECT value FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password' LIMIT 1");
+  foreach ($targets as $u) {
+    $st->execute([$u]);
+    $val = $st->fetchColumn();
+    if ($val === false || $val === null) continue;
+    $found = true;
+    if ((string)$val === $current) { $match = true; break; }
   }
-  if ((string)$row['value'] !== $current) {
-    fail('Current password is incorrect.', $user);
-  }
+  if (!$found) fail('Account not found. Please sign up first.', $user);
+  if (!$match) fail('Current password is incorrect.', $user);
 
-  $upd = $pdo->prepare("UPDATE radcheck SET value = ? WHERE id = ?");
-  $upd->execute([$pass, $row['id']]);
+  $upd = $pdo->prepare("UPDATE radcheck SET value = ? WHERE username = ? AND attribute = 'Cleartext-Password'");
+  $ins = $pdo->prepare("INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)");
+  foreach ($targets as $u) {
+    $upd->execute([$pass, $u]);
+    if ($upd->rowCount() < 1) $ins->execute([$u, $pass]);
+  }
 
   http_response_code(200);
   header("Content-Type: text/html; charset=utf-8");
