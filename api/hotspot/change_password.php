@@ -46,10 +46,29 @@ function pick(array $src, array $keys): string {
 $input = $_POST;
 if (!$input) $input = $_REQUEST;
 
-$user = pick($input, ['username', 'user', 'msisdn', 'phone', 'account']);
-$current = pick($input, ['current_password', 'current', 'old_password', 'oldpass', 'password_old', 'old']);
-$pass = pick($input, ['password', 'new_password', 'new_password1', 'newpass', 'pass', 'password_new', 'newpass1']);
-$pass2 = pick($input, ['password2', 'password_confirm', 'new_password2', 'newpass2', 'confirm_password', 'new_password_confirm']);
+$user = pick($input, ['username', 'user', 'login', 'user_name', 'msisdn', 'phone', 'account']);
+$current = pick($input, [
+  'current_password', 'currentPassword', 'currentpassword', 'current',
+  'old_password', 'oldpassword', 'oldpass', 'password_old', 'password_current',
+  'current-password', 'old-password', 'old'
+]);
+$pass = pick($input, [
+  'new_password', 'newpassword', 'password_new', 'new_password1', 'newpass', 'newpass1',
+  'password1', 'pass', 'password'
+]);
+$pass2 = pick($input, [
+  'password2', 'password_confirm', 'new_password2', 'newpassword2', 'newpass2',
+  'confirm_password', 'new_password_confirm'
+]);
+
+if ($current === '') {
+  $maybeCurrent = pick($input, ['password', 'currentpassword', 'oldpassword']);
+  $maybeNew = pick($input, ['new_password', 'newpassword', 'password_new', 'new_password1', 'newpass', 'password1']);
+  if ($maybeCurrent !== '' && $maybeNew !== '' && $maybeNew !== $maybeCurrent) {
+    $current = $maybeCurrent;
+    if ($pass === '') $pass = $maybeNew;
+  }
+}
 
 if ($user === '' || $pass === '' || $current === '') {
   fail('Please provide your account, current password, and a new password.', $user);
