@@ -154,7 +154,8 @@ function nister_apply_topup_fallback(PDO $r, string $user, int $totalBytes, stri
  */
 function radius_apply_plan__old(string $msisdn, array $plan, DateTimeImmutable $expiresAt): void {
     $r = rdb_pdo();
-    $expStr = $expiresAt->format('M d Y H:i:s'); // e.g., "Dec 04 2025 23:59:59"
+    // DB enforces "DD Mon YYYY HH:MM:SS"
+    $expStr = $expiresAt->format('d M Y H:i:s'); // e.g., "04 Dec 2025 23:59:59"
 
     // Nister: apply to BOTH username variants (local 0xxxxxxxxx & canonical 233xxxxxxxxx)
     $___targets = nister_username_variants($msisdn);
@@ -286,7 +287,8 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
     // Expiration: extend from later of now/current expiry
     $baseStart = ($currExp instanceof DateTimeImmutable && $currExp > $now) ? $currExp : $now;
     $expAt = $baseStart->modify('+' . $durDays . ' days')->setTime(23, 59, 59);
-    $expStr = $expAt->format('M d Y H:i:s');
+    // DB enforces "DD Mon YYYY HH:MM:SS"
+    $expStr = $expAt->format('d M Y H:i:s');
 
     foreach ($targets as $u) {
         if ($u === '') continue;
