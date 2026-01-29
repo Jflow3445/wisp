@@ -221,7 +221,7 @@
             </div>
           </div>
           <div class="support">
-            <a id="wa_link" class="link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+            <a id="wa_link" class="link" href="https://wa.me/233530488905" target="_blank" rel="noopener">WhatsApp support</a>
             <span class="sub">Support team replies quickly during working hours.</span>
           </div>
         </div>
