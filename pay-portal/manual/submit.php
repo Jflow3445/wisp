@@ -20,4 +20,4 @@ VALUES(:r,:m,:a,:me,'pending',:p,:n)")
 ->execute([':r'=>$ref,':m'=>$msisdn,':a'=>$amount,':me'=>$method,':p'=>$payer,':n'=>$notes]);
 
 json_out(['ok'=>true,'ref'=>$ref,'status'=>'pending',
-  'momo_number'=>'0530488905','momo_names'=>['George Aryittey','GRASAG']]);
+  'momo_number'=>'0530488905','momo_names'=>['GRASAG-UHAS']]);

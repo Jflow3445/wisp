@@ -8,7 +8,7 @@ header('Pragma: no-cache');
  * Canonical values (can be overridden via ENV in config.php if desired)
  */
 $network = $ENV['TOPUP_NETWORK'] ?? 'MTN Ghana';
-$name    = $ENV['TOPUP_NAME']    ?? 'George Aryittey';
+$name    = $ENV['TOPUP_NAME']    ?? 'GRASAG-UHAS';
 $number  = $ENV['TOPUP_NUMBER']  ?? '0530488905';
 $waText  = $ENV['TOPUP_WA_TEXT'] ?? 'Hi, I need assistance with Nister Wifi';
 
