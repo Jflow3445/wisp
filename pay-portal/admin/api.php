@@ -247,17 +247,46 @@ try {
                 END)
             ORDER BY ws2.id DESC LIMIT 1
           ) AS window_start,
-          (
-            SELECT rq2.value
-            FROM radreply rq2
-            WHERE rq2.attribute='Nister-Quota-Bytes'
-              AND rq2.username IN (rug.username,
-                CASE
-                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                  ELSE rug.username
-                END)
-            ORDER BY rq2.id DESC LIMIT 1
+          COALESCE(
+            (
+              SELECT CAST(rq2.value AS UNSIGNED)
+              FROM radreply rq2
+              WHERE rq2.attribute='Nister-Quota-Bytes'
+                AND rq2.username IN (rug.username,
+                  CASE
+                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                    ELSE rug.username
+                  END)
+              ORDER BY rq2.id DESC LIMIT 1
+            ),
+            (
+              COALESCE((
+                SELECT CAST(rh.value AS UNSIGNED)
+                FROM radreply rh
+                WHERE rh.attribute='Mikrotik-Total-Limit-Gigawords'
+                  AND rh.username IN (rug.username,
+                    CASE
+                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                      ELSE rug.username
+                    END)
+                ORDER BY rh.id DESC LIMIT 1
+              ),0) * 4294967296
+              +
+              COALESCE((
+                SELECT CAST(rlq.value AS UNSIGNED)
+                FROM radreply rlq
+                WHERE rlq.attribute='Mikrotik-Total-Limit'
+                  AND rlq.username IN (rug.username,
+                    CASE
+                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                      ELSE rug.username
+                    END)
+                ORDER BY rlq.id DESC LIMIT 1
+              ),0)
+            )
           ) AS quota_bytes,
           (
             SELECT rl2.value
@@ -353,30 +382,88 @@ try {
             ELSE 0
           END AS expired_flag,
           CASE
-            WHEN (
-              SELECT rq3.value
-              FROM radreply rq3
-              WHERE rq3.attribute='Nister-Quota-Bytes'
-                AND rq3.username IN (rug.username,
-                  CASE
-                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                    ELSE rug.username
-                  END)
-              ORDER BY rq3.id DESC LIMIT 1
+            WHEN COALESCE(
+              (
+                SELECT CAST(rq3.value AS UNSIGNED)
+                FROM radreply rq3
+                WHERE rq3.attribute='Nister-Quota-Bytes'
+                  AND rq3.username IN (rug.username,
+                    CASE
+                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                      ELSE rug.username
+                    END)
+                ORDER BY rq3.id DESC LIMIT 1
+              ),
+              (
+                COALESCE((
+                  SELECT CAST(rh2.value AS UNSIGNED)
+                  FROM radreply rh2
+                  WHERE rh2.attribute='Mikrotik-Total-Limit-Gigawords'
+                    AND rh2.username IN (rug.username,
+                      CASE
+                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                        ELSE rug.username
+                      END)
+                  ORDER BY rh2.id DESC LIMIT 1
+                ),0) * 4294967296
+                +
+                COALESCE((
+                  SELECT CAST(rl2.value AS UNSIGNED)
+                  FROM radreply rl2
+                  WHERE rl2.attribute='Mikrotik-Total-Limit'
+                    AND rl2.username IN (rug.username,
+                      CASE
+                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                        ELSE rug.username
+                      END)
+                  ORDER BY rl2.id DESC LIMIT 1
+                ),0)
+              )
             ) IS NULL THEN 0
-            WHEN CAST((
-              SELECT rq4.value
-              FROM radreply rq4
-              WHERE rq4.attribute='Nister-Quota-Bytes'
-                AND rq4.username IN (rug.username,
-                  CASE
-                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                    ELSE rug.username
-                  END)
-              ORDER BY rq4.id DESC LIMIT 1
-            ) AS UNSIGNED) <= 0 THEN 1
+            WHEN COALESCE(
+              (
+                SELECT CAST(rq4.value AS UNSIGNED)
+                FROM radreply rq4
+                WHERE rq4.attribute='Nister-Quota-Bytes'
+                  AND rq4.username IN (rug.username,
+                    CASE
+                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                      ELSE rug.username
+                    END)
+                ORDER BY rq4.id DESC LIMIT 1
+              ),
+              (
+                COALESCE((
+                  SELECT CAST(rh3.value AS UNSIGNED)
+                  FROM radreply rh3
+                  WHERE rh3.attribute='Mikrotik-Total-Limit-Gigawords'
+                    AND rh3.username IN (rug.username,
+                      CASE
+                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                        ELSE rug.username
+                      END)
+                  ORDER BY rh3.id DESC LIMIT 1
+                ),0) * 4294967296
+                +
+                COALESCE((
+                  SELECT CAST(rl3.value AS UNSIGNED)
+                  FROM radreply rl3
+                  WHERE rl3.attribute='Mikrotik-Total-Limit'
+                    AND rl3.username IN (rug.username,
+                      CASE
+                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                        ELSE rug.username
+                      END)
+                  ORDER BY rl3.id DESC LIMIT 1
+                ),0)
+              )
+            ) <= 0 THEN 1
             WHEN (
               SELECT COALESCE(SUM(
                 COALESCE(ra2.acctinputoctets,0)+COALESCE(ra2.acctoutputoctets,0) +
@@ -404,18 +491,47 @@ try {
                   ),
                   DATE_SUB(NOW(), INTERVAL 30 DAY)
                 )
-            ) >= CAST((
-              SELECT rq5.value
-              FROM radreply rq5
-              WHERE rq5.attribute='Nister-Quota-Bytes'
-                AND rq5.username IN (rug.username,
-                  CASE
-                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                    ELSE rug.username
-                  END)
-              ORDER BY rq5.id DESC LIMIT 1
-            ) AS UNSIGNED) THEN 1
+            ) >= COALESCE(
+              (
+                SELECT CAST(rq5.value AS UNSIGNED)
+                FROM radreply rq5
+                WHERE rq5.attribute='Nister-Quota-Bytes'
+                  AND rq5.username IN (rug.username,
+                    CASE
+                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                      ELSE rug.username
+                    END)
+                ORDER BY rq5.id DESC LIMIT 1
+              ),
+              (
+                COALESCE((
+                  SELECT CAST(rh4.value AS UNSIGNED)
+                  FROM radreply rh4
+                  WHERE rh4.attribute='Mikrotik-Total-Limit-Gigawords'
+                    AND rh4.username IN (rug.username,
+                      CASE
+                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                        ELSE rug.username
+                      END)
+                  ORDER BY rh4.id DESC LIMIT 1
+                ),0) * 4294967296
+                +
+                COALESCE((
+                  SELECT CAST(rl4.value AS UNSIGNED)
+                  FROM radreply rl4
+                  WHERE rl4.attribute='Mikrotik-Total-Limit'
+                    AND rl4.username IN (rug.username,
+                      CASE
+                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                        ELSE rug.username
+                      END)
+                  ORDER BY rl4.id DESC LIMIT 1
+                ),0)
+              )
+            ) THEN 1
             ELSE 0
           END AS exhausted_flag
         FROM radusergroup rug

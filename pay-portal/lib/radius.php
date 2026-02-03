@@ -138,6 +138,27 @@ function nister_fetch_expiration(PDO $r, array $users, DateTimeZone $tz): ?DateT
   return $best;
 }
 
+function nister_fetch_window_start(PDO $r, array $users, DateTimeZone $tz): ?DateTimeImmutable {
+  if (!$users) return null;
+  $st = $r->prepare("SELECT `value` FROM radreply WHERE username=? AND attribute='Nister-Window-Start' LIMIT 1");
+  $best = null;
+  foreach ($users as $u) {
+    if ($u === '') continue;
+    $st->execute([$u]);
+    $val = $st->fetchColumn();
+    if ($val === false || $val === null || $val === '') continue;
+    $v = (string)$val;
+    $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $v, $tz);
+    if (!$dt) {
+      try { $dt = new DateTimeImmutable($v, $tz); } catch (Throwable $e) { $dt = null; }
+    }
+    if ($dt instanceof DateTimeImmutable) {
+      if (!$best || $dt > $best) $best = $dt;
+    }
+  }
+  return $best;
+}
+
 function nister_proc_missing(Throwable $e): bool {
   if ($e instanceof PDOException && isset($e->errorInfo[1]) && (int)$e->errorInfo[1] === 1305) {
     return true; // ER_SP_DOES_NOT_EXIST
@@ -291,12 +312,13 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
     $currGroup = $currCode ?: radius_pick_plan_group($r, $targets);
     $currExp = nister_fetch_expiration($r, $targets, $tz);
     $currDur = nister_duration_days($r, $targets, $currGroup, 30);
+    $currWindow = nister_fetch_window_start($r, $targets, $tz);
 
     // Remaining from current window
     $carry = 0;
     $prevTotal = nister_current_total_quota($r, $targets, $currGroup);
     if ($prevTotal && $currExp && $currExp > $now) {
-        $windowStart = $currExp->modify('-'.$currDur.' days');
+        $windowStart = $currWindow ?: $currExp->modify('-'.$currDur.' days');
         $used = nister_sum_used_bytes($r, $targets, $windowStart, $now);
         $rem = $prevTotal - $used;
         if ($rem > 0) $carry = $rem;
@@ -321,8 +343,7 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
         $planName = (string)($plan['display_name'] ?? $plan['name'] ?? $planCode);
         $addrList = (string)($plan['address_list'] ?? 'HS_ACTIVE');
         $rateLimit = (string)($plan['rate_limit'] ?? '');
-        $capBytes = (int)($plan['quota_bytes'] ?? 0);
-        if ($capBytes < 0) $capBytes = 0;
+        $capBytes = $combined;
 
         $started = false;
         if (!$r->inTransaction()) {
@@ -358,7 +379,10 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
                            SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'
                          )")->execute([':u'=>$u]);
             $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Address-List','MT-Address-List')")->execute([':u'=>$u]);
-            radius_set_reply($r, $u, 'Nister-Window-Start', ':=', $now->format('Y-m-d H:i:s'));
+            $windowStartStr = ($currExp instanceof DateTimeImmutable && $currExp > $now && $currWindow)
+              ? $currWindow->format('Y-m-d H:i:s')
+              : $now->format('Y-m-d H:i:s');
+            radius_set_reply($r, $u, 'Nister-Window-Start', ':=', $windowStartStr);
             if ($addrList !== '') {
                 radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addrList);
             }
