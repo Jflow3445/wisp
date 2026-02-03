@@ -318,6 +318,6 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
     window.NISTER_LOGGED_IN = <?= $loggedIn ? 'true' : 'false' ?>;
     window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
   </script>
-  <script src="assets/topup.js?v=9"></script>
+  <script src="assets/topup.js?v=10"></script>
 </body>
 </html>

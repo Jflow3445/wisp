@@ -8,7 +8,7 @@
 
   // ---------- API ----------
   async function fetchMe(){
-    var r = await fetch('me.php', {cache:'no-store'});
+    var r = await fetch('me.php', {cache:'no-store', credentials:'same-origin'});
     if(!r.ok) throw new Error('me.php '+r.status);
     var j = await r.json();
     if(!j || !j.ok) throw new Error((j&&j.error)||'bad json');
@@ -18,6 +18,7 @@
     var r = await fetch('deposit_request.php', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
       body: JSON.stringify(payload)
     });
     if (r.status === 401) { window.location.href = '/login.php'; return {ok:false,error:'unauthorized'}; }
@@ -65,6 +66,7 @@
           var resp = await fetch('purchase.php', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
+            credentials:'same-origin',
             body: JSON.stringify({ plan_code: code })
           });
           if (resp.status === 401) { window.location.href = '/login.php'; return; }
