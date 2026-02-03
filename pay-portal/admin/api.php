@@ -238,11 +238,16 @@ try {
           ) AS used_bytes,
           CASE
             WHEN rc.value IS NULL THEN 0
-            WHEN STR_TO_DATE(rc.value, '%d %b %Y %H:%i:%s') <= NOW() THEN 1
+            WHEN COALESCE(
+              STR_TO_DATE(rc.value, '%d %b %Y %H:%i:%s'),
+              STR_TO_DATE(rc.value, '%Y-%m-%d %H:%i:%s'),
+              STR_TO_DATE(rc.value, '%b %e %Y %H:%i:%s')
+            ) <= NOW() THEN 1
             ELSE 0
           END AS expired_flag,
           CASE
             WHEN rq.value IS NULL THEN 0
+            WHEN CAST(rq.value AS UNSIGNED) <= 0 THEN 1
             WHEN (
               SELECT COALESCE(SUM(
                 COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0) +
@@ -741,6 +746,56 @@ try {
       }
 
       echo json_encode($out);
+      break;
+    }
+
+    case 'user_force_expire': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      try {
+        $r = rdb_pdo();
+        $targets = nister_username_variants($msisdn);
+        $expStr = (new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get())))->format('d M Y H:i:s');
+        $ph = implode(",", array_fill(0, count($targets), "?"));
+        foreach ($targets as $u) {
+          radius_set_check($r, $u, 'Expiration', ':=', $expStr);
+        }
+        $r->prepare("DELETE FROM radusergroup WHERE username IN ($ph) AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')")
+          ->execute($targets);
+        $vals = implode(",", array_fill(0, count($targets), "(?,'HS_LIMITED',0)"));
+        $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES {$vals}")
+          ->execute($targets);
+        echo json_encode(['ok'=>true,'expires_at'=>$expStr]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'force_expire_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_force_exhaust': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      try {
+        $r = rdb_pdo();
+        $targets = nister_username_variants($msisdn);
+        foreach ($targets as $u) {
+          radius_set_reply($r, $u, 'Nister-Quota-Bytes', ':=', '0');
+          radius_set_reply($r, $u, 'Mikrotik-Total-Limit', ':=', '0');
+          radius_set_reply($r, $u, 'Mikrotik-Total-Limit-Gigawords', ':=', '0');
+          radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', 'HS_LIMITED');
+        }
+        $ph = implode(",", array_fill(0, count($targets), "?"));
+        $r->prepare("DELETE FROM radusergroup WHERE username IN ($ph) AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')")
+          ->execute($targets);
+        $vals = implode(",", array_fill(0, count($targets), "(?,'HS_LIMITED',0)"));
+        $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES {$vals}")
+          ->execute($targets);
+        echo json_encode(['ok'=>true]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'force_exhaust_failed','detail'=>$e->getMessage()]);
+      }
       break;
     }
 

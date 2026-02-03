@@ -373,10 +373,10 @@ admin_require_login();
       <table class="table small" id="user_states_tbl">
         <thead>
           <tr>
-            <th>User</th><th>Group</th><th>Expires</th><th>Quota</th><th>Used</th><th>Window</th><th>Expired</th><th>Exhausted</th><th>Rate</th>
+            <th>User</th><th>Group</th><th>Expires</th><th>Quota</th><th>Used</th><th>Window</th><th>Expired</th><th>Exhausted</th><th>Rate</th><th>Action</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="9" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="10" class="muted">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -656,7 +656,7 @@ function renderUserStates(rows){
   const tb = document.querySelector('#user_states_tbl tbody');
   if (!tb) return;
   if (!rows || rows.length === 0) {
-    tb.innerHTML = '<tr><td colspan="9" class="muted">No users.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" class="muted">No users.</td></tr>';
     return;
   }
   tb.innerHTML = rows.map(r => `<tr>
@@ -669,7 +669,28 @@ function renderUserStates(rows){
     <td>${r.expired_flag ? 'yes' : 'no'}</td>
     <td>${r.exhausted_flag ? 'yes' : 'no'}</td>
     <td>${safe(r.rate_limit || '')}</td>
+    <td>
+      <button class="btn small" data-act="active" data-u="${safe(r.username)}">Active</button>
+      <button class="btn small" data-act="limited" data-u="${safe(r.username)}">Limited</button>
+      <button class="btn small" data-act="nopaid" data-u="${safe(r.username)}">NoPay</button>
+      <button class="btn small approve" data-act="expire" data-u="${safe(r.username)}">Expire</button>
+      <button class="btn small approve" data-act="exhaust" data-u="${safe(r.username)}">Exhaust</button>
+    </td>
   </tr>`).join('');
+
+  tb.querySelectorAll('button[data-act]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      const u = ev.currentTarget.getAttribute('data-u') || '';
+      const act = ev.currentTarget.getAttribute('data-act') || '';
+      if (!u || !act) return;
+      if (act === 'active') await api('user_set_group', { msisdn: u, group: 'HS_ACTIVE' });
+      if (act === 'limited') await api('user_set_group', { msisdn: u, group: 'HS_LIMITED' });
+      if (act === 'nopaid') await api('user_set_group', { msisdn: u, group: 'HS_NOPAID' });
+      if (act === 'expire') await api('user_force_expire', { msisdn: u });
+      if (act === 'exhaust') await api('user_force_exhaust', { msisdn: u });
+      await loadUserStates();
+    });
+  });
 }
 
 function setPlanStatus(msg, state){
@@ -883,7 +904,12 @@ async function loadPending(){
 
 async function loadAlerts(){
   const j = await api('alerts_list', { limit: 200 });
-  if (!j.ok){ console.warn(j); return; }
+  if (!j.ok){
+    const tb = document.querySelector('#alerts_tbl tbody');
+    if (tb) tb.innerHTML = '<tr><td colspan="6" class="muted">Alerts error.</td></tr>';
+    console.warn(j);
+    return;
+  }
   renderAlerts(j.alerts || []);
 
   const autoRetry = document.getElementById('alerts_auto_retry');
