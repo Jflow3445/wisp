@@ -62,15 +62,35 @@ function radius_user_groups(PDO $r, array $users): array {
 }
 
 function radius_pick_plan_group(PDO $r, array $users): ?string {
+  // Legacy fallback: if a plan group exists, return it.
   $groups = radius_user_groups($r, $users);
   if (!$groups) return null;
   foreach ($groups as $g) {
-    $lg = strtolower($g);
-    if ($lg === 'nopaid') continue;
     if (preg_match('/^hs_/i', $g)) continue;
+    if (strtolower($g) === 'nopaid') continue;
     return $g;
   }
   return null;
+}
+
+function radius_plan_code_from_reply(PDO $r, array $users): ?string {
+  if (!$users) return null;
+  $ph = implode(",", array_fill(0, count($users), "?"));
+  $st = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Nister-Plan-Code' LIMIT 1");
+  $st->execute($users);
+  $val = $st->fetchColumn();
+  $code = ($val !== false && $val !== null) ? trim((string)$val) : '';
+  return $code !== '' ? $code : null;
+}
+
+function radius_plan_name_from_reply(PDO $r, array $users): ?string {
+  if (!$users) return null;
+  $ph = implode(",", array_fill(0, count($users), "?"));
+  $st = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Nister-Plan-Name' LIMIT 1");
+  $st->execute($users);
+  $val = $st->fetchColumn();
+  $name = ($val !== false && $val !== null) ? trim((string)$val) : '';
+  return $name !== '' ? $name : null;
 }
 
 function nister_duration_days(PDO $r, array $users, ?string $group, int $default=30): int {
@@ -126,9 +146,12 @@ function nister_proc_missing(Throwable $e): bool {
   return (str_contains($msg, 'nister_apply_topup') && (str_contains($msg, 'does not exist') || str_contains($msg, "doesn't exist") || str_contains($msg, 'not found')));
 }
 
-function nister_apply_topup_fallback(PDO $r, string $user, int $totalBytes, string $expStr, int $durDays, string $planName): void {
+function nister_apply_topup_fallback(PDO $r, string $user, int $totalBytes, string $expStr, int $durDays, string $planName, ?string $planCode=null): void {
   radius_set_check($r, $user, 'Expiration', ':=', $expStr);
   radius_set_reply($r, $user, 'Nister-Duration-Days', ':=', (string)$durDays);
+  if ($planCode !== null && $planCode !== '') {
+    radius_set_reply($r, $user, 'Nister-Plan-Code', ':=', $planCode);
+  }
   radius_set_reply($r, $user, 'Nister-Plan-Name', ':=', $planName);
 
   $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")
@@ -211,9 +234,9 @@ function nister_sum_used_bytes(PDO $r, array $users, DateTimeImmutable $startAt,
  * 2) group-level (radgroupreply/check.Nister-Quota-Bytes or Mikrotik-Total-Limit)
  */
 function nister_current_total_quota(PDO $r, array $users, ?string $group): ?int {
-    if (!empty($users)) {
-        $ph = implode(",", array_fill(0, count($users), "?"));
-        $st = $r->prepare("SELECT attribute, `value`
+  if (!empty($users)) {
+    $ph = implode(",", array_fill(0, count($users), "?"));
+    $st = $r->prepare("SELECT attribute, `value`
                            FROM radreply
                            WHERE attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')
                              AND username IN ($ph)");
@@ -254,7 +277,7 @@ function nister_current_total_quota(PDO $r, array $users, ?string $group): ?int 
  * Apply plan with ADDITIVE QUOTA semantics:
  * - Carry over remaining data from the current window, then add the new plan's quota
  * - Extend expiry from later of now/current expiry (end-of-day)
- * - Apply address list, rate limit, and set plan group
+ * - Apply address list, rate limit, and set per-user plan attributes
  * - Annotate with Nister-Duration-Days and Nister-Plan-Name
  */
 function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newExpiresAt): void {
@@ -263,8 +286,9 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
     $now = new DateTimeImmutable('now', $tz);
     $targets = nister_username_variants($msisdn);
 
-    // Current group (if any) and Expiration (for window math)
-    $currGroup = radius_pick_plan_group($r, $targets);
+    // Current plan code (reply or legacy group) and Expiration (for window math)
+    $currCode = radius_plan_code_from_reply($r, $targets);
+    $currGroup = $currCode ?: radius_pick_plan_group($r, $targets);
     $currExp = nister_fetch_expiration($r, $targets, $tz);
     $currDur = nister_duration_days($r, $targets, $currGroup, 30);
 
@@ -294,6 +318,7 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
     foreach ($targets as $u) {
         if ($u === '') continue;
         $planCode = (string)($plan['code'] ?? 'UNKNOWN');
+        $planName = (string)($plan['display_name'] ?? $plan['name'] ?? $planCode);
         $addrList = (string)($plan['address_list'] ?? 'HS_ACTIVE');
         $rateLimit = (string)($plan['rate_limit'] ?? '');
         $capBytes = (int)($plan['quota_bytes'] ?? 0);
@@ -317,12 +342,16 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
             }
 
             if (!$applied) {
-                nister_apply_topup_fallback($r, $u, $combined, $expStr, $durDays, $planCode);
+                nister_apply_topup_fallback($r, $u, $combined, $expStr, $durDays, $planCode, $planCode);
             }
             radius_set_check($r, $u, 'Expiration', ':=', $expStr);
 
-            radius_set_user_group($r, $u, $planCode);
-            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
+            // Set per-user plan metadata (no PLAN_* groups)
+            radius_set_reply($r, $u, 'Nister-Plan-Code', ':=', $planCode);
+            radius_set_reply($r, $u, 'Nister-Plan-Name', ':=', $planName);
+            radius_set_reply($r, $u, 'Nister-Duration-Days', ':=', (string)$durDays);
+
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
             $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                          SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
                          WHERE NOT EXISTS (
@@ -355,20 +384,11 @@ function radius_user_status(string $msisdn): array {
   }
 
   $groups = radius_user_groups($r, $targets);
-  $planGroup = null;
-  foreach ($groups as $g) {
-    $lg = strtolower($g);
-    if ($lg === 'nopaid') continue;
-    if (preg_match('/^hs_/i', $g)) continue;
-    $planGroup = $g;
-    break;
-  }
+  $planGroup = radius_plan_code_from_reply($r, $targets) ?: radius_pick_plan_group($r, $targets);
 
-  $hasNoPaid = false;
   $limitedGroup = false;
   foreach ($groups as $g) {
     $lg = strtolower($g);
-    if ($lg === 'nopaid') $hasNoPaid = true;
     if ($lg === 'hs_limited' || $lg === 'hs_nopaid') $limitedGroup = true;
   }
 
@@ -405,7 +425,6 @@ function radius_user_status(string $msisdn): array {
   $paid = false;
   if ($planGroup) $paid = true;
   if (!$paid && ($expiry instanceof DateTimeImmutable || $quotaBytes !== null)) $paid = true;
-  if (!$paid && $groups && !$hasNoPaid) $paid = true;
 
   $canBrowse = $paid && !$expired && !$exhausted && !$policyLimited;
 
@@ -427,16 +446,17 @@ function radius_get_active_plan(string $msisdn): ?array {
   $targets = nister_username_variants($msisdn);
   $ph = implode(",", array_fill(0, count($targets), "?"));
 
-  // Group (plan code)
-  $groups = radius_user_groups($r, $targets);
-  $g = null;
-  if ($groups) {
-    foreach ($groups as $cand) {
-      $lc = strtolower($cand);
-      if ($lc === 'nopaid') continue;
-      if (preg_match('/^hs_/i', $cand)) continue;
-      $g = $cand;
-      break;
+  // Plan code (reply or legacy group)
+  $g = radius_plan_code_from_reply($r, $targets);
+  if (!$g) {
+    $groups = radius_user_groups($r, $targets);
+    if ($groups) {
+      foreach ($groups as $cand) {
+        if (preg_match('/^hs_/i', $cand)) continue;
+        if (strtolower($cand) === 'nopaid') continue;
+        $g = $cand;
+        break;
+      }
     }
   }
   $tz = new DateTimeZone(date_default_timezone_get());
@@ -450,7 +470,7 @@ function radius_get_active_plan(string $msisdn): ?array {
   $exp = nister_fetch_expiration($r, $targets, $tz);
   $exp = $exp ? $exp->format('d M Y H:i:s') : null;
 
-  // Gather plan attrs from group tables
+  // Gather plan attrs from group tables (plan catalog)
   $attrs = [];
   foreach (['radgroupreply','radgroupcheck'] as $tbl) {
     $st3 = $r->prepare("SELECT attribute, `value` FROM {$tbl} WHERE groupname=:g");
@@ -460,8 +480,8 @@ function radius_get_active_plan(string $msisdn): ?array {
     }
   }
 
-  $displayName = null;
-  if (isset($attrs['Nister-Plan-Name']) && trim((string)$attrs['Nister-Plan-Name']) !== '') {
+  $displayName = radius_plan_name_from_reply($r, $targets);
+  if ($displayName === null && isset($attrs['Nister-Plan-Name']) && trim((string)$attrs['Nister-Plan-Name']) !== '') {
     $displayName = (string)$attrs['Nister-Plan-Name'];
   }
   $name = $displayName ?: str_replace(['_','-'],' ', $g);

@@ -111,7 +111,7 @@ $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
     $expires=(new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get())))
                 ->modify('+'.$days.' days')->setTime(23,59,59);
 
-    // Include plan code so we can set radusergroup
+    // Include plan code so we can write per-user plan attrs
     $applyPlan = [
       'code'         => $plan['code'],
       'address_list' => $plan['address_list']??'HS_ACTIVE',

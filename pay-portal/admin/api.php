@@ -90,7 +90,6 @@ function bytes_from_input(array $in): ?int {
 
 function plan_reserved(string $code): bool {
   $lc = strtolower($code);
-  if ($lc === 'nopaid') return true;
   if (str_starts_with($lc, 'hs_')) return true;
   return false;
 }
@@ -706,7 +705,7 @@ try {
         foreach (nister_username_variants($msisdn) as $u) {
           radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addr);
           if ($addrUp === 'HS_ACTIVE') {
-            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
             $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                          SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
                          WHERE NOT EXISTS (
@@ -759,10 +758,21 @@ try {
       if ($msisdn === '' || $group === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and group required']); break; }
       try {
         $r = rdb_pdo();
-        foreach (nister_username_variants($msisdn) as $u) {
-          radius_set_user_group($r, $u, $group);
+        $g = strtoupper($group);
+        if (!in_array($g, ['HS_ACTIVE','HS_LIMITED','HS_NOPAID'], true)) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'group_invalid','detail'=>'Only HS_ACTIVE, HS_LIMITED, HS_NOPAID allowed']);
+          break;
         }
-        echo json_encode(['ok'=>true,'group'=>$group]);
+        foreach (nister_username_variants($msisdn) as $u) {
+          $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
+          $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
+                       SELECT :u, :g, 0 FROM DUAL
+                       WHERE NOT EXISTS (
+                         SELECT 1 FROM radusergroup WHERE username=:u AND groupname=:g
+                       )")->execute([':u'=>$u, ':g'=>$g]);
+        }
+        echo json_encode(['ok'=>true,'group'=>$g]);
       } catch (Throwable $e) {
         http_response_code(500);
         echo json_encode(['ok'=>false,'error'=>'group_failed','detail'=>$e->getMessage()]);
@@ -776,7 +786,12 @@ try {
       try {
         $r = rdb_pdo();
         foreach (nister_username_variants($msisdn) as $u) {
-          radius_set_user_group($r, $u, 'nopaid');
+          $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
+          $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
+                       SELECT :u, 'HS_NOPAID', 0 FROM DUAL
+                       WHERE NOT EXISTS (
+                         SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_NOPAID'
+                       )")->execute([':u'=>$u]);
           radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', 'HS_NOPAID');
           $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Rate-Limit','Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")->execute([':u'=>$u]);
         }

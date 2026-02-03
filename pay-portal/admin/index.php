@@ -256,7 +256,7 @@ admin_require_login();
       <button class="btn approve" id="plan_save" type="button">Save Plan</button>
       <button class="btn" id="plan_reset" type="button">Reset</button>
     </div>
-    <div class="hint">Plan codes allow letters, numbers, "_" and "-". Groups starting with "HS_" or "nopaid" are protected.</div>
+    <div class="hint">Plan codes allow letters, numbers, "_" and "-". Groups starting with "HS_" are protected.</div>
     <div class="note" id="plan_status">No plan changes yet.</div>
     <div class="table-wrap">
       <table class="table" id="plans_tbl">
@@ -371,7 +371,7 @@ admin_require_login();
           </div>
           <div class="field">
             <label for="tool_group">Plan group</label>
-            <input id="tool_group" type="text" placeholder="PLAN_3GB">
+            <input id="tool_group" type="text" placeholder="HS_ACTIVE / HS_LIMITED / HS_NOPAID">
           </div>
         </div>
         <div class="tool-actions">
@@ -388,7 +388,7 @@ admin_require_login();
           <button class="btn" id="tool_set_addr" type="button">Set Address List</button>
           <button class="btn" id="tool_set_rate" type="button">Set Rate</button>
           <button class="btn" id="tool_set_group" type="button">Set Group</button>
-          <button class="btn decline" id="tool_reset_nopaid" type="button">Reset to NoPay</button>
+          <button class="btn decline" id="tool_reset_nopaid" type="button">Reset to HS_NOPAID</button>
         </div>
         <div class="note" id="tool_status">No user loaded.</div>
       </div>
@@ -448,7 +448,7 @@ function statusLabel(st){
   if (st.expired) return 'expired';
   if (st.exhausted) return 'exhausted';
   if (st.paid) return 'paid';
-  return 'nopaid';
+  return 'unpaid';
 }
 function parseAmountCents(val){
   const n = parseFloat(String(val || '').replace(/[^\d.]/g,''));

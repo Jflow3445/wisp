@@ -17,7 +17,7 @@ $db_pass = $__cfg['pass'] ?? '';
 $ENV=[
   'PAYSTACK_PUBLIC'=>'','PAYSTACK_SECRET'=>'',
   'DB_DSN'=>'','DB_USER'=>'','DB_PASS'=>'',
-  'NOPAID_GROUP'=>'nopaid','UNPAID_ADDRLIST'=>'HS_NOPAID','PAID_ADDRLIST'=>'HS_PAID',
+  'NOPAID_GROUP'=>'HS_NOPAID','UNPAID_ADDRLIST'=>'HS_NOPAID','PAID_ADDRLIST'=>'HS_ACTIVE',
   'DEFAULT_EMAIL_SUFFIX'=>'@wifi.nister.org','CURRENCY'=>'GHS','PLANS_JSON'=>'[]'
 ];
 $envFile='/etc/pay.env';

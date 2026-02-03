@@ -4,8 +4,8 @@
  * NISTER Hotspot Status API (clean + deterministic)
  *
  * - DB creds from /etc/nister/radius_db.php (optional env overrides)
- * - Resolves group across 0/233 username variants
- * - plan_name from Nister-Plan-Name else resolved group
+ * - Resolves policy group (HS_*) across 0/233 username variants
+ * - plan_name from Nister-Plan-Name else plan code
  * - quota_bytes from Nister-Quota-Bytes or Mikrotik hi/lo (Gigawords + Total-Limit)
  * - used_bytes from radacct (schema-tolerant)
  * - can_browse = paid && !expired && !exhausted && !policy_limited
@@ -99,13 +99,12 @@ function pdo_connect(array $cfg): PDO {
   }
 }
 
-function resolve_group(PDO $pdo, string $u1, string $u2): ?string {
-  // Prefer an actual plan group over HS_* helper groups.
+function resolve_policy_group(PDO $pdo, string $u1, string $u2): ?string {
   $st = $pdo->prepare("
     SELECT groupname, priority
       FROM radusergroup
      WHERE username IN (:a,:b)
-  ORDER BY (groupname='nopaid') ASC, priority ASC, groupname ASC
+  ORDER BY priority ASC, groupname ASC
   ");
   $st->execute([':a'=>$u1, ':b'=>$u2]);
 
@@ -117,12 +116,28 @@ function resolve_group(PDO $pdo, string $u1, string $u2): ?string {
   if (!$groups) return null;
 
   foreach ($groups as $g) {
-    if (strtolower($g) !== 'nopaid' && !preg_match('/^hs_/i', $g)) return $g;
+    if (preg_match('/^hs_/i', $g)) return $g;
   }
-  foreach ($groups as $g) {
-    if (strtolower($g) !== 'nopaid') return $g;
+  return null;
+}
+
+function resolve_legacy_plan_group(PDO $pdo, string $u1, string $u2): ?string {
+  // Legacy: plan group stored in radusergroup (deprecated)
+  $st = $pdo->prepare("
+    SELECT groupname, priority
+      FROM radusergroup
+     WHERE username IN (:a,:b)
+  ORDER BY priority ASC, groupname ASC
+  ");
+  $st->execute([':a'=>$u1, ':b'=>$u2]);
+  foreach ($st as $row) {
+    $g = (string)($row['groupname'] ?? '');
+    if ($g === '') continue;
+    if (preg_match('/^hs_/i', $g)) continue;
+    if (strtolower($g) === 'nopaid') continue;
+    return $g;
   }
-  return $groups[0] ?? null;
+  return null;
 }
 
 function fetch_user_attrs(PDO $pdo, string $u1, string $u2): array {
@@ -133,33 +148,15 @@ function fetch_user_attrs(PDO $pdo, string $u1, string $u2): array {
   return $out;
 }
 
-function fetch_group_attrs(PDO $pdo, string $u1, string $u2): array {
-  // First attribute by priority wins (closest to priority=0 wins)
+function fetch_plan_attrs(PDO $pdo, string $planCode): array {
   $out = [];
-  $st = $pdo->prepare("
-    SELECT rug.groupname, rug.priority, rgr.attribute, rgr.value
-      FROM radusergroup AS rug
-      JOIN radgroupreply AS rgr ON rgr.groupname = rug.groupname
-     WHERE rug.username IN (:a,:b)
-  ORDER BY (rug.groupname='nopaid') ASC, rug.priority ASC, rug.groupname ASC
-  ");
-  $st->execute([':a'=>$u1, ':b'=>$u2]);
-  foreach ($st as $row) {
-    $k = (string)$row['attribute'];
-    if (!array_key_exists($k, $out)) $out[$k] = (string)$row['value'];
-  }
-
-  $st = $pdo->prepare("
-    SELECT rug.groupname, rug.priority, rgc.attribute, rgc.value
-      FROM radusergroup AS rug
-      JOIN radgroupcheck AS rgc ON rgc.groupname = rug.groupname
-     WHERE rug.username IN (:a,:b)
-  ORDER BY (rug.groupname='nopaid') ASC, rug.priority ASC, rug.groupname ASC
-  ");
-  $st->execute([':a'=>$u1, ':b'=>$u2]);
-  foreach ($st as $row) {
-    $k = (string)$row['attribute'];
-    if (!array_key_exists($k, $out)) $out[$k] = (string)$row['value'];
+  foreach (['radgroupreply','radgroupcheck'] as $tbl) {
+    $st = $pdo->prepare("SELECT attribute, value FROM {$tbl} WHERE groupname=:g");
+    $st->execute([':g'=>$planCode]);
+    foreach ($st as $row) {
+      $k = (string)$row['attribute'];
+      if (!array_key_exists($k, $out)) $out[$k] = (string)$row['value'];
+    }
   }
   return $out;
 }
@@ -261,16 +258,24 @@ try {
   jexit(['ok'=>false,'error'=>'db_connect_failed']);
 }
 
-$group = null;
-try { $group = resolve_group($pdo, $u1, $u2); } catch (Throwable $e) { $group = null; }
+$policyGroup = null;
+try { $policyGroup = resolve_policy_group($pdo, $u1, $u2); } catch (Throwable $e) { $policyGroup = null; }
 
 $userAttrs  = [];
-$groupAttrs = [];
 try { $userAttrs  = fetch_user_attrs($pdo, $u1, $u2); } catch (Throwable $e) { $userAttrs = []; }
-try { $groupAttrs = fetch_group_attrs($pdo, $u1, $u2); } catch (Throwable $e) { $groupAttrs = []; }
 
-// merged: user overrides group
-$attrs = $groupAttrs;
+$planCode = isset($userAttrs['Nister-Plan-Code']) ? trim((string)$userAttrs['Nister-Plan-Code']) : '';
+if ($planCode === '') {
+  try { $planCode = resolve_legacy_plan_group($pdo, $u1, $u2) ?? ''; } catch (Throwable $e) { $planCode = ''; }
+}
+
+$planAttrs = [];
+if ($planCode !== '') {
+  try { $planAttrs = fetch_plan_attrs($pdo, $planCode); } catch (Throwable $e) { $planAttrs = []; }
+}
+
+// merged: user overrides plan defaults
+$attrs = $planAttrs;
 foreach ($userAttrs as $k => $v) $attrs[$k] = $v;
 
 // Expiration (prefer radcheck)
@@ -330,16 +335,21 @@ if ($addrListAttr !== null) {
   $al = strtoupper($addrListAttr);
   if (in_array($al, ['HS_LIMITED','HS_NOPAID'], true)) $policyLimited = true;
 }
-if ($group !== null && in_array(strtoupper((string)$group), ['HS_LIMITED','HS_NOPAID'], true)) {
+if ($policyGroup !== null && in_array(strtoupper((string)$policyGroup), ['HS_LIMITED','HS_NOPAID'], true)) {
   $policyLimited = true;
 }
 
 // Paid heuristic:
-// - If group exists and not nopaid => paid
-// - Or if expiry/quota exists => paid (covers no-group setups)
+// - If HS_NOPAID => unpaid
+// - Else if plan code OR expiry/quota exists => paid
 $paid = false;
-if ($group !== null && $group !== '' && strtolower($group) !== 'nopaid') $paid = true;
-if (!$paid && ($expiry instanceof DateTime || $quotaBytes !== null)) $paid = true;
+if ($policyGroup !== null && strtoupper($policyGroup) === 'HS_NOPAID') {
+  $paid = false;
+} elseif ($planCode !== '') {
+  $paid = true;
+} elseif ($expiry instanceof DateTime || $quotaBytes !== null) {
+  $paid = true;
+}
 
 $canBrowse = $paid && !$expired && !$exhausted && !$policyLimited;
 
@@ -347,10 +357,10 @@ if ($wantPlain) {
   pexit($canBrowse ? "PAID" : "NOPAID");
 }
 
-$GROUP = ($group !== null && $group !== '') ? $group : 'nopaid';
+$GROUP = ($policyGroup !== null && $policyGroup !== '') ? $policyGroup : 'HS_NOPAID';
 $PLAN  = (isset($attrs['Nister-Plan-Name']) && trim((string)$attrs['Nister-Plan-Name']) !== '')
   ? (string)$attrs['Nister-Plan-Name']
-  : $GROUP;
+  : ($planCode !== '' ? $planCode : $GROUP);
 
 $rate = $attrs['Mikrotik-Rate-Limit'] ?? null;
 
@@ -379,7 +389,7 @@ if ($wantDiag) {
   $out['diag'] = [
     'u1' => $u1,
     'u2' => $u2,
-    'group_resolved' => $group,
+    'group_resolved' => $policyGroup,
     'expiry_raw' => $expRaw,
     'expired' => $expired,
     'exhausted' => $exhausted,
