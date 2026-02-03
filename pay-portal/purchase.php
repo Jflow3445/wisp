@@ -55,7 +55,7 @@ require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/settings.php';
 
 try {
-  user_boot();
+  $ENV = user_boot();
   user_require_login(true);
   $in = array_merge($_POST, body_json());
   
@@ -147,6 +147,22 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
         try {
           $envArr = (isset($ENV) && is_array($ENV)) ? $ENV : [];
           radius_try_disconnect($msisdn, $envArr);
+        } catch (Throwable $e) { /* non-fatal */ }
+      }
+
+      // Fallback: if the session is missing/odd, try kick by current client IP
+      if (function_exists('radius_force_kick_ip')) {
+        try {
+          $ip = (string)($_SERVER['HTTP_X_REAL_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '');
+          if (str_contains($ip, ',')) $ip = trim(explode(',', $ip)[0]);
+          $ip = trim($ip);
+          if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            // Only allow RFC1918 to avoid kicking wrong public IPs behind proxies
+            if (preg_match('/^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[0-1])\\.)/', $ip)) {
+              $envArr = (isset($ENV) && is_array($ENV)) ? $ENV : [];
+              radius_force_kick_ip($ip, $msisdn, $envArr);
+            }
+          }
         } catch (Throwable $e) { /* non-fatal */ }
       }
 
