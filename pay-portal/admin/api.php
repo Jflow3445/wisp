@@ -1032,6 +1032,7 @@ try {
         $vals = implode(",", array_fill(0, count($targets), "(?,'HS_LIMITED',0)"));
         $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES {$vals}")
           ->execute($targets);
+        try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         echo json_encode(['ok'=>true,'expires_at'=>$expStr]);
       } catch (Throwable $e) {
         http_response_code(500);
@@ -1058,6 +1059,7 @@ try {
         $vals = implode(",", array_fill(0, count($targets), "(?,'HS_LIMITED',0)"));
         $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES {$vals}")
           ->execute($targets);
+        try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         echo json_encode(['ok'=>true]);
       } catch (Throwable $e) {
         http_response_code(500);

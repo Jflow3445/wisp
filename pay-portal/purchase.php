@@ -72,6 +72,23 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
   $price = (int)$plan['price_cents'];
   $ref   = 'BUY-'.date('YmdHis').'-'.bin2hex(random_bytes(3));
 
+  // Guard against accidental double-click / duplicate submits
+  try {
+    if (table_exists($PDO, 'purchases')) {
+      $st = $PDO->prepare("SELECT id FROM purchases
+                           WHERE msisdn=:m AND plan_code=:c
+                             AND created_at >= (NOW() - INTERVAL 30 SECOND)
+                             AND status IN ('pending','applied')
+                           ORDER BY id DESC LIMIT 1");
+      $st->execute([':m'=>$msisdn, ':c'=>$plan['code']]);
+      if ($st->fetchColumn()) {
+        json_out(['ok'=>false,'error'=>'duplicate_request','message'=>'A recent purchase is already being processed. Please wait a few seconds and refresh.'],409);
+      }
+    }
+  } catch (Throwable $e) {
+    // Non-fatal: continue if purchases table is missing or query fails.
+  }
+
   try {
     $debited = wallet_try_debit($msisdn,$price,$ref,"Buy plan {$plan['code']}");
   } catch (Throwable $e) {
