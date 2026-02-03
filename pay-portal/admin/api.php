@@ -223,51 +223,202 @@ try {
         SELECT
           rug.username,
           rug.groupname,
-          rc.value AS expires,
-          ws.value AS window_start,
-          rq.value AS quota_bytes,
-          rl.value AS rate_limit,
+          (
+            SELECT rc2.value
+            FROM radcheck rc2
+            WHERE rc2.attribute='Expiration'
+              AND rc2.username IN (rug.username,
+                CASE
+                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                  ELSE rug.username
+                END)
+            ORDER BY rc2.id DESC LIMIT 1
+          ) AS expires,
+          (
+            SELECT ws2.value
+            FROM radreply ws2
+            WHERE ws2.attribute='Nister-Window-Start'
+              AND ws2.username IN (rug.username,
+                CASE
+                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                  ELSE rug.username
+                END)
+            ORDER BY ws2.id DESC LIMIT 1
+          ) AS window_start,
+          (
+            SELECT rq2.value
+            FROM radreply rq2
+            WHERE rq2.attribute='Nister-Quota-Bytes'
+              AND rq2.username IN (rug.username,
+                CASE
+                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                  ELSE rug.username
+                END)
+            ORDER BY rq2.id DESC LIMIT 1
+          ) AS quota_bytes,
+          (
+            SELECT rl2.value
+            FROM radreply rl2
+            WHERE rl2.attribute='Mikrotik-Rate-Limit'
+              AND rl2.username IN (rug.username,
+                CASE
+                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                  ELSE rug.username
+                END)
+            ORDER BY rl2.id DESC LIMIT 1
+          ) AS rate_limit,
           (
             SELECT COALESCE(SUM(
               COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0) +
               4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
             ),0)
             FROM radacct ra
-            WHERE ra.username = rug.username
-              AND ra.acctstarttime >= COALESCE(ws.value, DATE_SUB(NOW(), INTERVAL 30 DAY))
+            WHERE ra.username IN (rug.username,
+              CASE
+                WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                ELSE rug.username
+              END)
+              AND ra.acctstarttime >= COALESCE(
+                (
+                  SELECT ws3.value
+                  FROM radreply ws3
+                  WHERE ws3.attribute='Nister-Window-Start'
+                    AND ws3.username IN (rug.username,
+                      CASE
+                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                        ELSE rug.username
+                      END)
+                  ORDER BY ws3.id DESC LIMIT 1
+                ),
+                DATE_SUB(NOW(), INTERVAL 30 DAY)
+              )
           ) AS used_bytes,
           CASE
-            WHEN rc.value IS NULL THEN 0
+            WHEN (
+              SELECT rc3.value
+              FROM radcheck rc3
+              WHERE rc3.attribute='Expiration'
+                AND rc3.username IN (rug.username,
+                  CASE
+                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                    ELSE rug.username
+                  END)
+              ORDER BY rc3.id DESC LIMIT 1
+            ) IS NULL THEN 0
             WHEN COALESCE(
-              STR_TO_DATE(rc.value, '%d %b %Y %H:%i:%s'),
-              STR_TO_DATE(rc.value, '%Y-%m-%d %H:%i:%s'),
-              STR_TO_DATE(rc.value, '%b %e %Y %H:%i:%s')
+              STR_TO_DATE((
+                SELECT rc4.value
+                FROM radcheck rc4
+                WHERE rc4.attribute='Expiration'
+                  AND rc4.username IN (rug.username,
+                    CASE
+                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                      ELSE rug.username
+                    END)
+                ORDER BY rc4.id DESC LIMIT 1
+              ), '%d %b %Y %H:%i:%s'),
+              STR_TO_DATE((
+                SELECT rc5.value
+                FROM radcheck rc5
+                WHERE rc5.attribute='Expiration'
+                  AND rc5.username IN (rug.username,
+                    CASE
+                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                      ELSE rug.username
+                    END)
+                ORDER BY rc5.id DESC LIMIT 1
+              ), '%Y-%m-%d %H:%i:%s'),
+              STR_TO_DATE((
+                SELECT rc6.value
+                FROM radcheck rc6
+                WHERE rc6.attribute='Expiration'
+                  AND rc6.username IN (rug.username,
+                    CASE
+                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                      ELSE rug.username
+                    END)
+                ORDER BY rc6.id DESC LIMIT 1
+              ), '%b %e %Y %H:%i:%s')
             ) <= NOW() THEN 1
             ELSE 0
           END AS expired_flag,
           CASE
-            WHEN rq.value IS NULL THEN 0
-            WHEN CAST(rq.value AS UNSIGNED) <= 0 THEN 1
+            WHEN (
+              SELECT rq3.value
+              FROM radreply rq3
+              WHERE rq3.attribute='Nister-Quota-Bytes'
+                AND rq3.username IN (rug.username,
+                  CASE
+                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                    ELSE rug.username
+                  END)
+              ORDER BY rq3.id DESC LIMIT 1
+            ) IS NULL THEN 0
+            WHEN CAST((
+              SELECT rq4.value
+              FROM radreply rq4
+              WHERE rq4.attribute='Nister-Quota-Bytes'
+                AND rq4.username IN (rug.username,
+                  CASE
+                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                    ELSE rug.username
+                  END)
+              ORDER BY rq4.id DESC LIMIT 1
+            ) AS UNSIGNED) <= 0 THEN 1
             WHEN (
               SELECT COALESCE(SUM(
-                COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0) +
-                4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
+                COALESCE(ra2.acctinputoctets,0)+COALESCE(ra2.acctoutputoctets,0) +
+                4294967296*(COALESCE(ra2.acctinputgigawords,0)+COALESCE(ra2.acctoutputgigawords,0))
               ),0)
-              FROM radacct ra
-              WHERE ra.username = rug.username
-                AND ra.acctstarttime >= COALESCE(ws.value, DATE_SUB(NOW(), INTERVAL 30 DAY))
-            ) >= CAST(rq.value AS UNSIGNED) THEN 1
+              FROM radacct ra2
+              WHERE ra2.username IN (rug.username,
+                CASE
+                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                  ELSE rug.username
+                END)
+                AND ra2.acctstarttime >= COALESCE(
+                  (
+                    SELECT ws4.value
+                    FROM radreply ws4
+                    WHERE ws4.attribute='Nister-Window-Start'
+                      AND ws4.username IN (rug.username,
+                        CASE
+                          WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                          WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                          ELSE rug.username
+                        END)
+                    ORDER BY ws4.id DESC LIMIT 1
+                  ),
+                  DATE_SUB(NOW(), INTERVAL 30 DAY)
+                )
+            ) >= CAST((
+              SELECT rq5.value
+              FROM radreply rq5
+              WHERE rq5.attribute='Nister-Quota-Bytes'
+                AND rq5.username IN (rug.username,
+                  CASE
+                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
+                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
+                    ELSE rug.username
+                  END)
+              ORDER BY rq5.id DESC LIMIT 1
+            ) AS UNSIGNED) THEN 1
             ELSE 0
           END AS exhausted_flag
         FROM radusergroup rug
-        LEFT JOIN radcheck rc
-          ON rc.username = rug.username AND rc.attribute='Expiration'
-        LEFT JOIN radreply rq
-          ON rq.username = rug.username AND rq.attribute='Nister-Quota-Bytes'
-        LEFT JOIN radreply ws
-          ON ws.username = rug.username AND ws.attribute='Nister-Window-Start'
-        LEFT JOIN radreply rl
-          ON rl.username = rug.username AND rl.attribute='Mikrotik-Rate-Limit'
         WHERE {$where}
         {$havingSql}
         ORDER BY rug.groupname, rug.username
