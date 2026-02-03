@@ -2,8 +2,18 @@
 declare(strict_types=1);
 require_once __DIR__.'/../lib/common.php';
 require_once __DIR__.'/../lib/health.php';
+require_once __DIR__.'/../lib/radius.php';
 
 $ENV = app_boot();
+
+if (!function_exists('nister_username_variants')) {
+  function nister_username_variants(string $u): array {
+    $u = preg_replace('/\D+/', '', $u);
+    if ($u === '') return [];
+    $last9 = substr($u, -9);
+    return array_values(array_unique([$u, '0'.$last9, '233'.$last9]));
+  }
+}
 
 function sh(string $cmd): array {
   $out = [];
