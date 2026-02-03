@@ -651,7 +651,8 @@ function setSettingsStatus(msg, state){
 async function loadSettings(){
   const j = await api('settings_get');
   if (!j.ok){
-    setSettingsStatus(j.error || 'Failed to load settings.', 'error');
+    const msg = j.detail ? (j.error + ': ' + j.detail) : (j.error || 'Failed to load settings.');
+    setSettingsStatus(msg, 'error');
     return;
   }
   const s = j.settings || {};
@@ -679,7 +680,8 @@ async function saveSettings(){
   setSettingsStatus('Saving...');
   const j = await api('settings_save', body);
   if (!j.ok){
-    setSettingsStatus(j.error || 'Save failed.', 'error');
+    const msg = j.detail ? (j.error + ': ' + j.detail) : (j.error || 'Save failed.');
+    setSettingsStatus(msg, 'error');
     return;
   }
   setSettingsStatus('Settings saved.', 'success');

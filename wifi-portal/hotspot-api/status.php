@@ -22,7 +22,7 @@ ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 error_reporting(E_ALL);
 
-$API_VERSION = '2026-01-07b';
+$API_VERSION = '2026-02-03a';
 
 function truthy(string $v): bool {
   $v = strtolower(trim($v));
@@ -212,13 +212,14 @@ function compute_used_bytes(PDO $pdo, string $u1, string $u2, string $pstart): i
       // Important: we DO NOT include open sessions started before periodStart (prevents huge overcount across renewals)
       $sql = "SELECT COALESCE(SUM($sumExpr), 0) AS used_bytes
                 FROM radacct
-               WHERE username IN (:a,:b)
+               WHERE username IN (?,?)
                  AND (
-                       (acctstarttime IS NOT NULL AND acctstarttime >= :pstart)
-                    OR (acctstoptime  IS NOT NULL AND acctstoptime  >= :pstart)
+                       (acctstarttime IS NOT NULL AND acctstarttime >= ?)
+                    OR (acctstoptime  IS NOT NULL AND acctstoptime  >= ?)
+                    OR (acctstoptime IS NULL AND acctstarttime IS NOT NULL AND acctstarttime >= ?)
                  )";
       $st = $pdo->prepare($sql);
-      $st->execute([':a'=>$u1, ':b'=>$u2, ':pstart'=>$pstart]);
+      $st->execute([$u1, $u2, $pstart, $pstart, $pstart]);
       return (int)($st->fetchColumn() ?: 0);
     } catch (Throwable $e) {
       // try next candidate
@@ -227,15 +228,15 @@ function compute_used_bytes(PDO $pdo, string $u1, string $u2, string $pstart): i
 
   // Final fallback: no window
   try {
-    $sql2 = "SELECT COALESCE(SUM($base), 0) AS used_bytes
+      $sql2 = "SELECT COALESCE(SUM($base), 0) AS used_bytes
                FROM radacct
-              WHERE username IN (:a,:b)";
-    $st2 = $pdo->prepare($sql2);
-    $st2->execute([':a'=>$u1, ':b'=>$u2]);
-    return (int)($st2->fetchColumn() ?: 0);
-  } catch (Throwable $e) {
-    return 0;
-  }
+              WHERE username IN (?,?)";
+      $st2 = $pdo->prepare($sql2);
+      $st2->execute([$u1, $u2]);
+      return (int)($st2->fetchColumn() ?: 0);
+    } catch (Throwable $e) {
+      return 0;
+    }
 }
 
 /* ------------------------- INPUTS ------------------------- */
@@ -295,9 +296,22 @@ if (isset($attrs['Nister-Duration-Days']) && trim((string)$attrs['Nister-Duratio
   $cand = (int)$attrs['Nister-Duration-Days'];
   if ($cand > 0) $durationDays = $cand;
 }
-$periodStart = ($expiry instanceof DateTime)
-  ? (clone $expiry)->modify("-{$durationDays} days")
-  : (clone $now)->modify("-{$durationDays} days");
+
+// Prefer Nister-Window-Start if present (aligns with pay-portal)
+$periodStart = null;
+if (isset($attrs['Nister-Window-Start']) && trim((string)$attrs['Nister-Window-Start']) !== '') {
+  $ws = trim((string)$attrs['Nister-Window-Start']);
+  $ts = strtotime($ws);
+  if ($ts !== false) {
+    $periodStart = new DateTime('@' . $ts);
+    $periodStart->setTimezone($tz);
+  }
+}
+if (!$periodStart) {
+  $periodStart = ($expiry instanceof DateTime)
+    ? (clone $expiry)->modify("-{$durationDays} days")
+    : (clone $now)->modify("-{$durationDays} days");
+}
 
 $quotaBytes = quota_bytes_from_attrs($attrs);
 $usedBytes  = compute_used_bytes($pdo, $u1, $u2, $periodStart->format('Y-m-d H:i:s'));
