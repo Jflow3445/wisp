@@ -90,6 +90,16 @@ admin_require_login();
     display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
     border-radius:999px;padding:4px 10px;font-size:.8rem;background:#fff;
   }
+  .menu{
+    display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 18px;
+  }
+  .menu .btn{background:#fff}
+  .menu .btn.active{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+  }
+  .section-hidden{display:none}
   @media (max-width:900px){
     .table{min-width:680px}
   }
@@ -108,7 +118,17 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="menu" id="menu">
+    <button class="btn" data-section="overview" type="button">Overview</button>
+    <button class="btn" data-section="billing" type="button">Billing</button>
+    <button class="btn" data-section="plans" type="button">Plans</button>
+    <button class="btn" data-section="settings" type="button">Settings</button>
+    <button class="btn" data-section="alerts" type="button">Alerts</button>
+    <button class="btn" data-section="users" type="button">Users</button>
+    <button class="btn" data-section="all" type="button">All</button>
+  </div>
+
+  <div class="card" data-section="overview">
     <div class="section-head">
       <h2>Business Overview</h2>
       <span class="badge">Live metrics</span>
@@ -141,7 +161,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="settings">
     <div class="section-head">
       <h2>Portal Settings</h2>
       <div class="muted">Configure API base and support contact details shown to users.</div>
@@ -183,7 +203,7 @@ admin_require_login();
     <div class="note" id="settings_status">Settings load on refresh.</div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Payments</h2>
       <div class="muted">Approve or decline with notes for audit trail.</div>
@@ -199,7 +219,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Purchases</h2>
       <div class="muted">Applied plans and sales health.</div>
@@ -213,7 +233,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="plans">
     <div class="section-head">
       <h2>Plan Management</h2>
       <div class="muted">Create, update, or retire storefront plans.</div>
@@ -270,7 +290,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Top Plans (30 days)</h2>
       <div class="muted">Most used plans in the last 30 days.</div>
@@ -287,7 +307,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Daily Totals (14 days)</h2>
       <div class="muted">Approved payments vs applied purchases.</div>
@@ -304,7 +324,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Pending Deposits</h2>
       <div class="muted">Review and confirm top ups.</div>
@@ -321,7 +341,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="alerts">
     <div class="section-head">
       <h2>Alerts</h2>
       <div class="muted">CoA failures and limit events.</div>
@@ -343,7 +363,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="users">
     <div class="section-head">
       <h2>User States</h2>
       <div class="muted">Expiry/quota status per user (HS_* only).</div>
@@ -381,7 +401,7 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" data-section="users">
     <div class="section-head">
       <h2>User Tools</h2>
       <div class="muted">Lookup users, credit wallets, apply plans, or disconnect sessions.</div>
@@ -477,6 +497,32 @@ async function api(fn, body){
                         body: JSON.stringify(body) } : {};
   const r = await fetch(`/admin/api.php?fn=${encodeURIComponent(fn)}`, opts);
   return r.json();
+}
+
+function setSection(sec){
+  const cards = document.querySelectorAll('[data-section]');
+  cards.forEach(c=>{
+    const show = (sec === 'all' || c.dataset.section === sec);
+    c.classList.toggle('section-hidden', !show);
+  });
+  const menu = document.getElementById('menu');
+  if (menu){
+    menu.querySelectorAll('button[data-section]').forEach(b=>{
+      b.classList.toggle('active', b.dataset.section === sec);
+    });
+  }
+  try { localStorage.setItem('admin_section', sec); } catch (e) {}
+}
+
+function initMenu(){
+  const menu = document.getElementById('menu');
+  if (!menu) return;
+  menu.querySelectorAll('button[data-section]').forEach(btn=>{
+    btn.addEventListener('click', ()=>setSection(btn.dataset.section || 'all'));
+  });
+  let saved = 'overview';
+  try { saved = localStorage.getItem('admin_section') || 'overview'; } catch (e) {}
+  setSection(saved);
 }
 
 function centsToGHS(c){ return 'GHS ' + (c/100).toFixed(2); }
@@ -889,7 +935,8 @@ async function loadPending(){
     btn.addEventListener('click', async (ev)=>{
       const ref = ev.currentTarget.getAttribute('data-ref');
       const act = ev.currentTarget.getAttribute('data-act');
-      const notes = prompt(`${act.toUpperCase()} notes (optional):`, '') || '';
+      const notes = prompt(`${act.toUpperCase()} notes (optional):`, '');
+      if (notes === null) return; // user cancelled
       const body = { ref, action: act, notes };
       const res = await api('decision', body);
       if(res.ok){
@@ -1263,6 +1310,7 @@ async function refreshAll(){
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
+  initMenu();
   refreshAll();
   const btn = document.getElementById('refresh_btn');
   if (btn) btn.addEventListener('click', refreshAll);
