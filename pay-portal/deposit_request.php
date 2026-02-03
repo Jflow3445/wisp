@@ -7,6 +7,7 @@
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 
+require __DIR__ . '/lib/user_auth.php';
 require __DIR__ . '/config.php'; // must define $PDO
 
 // ---- helpers ----
@@ -44,7 +45,10 @@ $in = $_POST + $_GET;
 
 // Canonical fields Admin uses
 $ref = trim((string)($in['ref'] ?? $in['txref'] ?? $in['txid'] ?? $in['reference'] ?? ''));
-$msisdn = $normalize_msisdn($in['msisdn'] ?? $in['phone'] ?? $in['number'] ?? '');
+user_boot();
+user_require_login(true);
+$msisdn = user_msisdn();
+$msisdn = $normalize_msisdn($msisdn);
 $payer_name = trim((string)($in['payer_name'] ?? $msisdn));
 $method = trim((string)($in['method'] ?? 'momo'));
 $notes  = trim((string)($in['notes']  ?? 'Front page top-up request'));

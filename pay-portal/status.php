@@ -3,7 +3,11 @@ declare(strict_types=1);
 require_once __DIR__.'/lib/db.php';
 require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/radius.php';
-$msisdn=normalize_msisdn((string)($_GET['msisdn']??'')); if($msisdn===''){ header('Content-Type: text/plain'); echo "NOPAID\n"; exit; }
+require_once __DIR__.'/lib/user_auth.php';
+user_boot();
+user_require_login(true);
+$msisdn = normalize_msisdn(user_msisdn());
+if ($msisdn === ''){ header('Content-Type: text/plain'); echo "NOPAID\n"; exit; }
 $isPaid = null;
 try {
   $st = radius_user_status($msisdn);

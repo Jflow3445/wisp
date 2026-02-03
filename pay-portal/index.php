@@ -2,7 +2,8 @@
 declare(strict_types=1);
 require_once __DIR__.'/lib/settings.php';
 require_once __DIR__.'/lib/common.php';
-$ENV = app_boot();
+require_once __DIR__.'/lib/user_auth.php';
+$ENV = user_boot();
 $s = settings_get_all();
 $get = static function(string $k, $def=null) use ($s, $ENV) {
   if (isset($s[$k]) && $s[$k] !== '') return $s[$k];
@@ -14,6 +15,8 @@ $get = static function(string $k, $def=null) use ($s, $ENV) {
 $waSupport = preg_replace('/\D+/', '', (string)$get('WHATSAPP_SUPPORT','233598544768'));
 $waHref = $waSupport !== '' ? ('https://wa.me/'.$waSupport) : 'https://wa.me/233598544768';
 $topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
+$loggedIn = user_logged_in();
+$userMsisdn = $loggedIn ? user_msisdn_display() : '';
 ?>
 <!doctype html>
 <html lang="en">
@@ -204,8 +207,11 @@ $topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
         <h1>Fast, simple access for every device.</h1>
         <p class="lead">Check your wallet, top up via <?=htmlspecialchars($topupNetwork, ENT_QUOTES, 'UTF-8')?>, and buy a plan in minutes.</p>
         <div class="hero-actions">
-          <button class="btn primary" id="topup_now" type="button">Top up wallet</button>
+          <button class="btn primary" id="topup_now" type="button"<?= $loggedIn ? '' : ' disabled' ?>>Top up wallet</button>
           <a class="btn ghost" href="#plans_section">Browse plans</a>
+          <?php if (!$loggedIn): ?>
+            <a class="btn outline" href="/login.php">Login to your account</a>
+          <?php endif; ?>
         </div>
         <div class="trust">
           <div class="trust-item">Secure payments</div>
@@ -219,11 +225,18 @@ $topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
             <h3>Account overview</h3>
             <span class="pill">Live</span>
           </div>
+          <?php if (!$loggedIn): ?>
+            <div class="callout" style="margin-bottom:12px">
+              <div class="callout-title">Login required</div>
+              <div class="sub">Please sign in with the same password you use on the captive portal to access wallet and purchases.</div>
+              <div style="margin-top:8px"><a class="btn outline" href="/login.php">Login</a></div>
+            </div>
+          <?php endif; ?>
           <div class="field">
             <div class="label">Your number</div>
-            <div id="who" class="value">Not loaded</div>
+            <div id="who" class="value"><?= $loggedIn ? htmlspecialchars($userMsisdn, ENT_QUOTES, 'UTF-8') : 'Not logged in' ?></div>
           </div>
-          <div class="manual" id="manual_row">
+          <div class="manual" id="manual_row"<?= $loggedIn ? ' style="display:none"' : '' ?>>
             <input id="msisdn_in" class="input" type="tel" placeholder="Enter your phone number">
             <button class="btn outline" id="load_btn" type="button">Load account</button>
           </div>
@@ -240,6 +253,9 @@ $topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
           <div class="support">
             <a id="wa_link" class="link" href="<?=htmlspecialchars($waHref, ENT_QUOTES, 'UTF-8')?>" target="_blank" rel="noopener">WhatsApp support</a>
             <span class="sub">Support team replies quickly during working hours.</span>
+            <?php if ($loggedIn): ?>
+              <a class="link" href="/logout.php">Logout</a>
+            <?php endif; ?>
           </div>
         </div>
         <div class="card steps">
@@ -264,7 +280,7 @@ $topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
         <div class="pill soft">Wallet checkout</div>
       </div>
       <div id="plans" class="plans-grid">
-        <div class="muted">Load your number to see available plans.</div>
+        <div class="muted"><?= $loggedIn ? 'Loading plans…' : 'Login to view and buy plans.' ?></div>
       </div>
     </section>
 
@@ -298,6 +314,10 @@ $topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
     </footer>
   </div>
 
+  <script>
+    window.NISTER_LOGGED_IN = <?= $loggedIn ? 'true' : 'false' ?>;
+    window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
+  </script>
   <script src="assets/topup.js?v=9"></script>
 </body>
 </html>

@@ -9,9 +9,12 @@ try {
   require_once __DIR__.'/lib/wallet.php';
   require_once __DIR__.'/lib/plans_radius.php';
   require_once __DIR__.'/lib/radius.php';
+  require_once __DIR__.'/lib/user_auth.php';
 
-  $msisdn = normalize_msisdn((string)($_GET['msisdn'] ?? ''));
-  if ($msisdn === '') json_out(['ok'=>false,'error'=>'msisdn required'], 422);
+  user_boot();
+  user_require_login(true);
+  $msisdn = normalize_msisdn(user_msisdn());
+  if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'], 401);
 
   $walletOk = true;
   $walletErr = null;

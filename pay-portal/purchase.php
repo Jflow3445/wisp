@@ -46,6 +46,7 @@ register_shutdown_function(function(){
 
 // Accept legacy "plan" from frontend as alias for "plan_code"
 if (!isset($_POST['plan_code']) && isset($_POST['plan'])) { $_POST['plan_code'] = $_POST['plan']; }
+require_once __DIR__.'/lib/user_auth.php';
 require_once __DIR__.'/lib/db.php';
 require_once __DIR__.'/lib/wallet.php';
 require_once __DIR__.'/lib/radius.php';
@@ -54,10 +55,13 @@ require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/settings.php';
 
 try {
+  user_boot();
+  user_require_login(true);
   $in = array_merge($_POST, body_json());
   
     if (!isset($in["plan_code"]) && isset($in["plan"])) { $in["plan_code"] = $in["plan"]; }
-$msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+$msisdn = user_msisdn();
+if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
   $code   = (string)from_any([$in],'plan_code','');
   if ($msisdn==='' || $code==='') json_out(['ok'=>false,'error'=>'msisdn and plan_code required'],422);
 

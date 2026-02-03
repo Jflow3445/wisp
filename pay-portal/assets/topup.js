@@ -7,8 +7,8 @@
   var money = function(c){ return 'GHS ' + (Number(c||0)/100).toFixed(2); };
 
   // ---------- API ----------
-  async function fetchMe(rawMsisdn){
-    var r = await fetch('me.php?msisdn='+encodeURIComponent(rawMsisdn), {cache:'no-store'});
+  async function fetchMe(){
+    var r = await fetch('me.php', {cache:'no-store'});
     if(!r.ok) throw new Error('me.php '+r.status);
     var j = await r.json();
     if(!j || !j.ok) throw new Error((j&&j.error)||'bad json');
@@ -20,6 +20,7 @@
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(payload)
     });
+    if (r.status === 401) { window.location.href = '/login.php'; return {ok:false,error:'unauthorized'}; }
     var j = await r.json().catch(function(){ return {ok:false,error:'invalid json'}; });
     if(!r.ok || !j.ok) throw new Error(j.error || ('HTTP '+r.status));
     return j;
@@ -40,6 +41,10 @@
   function renderPlans(msisdn, plans){
     var root = $('#plans'); if(!root) return;
     root.innerHTML = '';
+    if (!window.NISTER_LOGGED_IN) {
+      root.appendChild(ce('div',{className:'muted', textContent:'Login to view and buy plans.'}));
+      return;
+    }
     if(!Array.isArray(plans) || plans.length===0){
       root.appendChild(ce('div',{className:'muted', textContent:'No plans found.'}));
       return;
@@ -52,8 +57,7 @@
       var btn = ce('button',{className:'buy-btn', textContent:'Buy ' + (p.name || p.code || '')});
       if (code) btn.dataset.code = code;
       btn.addEventListener('click', async function(){
-        var typed = (window.MSISDN_RAW||'').trim();
-        if(!typed){ alert('No number found from link.'); return; }
+        if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return; }
         if(!code){ alert('Invalid plan.'); return; }
         if(!confirm('Confirm purchase of '+(p.name||code)+'?')) return;
         var old=this.textContent; this.disabled=true; this.textContent='Buying...';
@@ -61,15 +65,16 @@
           var resp = await fetch('purchase.php', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ msisdn: typed, plan_code: code })
+            body: JSON.stringify({ plan_code: code })
           });
+          if (resp.status === 401) { window.location.href = '/login.php'; return; }
           var j = await resp.json().catch(function(){ return {ok:false,error:'Invalid JSON'}; });
           if(!resp.ok || !j.ok){
             var msg = (j && (j.error || j.message)) || resp.statusText || 'Error';
             if (j && j.details) msg += ' (' + j.details + ')';
             alert('Purchase failed: ' + msg);
           }
-          else { alert('Purchase successful.'); callRefreshUser(typed); }
+          else { alert('Purchase successful.'); callRefreshUser(); }
         }catch(e){ alert('Network error: '+e.message); }
         finally{ this.disabled=false; this.textContent=old; }
       });
@@ -98,7 +103,7 @@
   window._renderLedger = renderLedger;
   function renderAll(msisdn, j){
     var who = $('#who') || $('#msisdn_label');
-    if (who) who.textContent = (window.MSISDN_RAW||msisdn||'').trim();
+    if (who) who.textContent = (window.NISTER_MSISDN||msisdn||'').trim();
 
     var bal = $('#balance_stat') || (($('#balance') && $('#balance .stat'))||$('.stat'));
     if (bal) bal.textContent = money(j.balance_cents||0);
@@ -108,13 +113,17 @@
     renderLedger(j.ledger||[]);
   }
 
-  async function callRefreshUser(raw){
-    window.MSISDN_RAW = (raw||'').trim();
+  async function callRefreshUser(){
+    if (!window.NISTER_LOGGED_IN) return;
     try{
-      var j = await fetchMe(window.MSISDN_RAW);
-      renderAll(window.MSISDN_RAW, j);
+      var j = await fetchMe();
+      renderAll(window.NISTER_MSISDN||'', j);
     }catch(e){
       console.error(e);
+      if (String(e.message||'').indexOf('401') !== -1) {
+        window.location.href = '/login.php';
+        return;
+      }
       alert('Failed to load account: '+e.message);
     }
   }
@@ -167,8 +176,9 @@
     }
 
     function openModal(){
-      var raw = (window.MSISDN_RAW||'').trim();
-      var x = $('#in_msisdn'); if (x) x.value = raw;
+      if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return; }
+      var raw = (window.NISTER_MSISDN||'').trim();
+      var x = $('#in_msisdn'); if (x) { x.value = raw; x.readOnly = true; }
       var ok=$('#n_ok'), err=$('#n_err'); if(ok) ok.style.display='none'; if(err){err.style.display='none'; err.textContent='';}
       show(bd);
     }
@@ -189,13 +199,12 @@
       if(ok) ok.style.display='none';
       if(err){ err.style.display='none'; err.textContent=''; }
 
-      if(!msisdn || !txid || !amtStr){ if(err){ err.textContent='Please fill MSISDN, TxID and Amount.'; err.style.display='block'; } return; }
+      if(!msisdn || !txid || !amtStr){ if(err){ err.textContent='Please fill TxID and Amount.'; err.style.display='block'; } return; }
 
       var amount_cents = Math.round(parseFloat(amtStr)*100);
       if(!(amount_cents>0)){ if(err){ err.textContent='Amount must be a number > 0.'; err.style.display='block'; } return; }
 
       var payload = {
-        msisdn: msisdn,
         payer_name: momo || msisdn,
         txref: txid,
         amount_cents: amount_cents,
@@ -221,25 +230,10 @@
   window.addEventListener('DOMContentLoaded', function(){
     // auto-load from URL
     var qp = new URLSearchParams(window.location.search);
-    var fromUrl = (qp.get('username')||qp.get('msisdn')||qp.get('user')||'').trim();
-
     var manualRow = $('#manual_row'), inp = $('#msisdn_in'), load = $('#load_btn');
-
-    if (fromUrl){
-      if (manualRow) hide(manualRow);
-      if (inp) { inp.value = fromUrl; inp.disabled = true; }
-      window.MSISDN_RAW = fromUrl;
-      callRefreshUser(fromUrl);
-    } else {
-      if (load) load.addEventListener('click', function(){
-        var raw = (inp && inp.value && inp.value.trim()) || '';
-        if(!raw) return; window.MSISDN_RAW=raw; callRefreshUser(raw);
-      });
-      if (inp && inp.value && inp.value.trim()){
-        window.MSISDN_RAW = inp.value.trim();
-        callRefreshUser(inp.value.trim());
-      }
-    }
+    if (manualRow && window.NISTER_LOGGED_IN) hide(manualRow);
+    if (load) load.addEventListener('click', function(){ window.location.href = '/login.php'; });
+    if (window.NISTER_LOGGED_IN) callRefreshUser();
 
     ensureTopupUI();
   });
