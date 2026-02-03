@@ -92,8 +92,12 @@ admin_require_login();
   }
   .layout{display:grid;grid-template-columns:220px 1fr;gap:18px;align-items:start}
   .side{position:sticky;top:16px;align-self:start}
+  .side-card{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:12px;box-shadow:var(--shadow-soft);
+  }
   .menu{display:flex;flex-direction:column;gap:8px}
-  .menu .btn{background:#fff;text-align:left}
+  .menu .btn{background:#fff;text-align:left;width:100%;justify-content:flex-start}
   .menu .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .section-hidden{display:none}
   @media (max-width:900px){
@@ -122,14 +126,17 @@ admin_require_login();
 
   <div class="layout">
     <aside class="side">
-      <div class="menu" id="menu">
-        <button class="btn" data-section="overview" type="button" onclick="setSection('overview')">Overview</button>
-        <button class="btn" data-section="billing" type="button" onclick="setSection('billing')">Billing</button>
-        <button class="btn" data-section="plans" type="button" onclick="setSection('plans')">Plans</button>
-        <button class="btn" data-section="settings" type="button" onclick="setSection('settings')">Settings</button>
-        <button class="btn" data-section="alerts" type="button" onclick="setSection('alerts')">Alerts</button>
-        <button class="btn" data-section="users" type="button" onclick="setSection('users')">Users</button>
-        <button class="btn" data-section="all" type="button" onclick="setSection('all')">All</button>
+      <div class="side-card">
+        <div class="muted" style="margin-bottom:8px;font-weight:600">Menu</div>
+        <div class="menu" id="menu">
+          <button class="btn" data-section="overview" type="button" onclick="setSection('overview')">Overview</button>
+          <button class="btn" data-section="billing" type="button" onclick="setSection('billing')">Billing</button>
+          <button class="btn" data-section="plans" type="button" onclick="setSection('plans')">Plans</button>
+          <button class="btn" data-section="settings" type="button" onclick="setSection('settings')">Settings</button>
+          <button class="btn" data-section="alerts" type="button" onclick="setSection('alerts')">Alerts</button>
+          <button class="btn" data-section="users" type="button" onclick="setSection('users')">Users</button>
+          <button class="btn" data-section="all" type="button" onclick="setSection('all')">All</button>
+        </div>
       </div>
     </aside>
     <main class="content">
