@@ -1186,13 +1186,16 @@ async function disconnectUser(){
 
 async function forceKickByIp(){
   const ip = toolValue('tool_ip');
+  const msisdn = toolValue('tool_msisdn');
   if (!ip){
     setToolStatus('IP address is required.', 'error');
     return;
   }
   if (!confirm(`Force kick IP ${ip}?`)) return;
   setToolStatus('Sending IP disconnect...');
-  const j = await api('user_force_kick_ip', { ip });
+  const body = { ip };
+  if (msisdn) body.msisdn = msisdn;
+  const j = await api('user_force_kick_ip', body);
   if (!j.ok){
     setToolStatus(j.error || 'Force kick failed.', 'error');
     return;

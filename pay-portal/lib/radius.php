@@ -771,37 +771,54 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   }
   if ($nas === '') return ['ok'=>false,'error'=>'nas_missing'];
 
-  // Optional explicit user (from admin)
+  // Build user candidates (radacct user, provided msisdn, local/e164, and blank)
+  $candidates = [];
+  $addUser = static function(array &$list, string $u): void {
+    $u = preg_replace('/\D+/', '', $u);
+    if ($u !== '') $list[$u] = true;
+  };
+  if ($user !== '') $addUser($candidates, $user);
   $msisdn = $msisdn ? preg_replace('/\D+/', '', $msisdn) : '';
-  if ($msisdn !== '' && $user === '') $user = $msisdn;
-
-  $payload = '';
-  if ($user !== '') $payload .= 'User-Name = "'.$user."\"\n";
-  $payload .= 'Framed-IP-Address = '.$ip."\n";
-  $payload .= "Message-Authenticator = 0x00\n";
+  if ($msisdn !== '') {
+    $addUser($candidates, $msisdn);
+    if (preg_match('/^0[0-9]{9}$/', $msisdn)) $addUser($candidates, '233'.substr($msisdn, 1));
+    if (preg_match('/^233[0-9]{9}$/', $msisdn)) $addUser($candidates, '0'.substr($msisdn, 3));
+  }
+  $tryUsers = array_keys($candidates);
+  $tryUsers[] = ''; // allow payload without User-Name
 
   $cmd = [$radclient, '-x'];
   if ($srcIp !== '') { $cmd[] = '-i'; $cmd[] = $srcIp; }
   $cmd[] = $nas.':'.$port;
   $cmd[] = 'disconnect';
   $cmd[] = $secret;
-  $des = [0=>['pipe','w'], 1=>['pipe','r'], 2=>['pipe','r']];
-  $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
-  if (!is_resource($proc)) return ['ok'=>false,'error'=>'radclient_failed'];
 
-  @fwrite($pipes[0], $payload);
-  @fclose($pipes[0]);
-  $out = @stream_get_contents($pipes[1]) ?: '';
-  @fclose($pipes[1]);
-  $err = @stream_get_contents($pipes[2]) ?: '';
-  @fclose($pipes[2]);
-  @proc_close($proc);
+  $lastOut = '';
+  foreach ($tryUsers as $u) {
+    $payload = '';
+    if ($u !== '') $payload .= 'User-Name = "'.$u."\"\n";
+    $payload .= 'Framed-IP-Address = '.$ip."\n";
+    $payload .= "Message-Authenticator = 0x00\n";
 
-  $ok = (strpos($out, 'Disconnect-ACK') !== false || strpos($err, 'Disconnect-ACK') !== false);
-  $combined = trim($out."\n".$err);
-  if ($ok) {
-    return ['ok'=>true, 'out'=>$combined, 'nas'=>$nas, 'user'=>$user];
+    $des = [0=>['pipe','w'], 1=>['pipe','r'], 2=>['pipe','r']];
+    $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
+    if (!is_resource($proc)) return ['ok'=>false,'error'=>'radclient_failed'];
+
+    @fwrite($pipes[0], $payload);
+    @fclose($pipes[0]);
+    $out = @stream_get_contents($pipes[1]) ?: '';
+    @fclose($pipes[1]);
+    $err = @stream_get_contents($pipes[2]) ?: '';
+    @fclose($pipes[2]);
+    @proc_close($proc);
+
+    $combined = trim($out."\n".$err);
+    $lastOut = $combined;
+    if (strpos($combined, 'Disconnect-ACK') !== false) {
+      return ['ok'=>true, 'out'=>$combined, 'nas'=>$nas, 'user'=>$u !== '' ? $u : $user];
+    }
   }
-  $errCode = ($combined === '') ? 'no_reply' : 'no_ack';
-  return ['ok'=>false, 'error'=>$errCode, 'out'=>$combined, 'nas'=>$nas, 'user'=>$user];
+
+  $errCode = ($lastOut === '') ? 'no_reply' : 'no_ack';
+  return ['ok'=>false, 'error'=>$errCode, 'out'=>$lastOut, 'nas'=>$nas, 'user'=>$user];
 }
