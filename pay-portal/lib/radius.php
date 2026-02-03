@@ -426,9 +426,12 @@ function radius_user_status(string $msisdn): array {
   $planGroup = radius_plan_code_from_reply($r, $targets) ?: radius_pick_plan_group($r, $targets);
 
   $limitedGroup = false;
+  $hsGroup = null;
   foreach ($groups as $g) {
     $lg = strtolower($g);
-    if ($lg === 'hs_limited' || $lg === 'hs_nopaid') $limitedGroup = true;
+    if ($lg === 'hs_nopaid') { $limitedGroup = true; $hsGroup = 'HS_NOPAID'; break; }
+    if ($lg === 'hs_limited') { $limitedGroup = true; $hsGroup = 'HS_LIMITED'; }
+    if ($lg === 'hs_active' && $hsGroup === null) { $hsGroup = 'HS_ACTIVE'; }
   }
 
   $addrList = null;
@@ -438,6 +441,10 @@ function radius_user_status(string $msisdn): array {
   while ($row = $st->fetch()) {
     $val = trim((string)($row['value'] ?? ''));
     if ($val !== '') $addrList = $val;
+  }
+
+  if ($addrList === null && $hsGroup !== null) {
+    $addrList = $hsGroup;
   }
 
   $policyLimited = $limitedGroup;
