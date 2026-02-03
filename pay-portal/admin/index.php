@@ -96,15 +96,23 @@ admin_require_login();
     background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
     padding:12px;box-shadow:var(--shadow-soft);
   }
-  .menu{display:flex;flex-direction:column;gap:8px}
-  .menu .btn{background:#fff;text-align:left;width:100%;justify-content:flex-start}
+  .menu{display:block}
+  .menu .btn{
+    display:block;
+    width:100%;
+    margin:0 0 8px;
+    background:#fff;
+    text-align:left;
+    justify-content:flex-start;
+  }
+  .menu .btn:last-child{margin-bottom:0}
   .menu .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .section-hidden{display:none}
   @media (max-width:900px){
     .layout{grid-template-columns:1fr}
     .side{position:static}
-    .menu{flex-direction:row;flex-wrap:wrap;overflow:visible;padding-bottom:6px}
-    .menu .btn{white-space:nowrap}
+    .menu{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px}
+    .menu .btn{width:auto;margin:0;white-space:nowrap}
   }
   @media (max-width:900px){
     .table{min-width:680px}
