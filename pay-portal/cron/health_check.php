@@ -148,6 +148,6 @@ $sample = [
   'note' => $note,
 ];
 
-$pdo = db_pdo($ENV);
+$pdo = health_pdo($ENV);
 health_insert_sample($pdo, $sample);
 health_update_events($pdo, $sample);

@@ -201,7 +201,7 @@ try {
 
     case 'health_status': {
       try {
-        $pdo = db_pdo($ENV);
+      $pdo = health_pdo($ENV);
         $latest = health_latest($pdo);
         $events = health_events($pdo, 30);
         $coaRate = health_coa_success_rate($pdo, 120);

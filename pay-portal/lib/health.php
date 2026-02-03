@@ -3,6 +3,21 @@ declare(strict_types=1);
 require_once __DIR__.'/common.php';
 require_once __DIR__.'/alerts.php';
 
+function health_pdo(array $env): PDO {
+  $dsn = (string)($env['HEALTH_DB_DSN'] ?? '');
+  $user = (string)($env['HEALTH_DB_USER'] ?? '');
+  $pass = (string)($env['HEALTH_DB_PASS'] ?? '');
+  if ($dsn !== '' && $user !== '') {
+    return new NisterPDO($dsn, $user, $pass, [
+      PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+      PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+      PDO::ATTR_EMULATE_PREPARES   => false,
+      PDO::ATTR_STRINGIFY_FETCHES  => false,
+    ]);
+  }
+  return db_pdo($env);
+}
+
 function health_bootstrap(PDO $pdo): void {
   $pdo->exec("CREATE TABLE IF NOT EXISTS health_samples (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
