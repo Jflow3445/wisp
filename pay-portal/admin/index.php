@@ -90,16 +90,18 @@ admin_require_login();
     display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
     border-radius:999px;padding:4px 10px;font-size:.8rem;background:#fff;
   }
-  .menu{
-    display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 18px;
-  }
-  .menu .btn{background:#fff}
-  .menu .btn.active{
-    background:var(--accent);
-    border-color:var(--accent);
-    color:#fff;
-  }
+  .layout{display:grid;grid-template-columns:220px 1fr;gap:18px;align-items:start}
+  .side{position:sticky;top:16px;align-self:start}
+  .menu{display:flex;flex-direction:column;gap:8px}
+  .menu .btn{background:#fff;text-align:left}
+  .menu .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .section-hidden{display:none}
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr}
+    .side{position:static}
+    .menu{flex-direction:row;overflow:auto;padding-bottom:6px}
+    .menu .btn{white-space:nowrap}
+  }
   @media (max-width:900px){
     .table{min-width:680px}
   }
@@ -118,15 +120,19 @@ admin_require_login();
     </div>
   </div>
 
-  <div class="menu" id="menu">
-    <button class="btn" data-section="overview" type="button">Overview</button>
-    <button class="btn" data-section="billing" type="button">Billing</button>
-    <button class="btn" data-section="plans" type="button">Plans</button>
-    <button class="btn" data-section="settings" type="button">Settings</button>
-    <button class="btn" data-section="alerts" type="button">Alerts</button>
-    <button class="btn" data-section="users" type="button">Users</button>
-    <button class="btn" data-section="all" type="button">All</button>
-  </div>
+  <div class="layout">
+    <aside class="side">
+      <div class="menu" id="menu">
+        <button class="btn" data-section="overview" type="button">Overview</button>
+        <button class="btn" data-section="billing" type="button">Billing</button>
+        <button class="btn" data-section="plans" type="button">Plans</button>
+        <button class="btn" data-section="settings" type="button">Settings</button>
+        <button class="btn" data-section="alerts" type="button">Alerts</button>
+        <button class="btn" data-section="users" type="button">Users</button>
+        <button class="btn" data-section="all" type="button">All</button>
+      </div>
+    </aside>
+    <main class="content">
 
   <div class="card" data-section="overview">
     <div class="section-head">
@@ -487,6 +493,8 @@ admin_require_login();
         </div>
       </div>
     </div>
+  </div>
+    </main>
   </div>
 </div>
 
