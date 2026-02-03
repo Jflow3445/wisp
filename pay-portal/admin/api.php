@@ -20,14 +20,14 @@ $fn = $_GET['fn'] ?? '';
 $in = array_merge($_POST, body_json());
 
 function table_exists(PDO $pdo, string $table): bool {
-  $st = $pdo->prepare("SHOW TABLES LIKE :t");
-  $st->execute([':t'=>$table]);
+  $qt = $pdo->quote($table);
+  $st = $pdo->query("SHOW TABLES LIKE {$qt}");
   return (bool)$st->fetchColumn();
 }
 
 function column_exists(PDO $pdo, string $table, string $col): bool {
-  $st = $pdo->prepare("SHOW COLUMNS FROM {$table} LIKE :c");
-  $st->execute([':c'=>$col]);
+  $qc = $pdo->quote($col);
+  $st = $pdo->query("SHOW COLUMNS FROM {$table} LIKE {$qc}");
   return (bool)$st->fetchColumn();
 }
 

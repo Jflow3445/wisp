@@ -7,8 +7,7 @@ function settings_bootstrap(): void {
   if ($ready) return;
   global $PDO;
   try {
-    $st = $PDO->prepare("SHOW TABLES LIKE 'app_settings'");
-    $st->execute();
+    $st = $PDO->query("SHOW TABLES LIKE 'app_settings'");
     $exists = (bool)$st->fetchColumn();
   } catch (Throwable $e) {
     $exists = false;
