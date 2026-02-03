@@ -588,6 +588,7 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
   $radclient = trim((string)@shell_exec('command -v radclient 2>/dev/null'));
   if ($radclient === '') $radclient = '/usr/bin/radclient';
   if (!is_file($radclient) || !is_executable($radclient)) return;
+  // COA_SRC_IP is handled at OS routing level; radclient has no -i flag in this build.
   $srcIp = trim((string)($ENV['COA_SRC_IP'] ?? ''));
   if ($srcIp !== '' && !filter_var($srcIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $srcIp = '';
 
@@ -694,7 +695,6 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
       $payload = 'User-Name = "'.$u."\"\n".$basePayload;
 
       $cmd = [$radclient, '-x'];
-      if ($srcIp !== '') { $cmd[] = '-i'; $cmd[] = $srcIp; }
       $cmd[] = $nas.':'.$port;
       $cmd[] = 'disconnect';
       $cmd[] = $secret;
@@ -743,6 +743,7 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   $radclient = trim((string)@shell_exec('command -v radclient 2>/dev/null'));
   if ($radclient === '') $radclient = '/usr/bin/radclient';
   if (!is_file($radclient) || !is_executable($radclient)) return ['ok'=>false,'error'=>'radclient_missing'];
+  // COA_SRC_IP is handled at OS routing level; radclient has no -i flag in this build.
   $srcIp = trim((string)($ENV['COA_SRC_IP'] ?? ''));
   if ($srcIp !== '' && !filter_var($srcIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $srcIp = '';
 
@@ -788,7 +789,6 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   $tryUsers[] = ''; // allow payload without User-Name
 
   $cmd = [$radclient, '-x'];
-  if ($srcIp !== '') { $cmd[] = '-i'; $cmd[] = $srcIp; }
   $cmd[] = $nas.':'.$port;
   $cmd[] = 'disconnect';
   $cmd[] = $secret;
