@@ -713,3 +713,73 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
     }
   }
 }
+
+/**
+ * Force a CoA disconnect by framed IP (Hotspot-friendly).
+ * Uses radacct to resolve NAS + username when possible.
+ */
+function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): array {
+  $ip = trim($ip);
+  if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+    return ['ok'=>false,'error'=>'invalid_ip'];
+  }
+
+  $port  = (int)($ENV['COA_PORT'] ?? 3799);
+  if ($port <= 0) return ['ok'=>false,'error'=>'missing_port'];
+
+  $secret = trim((string)($ENV['COA_SECRET'] ?? ''));
+  if ($secret === '') {
+    $sf = trim((string)($ENV['COA_SECRET_FILE'] ?? ''));
+    if ($sf !== '' && is_readable($sf)) $secret = trim((string)file_get_contents($sf));
+  }
+  if ($secret === '') return ['ok'=>false,'error'=>'missing_secret'];
+
+  $radclient = trim((string)@shell_exec('command -v radclient 2>/dev/null'));
+  if ($radclient === '') $radclient = '/usr/bin/radclient';
+  if (!is_file($radclient) || !is_executable($radclient)) return ['ok'=>false,'error'=>'radclient_missing'];
+
+  $pdo = null;
+  if (function_exists('rdb_pdo')) $pdo = rdb_pdo();
+  elseif (function_exists('radius_pdo')) $pdo = radius_pdo($ENV);
+  elseif (function_exists('db_pdo')) $pdo = db_pdo($ENV);
+  if (!$pdo instanceof PDO) return ['ok'=>false,'error'=>'db_unavailable'];
+
+  // Resolve NAS + username from active radacct session
+  $st = $pdo->prepare("SELECT username, nasipaddress FROM radacct WHERE framedipaddress=:ip AND acctstoptime IS NULL ORDER BY acctstarttime DESC LIMIT 1");
+  $st->execute([':ip'=>$ip]);
+  $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+  $nas = trim((string)($row['nasipaddress'] ?? ''));
+  $user = preg_replace('/\s+/', '', (string)($row['username'] ?? ''));
+
+  // Fallback NAS target if not in radacct
+  if ($nas === '') {
+    $nasRaw = (string)($ENV['NAS_IPS'] ?? ($ENV['NAS_IP'] ?? ''));
+    $nas = trim((string)preg_split('/[,\s]+/', $nasRaw, -1, PREG_SPLIT_NO_EMPTY)[0] ?? '');
+  }
+  if ($nas === '') return ['ok'=>false,'error'=>'nas_missing'];
+
+  // Optional explicit user (from admin)
+  $msisdn = $msisdn ? preg_replace('/\D+/', '', $msisdn) : '';
+  if ($msisdn !== '' && $user === '') $user = $msisdn;
+
+  $payload = '';
+  if ($user !== '') $payload .= 'User-Name = "'.$user."\"\n";
+  $payload .= 'Framed-IP-Address = '.$ip."\n";
+  $payload .= "Message-Authenticator = 0x00\n";
+
+  $cmd = [$radclient, '-x', $nas.':'.$port, 'disconnect', $secret];
+  $des = [0=>['pipe','w'], 1=>['pipe','r'], 2=>['pipe','r']];
+  $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
+  if (!is_resource($proc)) return ['ok'=>false,'error'=>'radclient_failed'];
+
+  @fwrite($pipes[0], $payload);
+  @fclose($pipes[0]);
+  $out = @stream_get_contents($pipes[1]) ?: '';
+  @fclose($pipes[1]);
+  $err = @stream_get_contents($pipes[2]) ?: '';
+  @fclose($pipes[2]);
+  @proc_close($proc);
+
+  $ok = (strpos($out, 'Disconnect-ACK') !== false || strpos($err, 'Disconnect-ACK') !== false);
+  return ['ok'=>$ok, 'out'=>trim($out."\n".$err), 'nas'=>$nas, 'user'=>$user];
+}

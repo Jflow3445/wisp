@@ -435,6 +435,10 @@ admin_require_login();
             <input id="tool_msisdn" type="text" placeholder="233xxxxxxxxx">
           </div>
           <div class="field">
+            <label for="tool_ip">Force kick IP</label>
+            <input id="tool_ip" type="text" placeholder="192.168.88.x">
+          </div>
+          <div class="field">
             <label for="tool_amount">Amount (GHS)</label>
             <input id="tool_amount" type="text" placeholder="0.00">
           </div>
@@ -480,6 +484,7 @@ admin_require_login();
           <button class="btn approve" id="tool_credit" type="button">Credit Wallet</button>
           <button class="btn" id="tool_apply" type="button">Apply Plan</button>
           <button class="btn decline" id="tool_disconnect" type="button">Disconnect</button>
+          <button class="btn decline" id="tool_force_kick_ip" type="button">Force Kick by IP</button>
         </div>
         <div class="tool-actions">
           <button class="btn" id="tool_set_expiry" type="button">Set Expiry</button>
@@ -1179,6 +1184,23 @@ async function disconnectUser(){
   setToolStatus('Disconnect sent.', 'success');
 }
 
+async function forceKickByIp(){
+  const ip = toolValue('tool_ip');
+  if (!ip){
+    setToolStatus('IP address is required.', 'error');
+    return;
+  }
+  if (!confirm(`Force kick IP ${ip}?`)) return;
+  setToolStatus('Sending IP disconnect...');
+  const j = await api('user_force_kick_ip', { ip });
+  if (!j.ok){
+    setToolStatus(j.error || 'Force kick failed.', 'error');
+    return;
+  }
+  const msg = j.user ? `Disconnect sent for ${ip} (${j.user}).` : `Disconnect sent for ${ip}.`;
+  setToolStatus(msg, 'success');
+}
+
 async function setExpiry(){
   const msisdn = toolValue('tool_msisdn');
   const expires_at = toolValue('tool_expiry');
@@ -1345,6 +1367,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (applyBtn) applyBtn.addEventListener('click', applyPlan);
   const disconnectBtn = document.getElementById('tool_disconnect');
   if (disconnectBtn) disconnectBtn.addEventListener('click', disconnectUser);
+  const forceKickBtn = document.getElementById('tool_force_kick_ip');
+  if (forceKickBtn) forceKickBtn.addEventListener('click', forceKickByIp);
   const setExpBtn = document.getElementById('tool_set_expiry');
   if (setExpBtn) setExpBtn.addEventListener('click', setExpiry);
   const addQuotaBtn = document.getElementById('tool_add_quota');

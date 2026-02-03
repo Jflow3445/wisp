@@ -1066,6 +1066,25 @@ try {
       break;
     }
 
+    case 'user_force_kick_ip': {
+      $ip = trim((string)from_any([$in],'ip',''));
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($ip === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'ip required']); break; }
+      try {
+        $res = radius_force_kick_ip($ip, $msisdn !== '' ? $msisdn : null, $_ENV);
+        if (!empty($res['ok'])) {
+          echo json_encode(['ok'=>true,'nas'=>$res['nas'] ?? null,'user'=>$res['user'] ?? null]);
+        } else {
+          http_response_code(500);
+          echo json_encode(['ok'=>false,'error'=>'kick_ip_failed','detail'=>$res['error'] ?? 'unknown','out'=>$res['out'] ?? null]);
+        }
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'kick_ip_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
     case 'user_set_expiry': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $raw = trim((string)from_any([$in],'expires_at',''));

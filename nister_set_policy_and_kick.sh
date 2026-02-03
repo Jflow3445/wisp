@@ -167,48 +167,51 @@ COMMIT;
 echo "[*] DB state now:"
 sql_exec "SELECT username,groupname,priority FROM radusergroup WHERE username IN ($IN_LIST) ORDER BY username,priority;"
 
-# find active session (if any) for ANY variant
-SESS_USER=""; NASIP=""; FRAMEDIP=""; ACCTSID=""
-read -r SESS_USER NASIP FRAMEDIP ACCTSID < <(
+# find ALL active sessions for ANY variant
+mapfile -t rows < <(
   mysql --defaults-extra-file="$CNF" -N -B -e "
     SELECT username, nasipaddress, framedipaddress, acctsessionid
     FROM radacct
     WHERE username IN ($IN_LIST) AND acctstoptime IS NULL
     ORDER BY acctstarttime DESC
-    LIMIT 1;" || true
+    LIMIT 50;" || true
 )
 
-if [[ -z "${SESS_USER:-}" || -z "${ACCTSID:-}" ]]; then
-  echo "[*] No active session found in radacct -> nothing to kick."
-  exit 0
-fi
+(( ${#rows[@]} > 0 )) || { echo "[*] No active session found in radacct -> nothing to kick."; exit 0; }
 
-echo "[*] Active session found:"
-echo "    user=$SESS_USER ip=$FRAMEDIP sid=$ACCTSID nasip=${NASIP:-$NAS}"
-
+echo "[*] Active sessions:"
+for row in "${rows[@]}"; do
+  IFS=$'\t' read -r u nas ip sid <<<"$row"
+  echo "    user=$u ip=${ip:-na} sid=${sid:-na} nasip=${nas:-$NAS}"
+done
 
 echo "[*] Sending Disconnect-Request (forces re-login onto new policy)..."
-NAS_TARGET="${NASIP:-$NAS}"
-if ! is_valid_ipv4 "$NAS_TARGET"; then NAS_TARGET="$NAS"; fi
-if ! is_allowed_nas "$NAS_TARGET"; then NAS_TARGET="$NAS"; fi
+ok=0
+fail=0
+for row in "${rows[@]}"; do
+  IFS=$'\t' read -r SESS_USER NASIP FRAMEDIP ACCTSID <<<"$row"
+  [[ -n "${SESS_USER:-}" ]] || continue
 
-payload="User-Name = \"${SESS_USER}\"
-Acct-Session-Id = \"${ACCTSID}\"
-Message-Authenticator = 0x00
-"
-if is_valid_ipv4 "${FRAMEDIP:-}"; then
+  NAS_TARGET="${NASIP:-$NAS}"
+  if ! is_valid_ipv4 "$NAS_TARGET"; then NAS_TARGET="$NAS"; fi
+  if ! is_allowed_nas "$NAS_TARGET"; then NAS_TARGET="$NAS"; fi
+
+  if ! is_valid_ipv4 "${FRAMEDIP:-}"; then
+    echo "[*] Skip user=$SESS_USER (no valid Framed-IP-Address) sid=${ACCTSID:-na}"
+    continue
+  fi
+
   payload="User-Name = \"${SESS_USER}\"
 Framed-IP-Address = ${FRAMEDIP}
-Acct-Session-Id = \"${ACCTSID}\"
 Message-Authenticator = 0x00
 "
-fi
-out="$(echo -e "$payload" | radclient -x -r 1 -t 3 "${NAS_TARGET}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
-if echo "$out" | grep -q "Disconnect-ACK"; then
-  echo "$out"
-else
-  echo "$out"
-  alert "COA_FAIL user=$SESS_USER target=${NAS_TARGET}:${COA_PORT} sid=$ACCTSID ip=${FRAMEDIP:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 300)"
-fi
+  out="$(echo -e "$payload" | radclient -x -r 1 -t 3 "${NAS_TARGET}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
+  if echo "$out" | grep -q "Disconnect-ACK"; then
+    (( ok++ ))
+  else
+    (( fail++ ))
+    alert "COA_FAIL user=$SESS_USER target=${NAS_TARGET}:${COA_PORT} sid=${ACCTSID:-na} ip=${FRAMEDIP:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 300)"
+  fi
+done
 
-echo "[OK] Kicked. Next login MUST show MT-Address-List=\"$TARGET\" in MikroTik /log radius debug."
+echo "[OK] Kick summary: ok=$ok fail=$fail. Next login MUST show MT-Address-List=\"$TARGET\" in MikroTik /log radius debug."

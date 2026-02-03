@@ -254,7 +254,10 @@ kick_sessions(){
 
   for row in "${rows[@]}"; do
     IFS=$'	' read -r u ip sid nas <<<"$row"
-    [[ -n "${sid:-}" ]] || continue
+    if ! is_valid_ipv4 "${ip:-}"; then
+      log "WARN user=$USER skip_coa_no_framed_ip sid=${sid:-na} nas=${nas:-na}"
+      continue
+    fi
 
     if ! is_valid_ipv4 "${nas:-}"; then
       log "WARN user=$USER bad_nasip=$nas fallback=${NAS_IPS_LIST[0]}"
@@ -265,16 +268,9 @@ kick_sessions(){
     fi
 
     payload="User-Name = \"${u}\"
-Acct-Session-Id = \"${sid}\"
-Message-Authenticator = 0x00
-"
-    if is_valid_ipv4 "${ip:-}"; then
-      payload="User-Name = \"${u}\"
 Framed-IP-Address = ${ip}
-Acct-Session-Id = \"${sid}\"
 Message-Authenticator = 0x00
 "
-    fi
 
     out="$(echo -e "$payload" | radclient -x -r 1 -t 3 "${nas}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
     if echo "$out" | grep -q "Disconnect-ACK"; then

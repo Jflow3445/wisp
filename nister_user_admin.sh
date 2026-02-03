@@ -334,12 +334,16 @@ kick_user(){
   local ok=0 fail=0 row u ip sid
   for row in "${rows[@]}"; do
     IFS=$'\t' read -r u ip sid nas <<<"$row"
-    [[ -n "${u:-}" && -n "${ip:-}" && -n "${sid:-}" ]] || continue
+    [[ -n "${u:-}" ]] || continue
+    if ! is_valid_ipv4 "${ip:-}"; then
+      echo "[*] Skip user=$u (no valid Framed-IP-Address) sid=${sid:-na}"
+      continue
+    fi
     if ! is_valid_ipv4 "${nas:-}"; then nas="${NAS_IP}"; fi
     if ! is_allowed_nas "${nas:-}"; then nas="${NAS_IP}"; fi
     echo "[*] Kicking user=$u ip=$ip sid=$sid via ${nas:-${NAS_IP}}:${COA_PORT}"
-    if printf 'User-Name = "%s"\nFramed-IP-Address = %s\nAcct-Session-Id = "%s"\nMessage-Authenticator = 0x00\n' \
-      "$u" "$ip" "$sid" \
+    if printf 'User-Name = "%s"\nFramed-IP-Address = %s\nMessage-Authenticator = 0x00\n' \
+      "$u" "$ip" \
       | radclient -x -r 1 -t 3 "${nas:-${NAS_IP}}:${COA_PORT}" disconnect "$COA_SECRET" >/dev/null 2>&1; then
       ((ok+=1))
     else
