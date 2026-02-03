@@ -759,10 +759,15 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   $nas = trim((string)($row['nasipaddress'] ?? ''));
   $user = preg_replace('/\s+/', '', (string)($row['username'] ?? ''));
 
-  // Fallback NAS target if not in radacct
-  if ($nas === '') {
-    $nasRaw = (string)($ENV['NAS_IPS'] ?? ($ENV['NAS_IP'] ?? ''));
-    $nas = trim((string)preg_split('/[,\s]+/', $nasRaw, -1, PREG_SPLIT_NO_EMPTY)[0] ?? '');
+  // Normalize NAS allow-list (if provided) and ensure target is allowed
+  $nasRaw = (string)($ENV['NAS_IPS'] ?? ($ENV['NAS_IP'] ?? ''));
+  $nasList = array_values(array_filter(preg_split('/[,\s]+/', $nasRaw, -1, PREG_SPLIT_NO_EMPTY), static function($v){
+    return (bool)filter_var($v, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
+  }));
+
+  // Fallback NAS target if not in radacct or not allowed
+  if ($nas === '' || ($nasList && !in_array($nas, $nasList, true))) {
+    $nas = $nasList[0] ?? '';
   }
   if ($nas === '') return ['ok'=>false,'error'=>'nas_missing'];
 

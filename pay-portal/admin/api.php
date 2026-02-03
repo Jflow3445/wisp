@@ -1076,7 +1076,14 @@ try {
           echo json_encode(['ok'=>true,'nas'=>$res['nas'] ?? null,'user'=>$res['user'] ?? null]);
         } else {
           http_response_code(500);
-          echo json_encode(['ok'=>false,'error'=>'kick_ip_failed','detail'=>$res['error'] ?? 'unknown','out'=>$res['out'] ?? null]);
+          echo json_encode([
+            'ok'=>false,
+            'error'=>'kick_ip_failed',
+            'detail'=>$res['error'] ?? 'unknown',
+            'out'=>$res['out'] ?? null,
+            'nas'=>$res['nas'] ?? null,
+            'user'=>$res['user'] ?? null,
+          ]);
         }
       } catch (Throwable $e) {
         http_response_code(500);
