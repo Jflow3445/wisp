@@ -6,11 +6,24 @@ function settings_bootstrap(): void {
   static $ready = false;
   if ($ready) return;
   global $PDO;
-  $PDO->exec("CREATE TABLE IF NOT EXISTS app_settings (
-    `k` VARCHAR(64) PRIMARY KEY,
-    `v` TEXT NULL,
-    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+  try {
+    $st = $PDO->prepare("SHOW TABLES LIKE 'app_settings'");
+    $st->execute();
+    $exists = (bool)$st->fetchColumn();
+  } catch (Throwable $e) {
+    $exists = false;
+  }
+  if (!$exists) {
+    try {
+      $PDO->exec("CREATE TABLE IF NOT EXISTS app_settings (
+        `k` VARCHAR(64) PRIMARY KEY,
+        `v` TEXT NULL,
+        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } catch (Throwable $e) {
+      throw new RuntimeException('settings table missing and cannot be created (db permissions?)');
+    }
+  }
   $ready = true;
 }
 

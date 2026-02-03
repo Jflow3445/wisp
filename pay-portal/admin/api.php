@@ -297,6 +297,43 @@ try {
       break;
     }
 
+    case 'diag_db': {
+      $db = $PDO->query("SELECT DATABASE() AS db")->fetch();
+      $payDb = $db['db'] ?? null;
+      $tables = [
+        'payments'  => table_exists($PDO, 'payments'),
+        'purchases' => table_exists($PDO, 'purchases'),
+        'accounts'  => table_exists($PDO, 'accounts'),
+        'ledger'    => table_exists($PDO, 'ledger'),
+        'app_settings' => table_exists($PDO, 'app_settings'),
+      ];
+      $counts = [];
+      foreach ($tables as $t => $exists) {
+        if (!$exists || $t === 'app_settings') continue;
+        $counts[$t] = (int)($PDO->query("SELECT COUNT(*) FROM {$t}")->fetchColumn() ?: 0);
+      }
+      $radiusDb = null;
+      $radCounts = [];
+      try {
+        $r = rdb_pdo();
+        $rdb = $r->query("SELECT DATABASE() AS db")->fetch();
+        $radiusDb = $rdb['db'] ?? null;
+        $radCounts['radacct'] = (int)($r->query("SELECT COUNT(*) FROM radacct")->fetchColumn() ?: 0);
+        $radCounts['radusergroup'] = (int)($r->query("SELECT COUNT(*) FROM radusergroup")->fetchColumn() ?: 0);
+      } catch (Throwable $e) {
+        $radCounts['error'] = $e->getMessage();
+      }
+      echo json_encode([
+        'ok'=>true,
+        'pay_db'=>$payDb,
+        'pay_tables'=>$tables,
+        'pay_counts'=>$counts,
+        'radius_db'=>$radiusDb,
+        'radius_counts'=>$radCounts,
+      ]);
+      break;
+    }
+
     case 'pending': {
       $st = $PDO->query("
         SELECT id, ref, msisdn, amount, method, payer_name, notes, status, created_at
