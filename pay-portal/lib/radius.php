@@ -698,20 +698,30 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
       $cmd[] = $nas.':'.$port;
       $cmd[] = 'disconnect';
       $cmd[] = $secret;
+      $out = '';
+      $err = '';
       $des = [0=>['pipe','w'], 1=>['pipe','r'], 2=>['pipe','r']];
       $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
-      if (!is_resource($proc)) continue;
-
-      @fwrite($pipes[0], $payload);
-      @fclose($pipes[0]);
-
-      $out = @stream_get_contents($pipes[1]) ?: '';
-      @fclose($pipes[1]);
-
-      $err = @stream_get_contents($pipes[2]) ?: '';
-      @fclose($pipes[2]);
-
-      @proc_close($proc);
+      if (is_resource($proc)) {
+        $okWrite = @fwrite($pipes[0], $payload);
+        @fclose($pipes[0]);
+        $out = @stream_get_contents($pipes[1]) ?: '';
+        @fclose($pipes[1]);
+        $err = @stream_get_contents($pipes[2]) ?: '';
+        @fclose($pipes[2]);
+        @proc_close($proc);
+        if ($okWrite === false) {
+          $out = '';
+          $err = '';
+        }
+      }
+      if ($out === '' && $err === '') {
+        // Fallback: shell pipeline (some PHP builds break proc_open pipes)
+        $shell = 'printf %s ' . escapeshellarg($payload)
+          . ' | ' . escapeshellarg($radclient) . ' -x ' . escapeshellarg($nas.':'.$port)
+          . ' disconnect ' . escapeshellarg($secret);
+        $out = @shell_exec($shell) ?: '';
+      }
 
       if (strpos($out, 'Disconnect-ACK') !== false || strpos($err, 'Disconnect-ACK') !== false) {
         break; // success for this session -> next session
@@ -800,17 +810,30 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
     $payload .= 'Framed-IP-Address = '.$ip."\n";
     $payload .= "Message-Authenticator = 0x00\n";
 
+    $out = '';
+    $err = '';
     $des = [0=>['pipe','w'], 1=>['pipe','r'], 2=>['pipe','r']];
     $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
-    if (!is_resource($proc)) return ['ok'=>false,'error'=>'radclient_failed'];
-
-    @fwrite($pipes[0], $payload);
-    @fclose($pipes[0]);
-    $out = @stream_get_contents($pipes[1]) ?: '';
-    @fclose($pipes[1]);
-    $err = @stream_get_contents($pipes[2]) ?: '';
-    @fclose($pipes[2]);
-    @proc_close($proc);
+    if (is_resource($proc)) {
+      $okWrite = @fwrite($pipes[0], $payload);
+      @fclose($pipes[0]);
+      $out = @stream_get_contents($pipes[1]) ?: '';
+      @fclose($pipes[1]);
+      $err = @stream_get_contents($pipes[2]) ?: '';
+      @fclose($pipes[2]);
+      @proc_close($proc);
+      if ($okWrite === false) {
+        $out = '';
+        $err = '';
+      }
+    }
+    if ($out === '' && $err === '') {
+      // Fallback: shell pipeline (some PHP builds break proc_open pipes)
+      $shell = 'printf %s ' . escapeshellarg($payload)
+        . ' | ' . escapeshellarg($radclient) . ' -x ' . escapeshellarg($nas.':'.$port)
+        . ' disconnect ' . escapeshellarg($secret);
+      $out = @shell_exec($shell) ?: '';
+    }
 
     $combined = trim($out."\n".$err);
     $lastOut = $combined;
