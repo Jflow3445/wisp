@@ -355,7 +355,9 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
             $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords') AND value='0'")->execute([':u'=>$u]);
             try {
                 $call = $r->prepare("CALL nister_apply_topup(?, ?, ?, ?)");
-                $call->execute([$u, $capBytes, $durDays, $planCode]);
+                // NOTE: stored procedure semantics can be additive; pass only NEW quota,
+                // then explicitly enforce final combined quota below.
+                $call->execute([$u, $newQuota, $durDays, $planCode]);
                 $call->closeCursor();
                 $applied = true;
             } catch (Throwable $e) {
@@ -366,6 +368,19 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
                 nister_apply_topup_fallback($r, $u, $combined, $expStr, $durDays, $planCode, $planCode);
             }
             radius_set_check($r, $u, 'Expiration', ':=', $expStr);
+
+            // Enforce final combined quota after proc (avoid accidental double-add).
+            $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")
+              ->execute([':u'=>$u]);
+            if ($combined > 0) {
+                radius_set_reply($r, $u, 'Nister-Quota-Bytes', ':=', (string)$combined);
+                $hi = intdiv($combined, 4294967296);
+                $lo = (int)($combined - ($hi * 4294967296));
+                radius_set_reply($r, $u, 'Mikrotik-Total-Limit', ':=', (string)$lo);
+                if ($hi > 0) {
+                    radius_set_reply($r, $u, 'Mikrotik-Total-Limit-Gigawords', ':=', (string)$hi);
+                }
+            }
 
             // Set per-user plan metadata (no PLAN_* groups)
             radius_set_reply($r, $u, 'Nister-Plan-Code', ':=', $planCode);
