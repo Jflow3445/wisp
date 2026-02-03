@@ -588,6 +588,8 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
   $radclient = trim((string)@shell_exec('command -v radclient 2>/dev/null'));
   if ($radclient === '') $radclient = '/usr/bin/radclient';
   if (!is_file($radclient) || !is_executable($radclient)) return;
+  $srcIp = trim((string)($ENV['COA_SRC_IP'] ?? ''));
+  if ($srcIp !== '' && !filter_var($srcIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $srcIp = '';
 
   // Normalize digits
   $raw = preg_replace('/\D+/', '', (string)$msisdn);
@@ -691,7 +693,11 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
 
       $payload = 'User-Name = "'.$u."\"\n".$basePayload;
 
-      $cmd = [$radclient, '-x', $nas.':'.$port, 'disconnect', $secret];
+      $cmd = [$radclient, '-x'];
+      if ($srcIp !== '') { $cmd[] = '-i'; $cmd[] = $srcIp; }
+      $cmd[] = $nas.':'.$port;
+      $cmd[] = 'disconnect';
+      $cmd[] = $secret;
       $des = [0=>['pipe','w'], 1=>['pipe','r'], 2=>['pipe','r']];
       $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
       if (!is_resource($proc)) continue;
@@ -737,6 +743,8 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   $radclient = trim((string)@shell_exec('command -v radclient 2>/dev/null'));
   if ($radclient === '') $radclient = '/usr/bin/radclient';
   if (!is_file($radclient) || !is_executable($radclient)) return ['ok'=>false,'error'=>'radclient_missing'];
+  $srcIp = trim((string)($ENV['COA_SRC_IP'] ?? ''));
+  if ($srcIp !== '' && !filter_var($srcIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $srcIp = '';
 
   $pdo = null;
   if (function_exists('rdb_pdo')) $pdo = rdb_pdo();
@@ -767,7 +775,11 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   $payload .= 'Framed-IP-Address = '.$ip."\n";
   $payload .= "Message-Authenticator = 0x00\n";
 
-  $cmd = [$radclient, '-x', $nas.':'.$port, 'disconnect', $secret];
+  $cmd = [$radclient, '-x'];
+  if ($srcIp !== '') { $cmd[] = '-i'; $cmd[] = $srcIp; }
+  $cmd[] = $nas.':'.$port;
+  $cmd[] = 'disconnect';
+  $cmd[] = $secret;
   $des = [0=>['pipe','w'], 1=>['pipe','r'], 2=>['pipe','r']];
   $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
   if (!is_resource($proc)) return ['ok'=>false,'error'=>'radclient_failed'];
