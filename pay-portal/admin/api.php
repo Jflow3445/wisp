@@ -5,6 +5,7 @@ require_once __DIR__.'/../lib/wallet.php'; // still used elsewhere
 require_once __DIR__.'/../lib/radius.php';
 require_once __DIR__.'/../lib/plans_radius.php';
 require_once __DIR__.'/../lib/common.php';
+require_once __DIR__.'/../lib/settings.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 
 $ENV = admin_boot();
@@ -24,6 +25,12 @@ function table_exists(PDO $pdo, string $table): bool {
   return (bool)$st->fetchColumn();
 }
 
+function column_exists(PDO $pdo, string $table, string $col): bool {
+  $st = $pdo->prepare("SHOW COLUMNS FROM {$table} LIKE :c");
+  $st->execute([':c'=>$col]);
+  return (bool)$st->fetchColumn();
+}
+
 function parse_amount_cents(array $in): int {
   if (isset($in['amount_cents']) && is_numeric($in['amount_cents'])) {
     return max(0, (int)$in['amount_cents']);
@@ -40,6 +47,45 @@ function parse_bool($v): bool {
   $s = strtolower(trim((string)$v));
   if ($s === '') return false;
   return !in_array($s, ['0','false','no','off'], true);
+}
+
+function settings_allowed_keys(): array {
+  return [
+    'HOTSPOT_API_BASE',
+    'PAY_BASE',
+    'WHATSAPP_SUPPORT',
+    'TOPUP_NETWORK',
+    'TOPUP_NAME',
+    'TOPUP_NUMBER',
+    'TOPUP_WA_TEXT',
+  ];
+}
+
+function normalize_setting_value(string $k, ?string $v): string {
+  $v = trim((string)$v);
+  if ($k === 'HOTSPOT_API_BASE' || $k === 'PAY_BASE') {
+    $v = rtrim($v, '/');
+  }
+  if ($k === 'WHATSAPP_SUPPORT') {
+    $v = preg_replace('/\D+/', '', $v);
+  }
+  return $v;
+}
+
+function bytes_from_input(array $in): ?int {
+  if (isset($in['bytes']) && is_numeric($in['bytes'])) {
+    $b = (int)$in['bytes'];
+    return $b > 0 ? $b : null;
+  }
+  if (isset($in['gb']) && $in['gb'] !== '') {
+    $g = (float)preg_replace('/[^\d.]/', '', (string)$in['gb']);
+    return ($g > 0) ? (int)round($g * 1024 * 1024 * 1024) : null;
+  }
+  if (isset($in['mb']) && $in['mb'] !== '') {
+    $m = (float)preg_replace('/[^\d.]/', '', (string)$in['mb']);
+    return ($m > 0) ? (int)round($m * 1024 * 1024) : null;
+  }
+  return null;
 }
 
 function plan_reserved(string $code): bool {
@@ -82,6 +128,28 @@ try {
       break;
     }
 
+    case 'settings_get': {
+      $keys = settings_allowed_keys();
+      $out = [];
+      foreach ($keys as $k) {
+        $out[$k] = settings_get($k, '') ?? '';
+      }
+      echo json_encode(['ok'=>true,'settings'=>$out]);
+      break;
+    }
+
+    case 'settings_save': {
+      $keys = settings_allowed_keys();
+      foreach ($keys as $k) {
+        if (array_key_exists($k, $in)) {
+          $val = normalize_setting_value($k, (string)$in[$k]);
+          settings_set($k, $val);
+        }
+      }
+      echo json_encode(['ok'=>true]);
+      break;
+    }
+
     case 'stats': {
       $wallet_liability_cents = 0;
       $wallet_accounts_cnt = 0;
@@ -105,22 +173,24 @@ try {
 
       $s = ['pending_cnt'=>0,'pending_cents'=>0,'approved_cnt'=>0,'approved_cents'=>0,'declined_cnt'=>0,'declined_cents'=>0];
       if (table_exists($PDO, 'payments')) {
+        $payAmountExpr = column_exists($PDO, 'payments', 'amount_cents') ? 'amount_cents' : 'amount*100';
         $s = $PDO->query("
           SELECT
             SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending_cnt,
-            COALESCE(SUM(CASE WHEN status='pending' THEN COALESCE(amount_cents, amount*100) ELSE 0 END),0) AS pending_cents,
+            COALESCE(SUM(CASE WHEN status='pending' THEN {$payAmountExpr} ELSE 0 END),0) AS pending_cents,
             SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved_cnt,
-            COALESCE(SUM(CASE WHEN status='approved' THEN COALESCE(amount_cents, amount*100) ELSE 0 END),0) AS approved_cents,
+            COALESCE(SUM(CASE WHEN status='approved' THEN {$payAmountExpr} ELSE 0 END),0) AS approved_cents,
             SUM(CASE WHEN status='declined' THEN 1 ELSE 0 END) AS declined_cnt,
-            COALESCE(SUM(CASE WHEN status='declined' THEN COALESCE(amount_cents, amount*100) ELSE 0 END),0) AS declined_cents
+            COALESCE(SUM(CASE WHEN status='declined' THEN {$payAmountExpr} ELSE 0 END),0) AS declined_cents
           FROM payments
         ")->fetch() ?: $s;
       }
 
       $t = ['cents'=>0];
       if (table_exists($PDO, 'payments')) {
+        $payAmountExpr = column_exists($PDO, 'payments', 'amount_cents') ? 'amount_cents' : 'amount*100';
         $t = $PDO->query("
-          SELECT COALESCE(SUM(COALESCE(amount_cents, amount*100)),0) AS cents
+          SELECT COALESCE(SUM({$payAmountExpr}),0) AS cents
           FROM payments
           WHERE status='approved' AND DATE(approved_at)=CURDATE()
         ")->fetch() ?: $t;
@@ -129,10 +199,11 @@ try {
       $p = ['total_cents'=>0,'applied_cents'=>0,'pending_cnt'=>0,'applied_cnt'=>0,'failed_cnt'=>0];
       $top_plans = [];
       if (table_exists($PDO, 'purchases')) {
+        $purAmountExpr = column_exists($PDO, 'purchases', 'price_cents') ? 'price_cents' : 'price*100';
         $p = $PDO->query("
           SELECT
-            COALESCE(SUM(price_cents),0) AS total_cents,
-            COALESCE(SUM(CASE WHEN status='applied' THEN price_cents ELSE 0 END),0) AS applied_cents,
+            COALESCE(SUM({$purAmountExpr}),0) AS total_cents,
+            COALESCE(SUM(CASE WHEN status='applied' THEN {$purAmountExpr} ELSE 0 END),0) AS applied_cents,
             COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) AS pending_cnt,
             COALESCE(SUM(CASE WHEN status='applied' THEN 1 ELSE 0 END),0) AS applied_cnt,
             COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed_cnt
@@ -140,7 +211,7 @@ try {
         ")->fetch() ?: $p;
 
         $top_plans = $PDO->query("
-          SELECT plan_code, COUNT(*) AS cnt, COALESCE(SUM(price_cents),0) AS cents
+          SELECT plan_code, COUNT(*) AS cnt, COALESCE(SUM({$purAmountExpr}),0) AS cents
           FROM purchases
           WHERE status='applied' AND activated_at IS NOT NULL
             AND activated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
@@ -163,8 +234,9 @@ try {
       $pay_series = [];
       $pur_series = [];
       if (table_exists($PDO, 'payments')) {
+        $payAmountExpr = column_exists($PDO, 'payments', 'amount_cents') ? 'amount_cents' : 'amount*100';
         $pay_series = $PDO->query("
-          SELECT DATE(approved_at) AS d, COALESCE(SUM(COALESCE(amount_cents, amount*100)),0) AS cents
+          SELECT DATE(approved_at) AS d, COALESCE(SUM({$payAmountExpr}),0) AS cents
           FROM payments
           WHERE status='approved' AND approved_at IS NOT NULL
           GROUP BY DATE(approved_at)
@@ -173,8 +245,9 @@ try {
         ")->fetchAll() ?: [];
       }
       if (table_exists($PDO, 'purchases')) {
+        $purAmountExpr = column_exists($PDO, 'purchases', 'price_cents') ? 'price_cents' : 'price*100';
         $pur_series = $PDO->query("
-          SELECT DATE(activated_at) AS d, COALESCE(SUM(price_cents),0) AS cents
+          SELECT DATE(activated_at) AS d, COALESCE(SUM({$purAmountExpr}),0) AS cents
           FROM purchases
           WHERE status='applied' AND activated_at IS NOT NULL
           GROUP BY DATE(activated_at)
@@ -528,6 +601,167 @@ try {
       }
 
       echo json_encode($out);
+      break;
+    }
+
+    case 'user_set_expiry': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      $raw = trim((string)from_any([$in],'expires_at',''));
+      $days = (int)from_any([$in],'days',0);
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      try {
+        $tz = new DateTimeZone(date_default_timezone_get());
+        if ($raw === '' && $days > 0) {
+          $dt = (new DateTimeImmutable('now', $tz))->modify("+{$days} days")->setTime(23,59,59);
+        } else {
+          $dt = new DateTimeImmutable($raw, $tz);
+        }
+        $expStr = $dt->format('d M Y H:i:s');
+        $r = rdb_pdo();
+        foreach (nister_username_variants($msisdn) as $u) {
+          radius_set_check($r, $u, 'Expiration', ':=', $expStr);
+        }
+        echo json_encode(['ok'=>true,'expires_at'=>$expStr]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'expiry_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_add_quota': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $delta = bytes_from_input($in);
+      if ($delta === null || $delta <= 0) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'quota bytes required']); break; }
+      try {
+        $r = rdb_pdo();
+        $targets = nister_username_variants($msisdn);
+        $group = radius_pick_plan_group($r, $targets);
+        $cur = nister_current_total_quota($r, $targets, $group) ?? 0;
+        $new = (int)max(0, $cur + $delta);
+        $hi = (int)floor($new / 4294967296);
+        $lo = (int)($new % 4294967296);
+        foreach ($targets as $u) {
+          radius_set_reply($r, $u, 'Nister-Quota-Bytes', ':=', (string)$new);
+          radius_set_reply($r, $u, 'Mikrotik-Total-Limit-Gigawords', ':=', (string)$hi);
+          radius_set_reply($r, $u, 'Mikrotik-Total-Limit', ':=', (string)$lo);
+        }
+        echo json_encode(['ok'=>true,'quota_bytes'=>$new]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'quota_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_set_quota': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $val = bytes_from_input($in);
+      if ($val === null || $val <= 0) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'quota bytes required']); break; }
+      try {
+        $r = rdb_pdo();
+        $targets = nister_username_variants($msisdn);
+        $hi = (int)floor($val / 4294967296);
+        $lo = (int)($val % 4294967296);
+        foreach ($targets as $u) {
+          radius_set_reply($r, $u, 'Nister-Quota-Bytes', ':=', (string)$val);
+          radius_set_reply($r, $u, 'Mikrotik-Total-Limit-Gigawords', ':=', (string)$hi);
+          radius_set_reply($r, $u, 'Mikrotik-Total-Limit', ':=', (string)$lo);
+        }
+        echo json_encode(['ok'=>true,'quota_bytes'=>$val]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'quota_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_clear_quota': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      try {
+        $r = rdb_pdo();
+        $targets = nister_username_variants($msisdn);
+        $ph = implode(",", array_fill(0, count($targets), "?"));
+        $st = $r->prepare("DELETE FROM radreply WHERE username IN ($ph)
+                            AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')");
+        $st->execute($targets);
+        echo json_encode(['ok'=>true]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'quota_clear_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_set_addrlist': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      $addr = trim((string)from_any([$in],'addrlist',''));
+      if ($msisdn === '' || $addr === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and addrlist required']); break; }
+      try {
+        $r = rdb_pdo();
+        foreach (nister_username_variants($msisdn) as $u) {
+          radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addr);
+        }
+        echo json_encode(['ok'=>true,'addrlist'=>$addr]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'addrlist_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_set_rate': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      $rate = trim((string)from_any([$in],'rate_limit',''));
+      if ($msisdn === '' || $rate === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and rate_limit required']); break; }
+      try {
+        $r = rdb_pdo();
+        foreach (nister_username_variants($msisdn) as $u) {
+          radius_set_reply($r, $u, 'Mikrotik-Rate-Limit', ':=', $rate);
+        }
+        echo json_encode(['ok'=>true,'rate_limit'=>$rate]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'rate_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_set_group': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      $group = trim((string)from_any([$in],'group',''));
+      if ($msisdn === '' || $group === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and group required']); break; }
+      try {
+        $r = rdb_pdo();
+        foreach (nister_username_variants($msisdn) as $u) {
+          radius_set_user_group($r, $u, $group);
+        }
+        echo json_encode(['ok'=>true,'group'=>$group]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'group_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_reset_nopaid': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      try {
+        $r = rdb_pdo();
+        foreach (nister_username_variants($msisdn) as $u) {
+          radius_set_user_group($r, $u, 'nopaid');
+          radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', 'HS_NOPAID');
+          $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Rate-Limit','Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")->execute([':u'=>$u]);
+        }
+        echo json_encode(['ok'=>true]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'reset_failed','detail'=>$e->getMessage()]);
+      }
       break;
     }
 

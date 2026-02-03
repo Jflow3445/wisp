@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="2; url=$(link-orig)">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="-1">
+<title>Advertisement | NISTER Wi-Fi</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .card{max-width:560px}
+  .muted{color:var(--muted)}
+  .actions{margin-top:16px}
+  .actions .btn{width:100%}
+</style>
+<script>
+  var popup = '';
+  function openOrig() {
+    if (window.focus) popup.focus();
+    location.href = unescape('$(link-orig-esc)');
+  }
+  function openAd() {
+    location.href = unescape('$(link-redirect-esc)');
+  }
+  function openAdvert() {
+    if (window.name != 'hotspot_advert') {
+      popup = open('$(link-redirect)', 'hotspot_advert', '');
+      setTimeout("openOrig()", 1000);
+      return;
+    }
+    setTimeout("openAd()", 1000);
+  }
+</script>
+</head>
+<body onLoad="openAdvert()">
+  <div class="container">
+    <div class="card">
+      <div class="logo">
+        <div class="dot"></div>
+        <div class="name">NISTER Wi-Fi</div>
+        <span class="tag">advert</span>
+      </div>
+      <h2 class="h">Opening sponsored content</h2>
+      <p class="sub">If nothing happens, open the advertisement manually.</p>
+      <div class="actions">
+        <a class="btn btn-ghost" href="$(link-redirect)" target="hotspot_advert">Open advertisement</a>
+      </div>
+      <div class="support">
+        <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+        <span class="note">Need help? Chat with us.</span>
+      </div>
+    </div>
+  </div>
+<script src="config.js"></script>
+</body>
+</html>

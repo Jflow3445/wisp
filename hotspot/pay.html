@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buy data | NISTER Wi-Fi</title>
+<link rel="stylesheet" href="common.css">
+<script>
+const DEFAULT_PAY_BASE = 'https://pay.nister.org';
+function payBase(){
+  if (window.NISTER_CFG && window.NISTER_CFG.pay_base) {
+    return String(window.NISTER_CFG.pay_base).replace(/\/+$/,'');
+  }
+  return DEFAULT_PAY_BASE;
+}
+function go(){
+  const qs = new URLSearchParams(location.search);
+  const username = qs.get('username') || '$(username)';
+  const mac = '$(mac)';
+  const ip = '$(ip)';
+  const base = payBase();
+  const url = base.replace(/\/+$/,'') + '/checkout?' + new URLSearchParams({username, mac, ip}).toString();
+  location.href = url;
+}
+</script>
+</head>
+<body onload="go()">
+<div class="container">
+  <div class="card">
+    <div class="logo"><div class="dot"></div><div class="name">NISTER Wi-Fi</div><span class="tag">payments</span></div>
+    <h2 class="h">Redirecting to payment</h2>
+    <p class="sub">If nothing happens, <a class="link" href="#" onclick="go()">tap here</a> to continue.</p>
+    <div class="support">
+      <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+      <span class="note">If you get stuck, chat with us.</span>
+    </div>
+    <div class="footer">Need help? Return to <a class="link" href="login.html">login</a>.</div>
+  </div>
+</div>
+</body>
+<script src="config.js"></script>
+</html>

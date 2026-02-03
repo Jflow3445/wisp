@@ -51,6 +51,7 @@ require_once __DIR__.'/lib/wallet.php';
 require_once __DIR__.'/lib/radius.php';
 require_once __DIR__.'/lib/plans_radius.php';
 require_once __DIR__.'/lib/common.php';
+require_once __DIR__.'/lib/settings.php';
 
 try {
   $in = array_merge($_POST, body_json());
@@ -79,10 +80,20 @@ $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
     throw $e;
   }
   if (!$debited) {
+    $s = settings_get_all();
+    $get = static function(string $k, $def=null) use ($s, $ENV) {
+      if (isset($s[$k]) && $s[$k] !== '') return $s[$k];
+      if (isset($ENV[$k]) && $ENV[$k] !== '') return $ENV[$k];
+      $v = getenv($k);
+      if ($v !== false && $v !== '') return $v;
+      return $def;
+    };
+    $topupNumber = (string)$get('TOPUP_NUMBER','0530488905');
+    $topupName   = (string)$get('TOPUP_NAME','GRASAG-UHAS');
     json_out([
       'ok'=>false,'error'=>'insufficient_funds',
       'message'=>'Not enough balance. Please deposit via MoMo and try again.',
-      'momo_number'=>'0598544768','momo_names'=>['Magna Cibus Ltd.','Felix Dolla Dimado'],
+      'momo_number'=>$topupNumber,'momo_names'=>[$topupName],
       'need_cents'=>$price
     ],402);
   }

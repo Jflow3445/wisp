@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>NISTER Wi-Fi | Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="common.css">
+
+  <!-- Keep md5.js in flash/hotspot/ on the router -->
+  <script src="md5.js"></script>
+
+  <style>
+    .card{max-width:520px}
+    .row .btn{flex:1}
+    .helper{
+      margin-top:10px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .check-row{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin-top:8px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .check-row input{width:16px;height:16px}
+  </style>
+
+  <script>
+    // IMPORTANT: no 'use strict' here so RouterOS octal/hex escapes in $(chap-*) work.
+
+    function qs(key){
+      try { return new URLSearchParams(location.search).get(key) || ''; }
+      catch(e){ return ''; }
+    }
+
+    function showBanner(kind, text){
+      var box = document.getElementById('banner');
+      var span = document.getElementById('banner-text');
+      box.className = 'banner ' + (kind === 'success' ? 'success' : 'err');
+      span.textContent = text || '';
+      box.style.display = text ? 'block' : 'none';
+    }
+
+    var loginPending = false;
+    var loginStartAt = 0;
+    var loginTimer = null;
+    var loginBtnText = '';
+    var authFrame = null;
+
+    function redirectToStatus(){
+      // Send user to status page in THIS tab, avoiding MikroTik interstitial
+      var orig   = '$(link-orig)';
+      var status = '$(link-status)';
+      if (!status || status.indexOf('$(') !== -1) return;
+      var target = status + (orig ? ('?continue=' + encodeURIComponent(orig)) : '');
+      loginPending = false;
+      clearTimeout(loginTimer);
+      try { window.location.replace(target); }
+      catch(e){ window.location = target; }
+    }
+
+    function setLoginPending(pending){
+      var btn = document.querySelector('button[type="submit"]');
+      if (btn){
+        if (!loginBtnText) loginBtnText = btn.textContent;
+        btn.disabled = !!pending;
+        btn.textContent = pending ? 'Signing in...' : loginBtnText;
+      }
+      loginPending = !!pending;
+    }
+
+    function handleLoginError(text){
+      if (!loginPending) return;
+      loginPending = false;
+      clearTimeout(loginTimer);
+      setLoginPending(false);
+      showBanner('err', text || 'Phone number or password is incorrect. Please try again.');
+    }
+
+    function readAuthFrameResult(){
+      if (!authFrame || !authFrame.contentWindow) return null;
+      try{
+        var win = authFrame.contentWindow;
+        var href = (win.location && win.location.href) ? String(win.location.href) : '';
+        if (!href || href === 'about:blank') return null;
+        var doc = win.document;
+        if (doc){
+          var mk = doc.getElementById('mk-error');
+          if (mk){
+            var raw = (mk.getAttribute('data-error') || mk.textContent || '').trim();
+            if (raw){ return { status:'error', message: raw }; }
+          }
+          var banner = doc.getElementById('banner-text');
+          if (banner && banner.textContent && banner.textContent.trim()){
+            return { status:'error', message: banner.textContent.trim() };
+          }
+          var err = doc.querySelector('.banner.err');
+          if (err && err.textContent && err.textContent.trim()){
+            return { status:'error', message: err.textContent.trim() };
+          }
+        }
+        var lower = href.toLowerCase();
+        if (lower.indexOf('login') === -1 && lower.indexOf('alogin') === -1){
+          return { status:'success' };
+        }
+        return null;
+      }catch(e){
+        return null;
+      }
+    }
+
+    function scheduleLoginCheck(){
+      clearTimeout(loginTimer);
+      loginTimer = setTimeout(checkLoginState, 1100);
+    }
+
+    function checkLoginState(){
+      if (!loginPending) return;
+      var elapsed = Date.now() - loginStartAt;
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', 'api.json?_t=' + Date.now(), true);
+      xhr.timeout = 4000;
+      xhr.onreadystatechange = function(){
+        if (xhr.readyState !== 4) return;
+        if (xhr.status >= 200 && xhr.status < 300){
+          try{
+            var j = JSON.parse(xhr.responseText || '{}');
+            if (j && j.captive === false){
+              redirectToStatus();
+              return;
+            }
+          }catch(_){}
+        }
+        if (elapsed > 15000){
+          handleLoginError('We could not verify your login. Please try again.');
+        } else {
+          scheduleLoginCheck();
+        }
+      };
+      xhr.ontimeout = function(){
+        var elapsed = Date.now() - loginStartAt;
+        if (elapsed > 15000){ handleLoginError('We could not verify your login. Please try again.'); }
+        else { scheduleLoginCheck(); }
+      };
+      xhr.onerror = function(){
+        var elapsed = Date.now() - loginStartAt;
+        if (elapsed > 15000){ handleLoginError('We could not verify your login. Please try again.'); }
+        else { scheduleLoginCheck(); }
+      };
+      try { xhr.send(); } catch(_){
+        var elapsed = Date.now() - loginStartAt;
+        if (elapsed > 15000){ handleLoginError('We could not verify your login. Please try again.'); }
+        else { scheduleLoginCheck(); }
+      }
+    }
+
+    function initAuthFrame(){
+      if (authFrame) return;
+      authFrame = document.getElementById('authframe');
+      if (!authFrame) return;
+      authFrame.addEventListener('load', function(){
+        if (!loginPending) return;
+        var res = readAuthFrameResult();
+        if (res && res.status === 'error'){
+          handleLoginError(res.message);
+          return;
+        }
+        if (res && res.status === 'success'){
+          redirectToStatus();
+          return;
+        }
+        scheduleLoginCheck();
+      });
+    }
+
+    function doLogin(e){
+      if (e && e.preventDefault) e.preventDefault();
+
+      var uEl = document.getElementById('user');
+      var pEl = document.getElementById('pass');
+      var u = (uEl.value||'').trim();
+      var p = (pEl.value||'');
+
+      if(!u || !p){
+        showBanner('err','Please enter both username and password.');
+        (!u ? uEl : pEl).focus();
+        return false;
+      }
+
+      initAuthFrame();
+      loginStartAt = Date.now();
+      setLoginPending(true);
+
+      var f = document.forms['miklogin'];  // hidden form posts into hidden iframe
+      f.username.value = u;
+
+      // CHAP if available, else PAP
+      var chapId   = '$(chap-id)';
+      var chapChal = '$(chap-challenge)';
+      var chapOk = (chapId !== '' && chapId.indexOf('$(') === -1 && typeof hexMD5 === 'function');
+
+      try{
+        f.password.value = chapOk ? hexMD5(chapId + p + chapChal) : p;
+      }catch(err){
+        f.password.value = p;
+      }
+
+      // Keep this tab on your UI while the iframe posts to the router
+      showBanner('success','Signing you in...');
+      scheduleLoginCheck();
+
+      persistRemember(u, p);
+
+      f.submit(); // actual POST happens via hidden iframe
+      return false;
+    }
+
+    function bindToggle(btnId, inputId){
+      var btn = document.getElementById(btnId);
+      var input = document.getElementById(inputId);
+      if (!btn || !input) return;
+      btn.addEventListener('click', function(){
+        var isPass = input.type === 'password';
+        input.type = isPass ? 'text' : 'password';
+        btn.textContent = isPass ? 'Hide' : 'Show';
+        btn.setAttribute('aria-pressed', isPass ? 'true' : 'false');
+      });
+    }
+
+    function loadRemembered(){
+      try{
+        var remember = localStorage.getItem('nister.remember') === '1';
+        var u = localStorage.getItem('nister.username') || '';
+        var p = localStorage.getItem('nister.password') || '';
+        var box = document.getElementById('remember');
+        if (box) box.checked = remember;
+        if (remember){
+          if (u) document.getElementById('user').value = u;
+          if (p) document.getElementById('pass').value = p;
+        }
+      }catch(_){}
+    }
+
+    function persistRemember(u, p){
+      try{
+        var box = document.getElementById('remember');
+        if (!box) return;
+        if (box.checked){
+          localStorage.setItem('nister.remember','1');
+          localStorage.setItem('nister.username', u || '');
+          localStorage.setItem('nister.password', p || '');
+        } else {
+          localStorage.removeItem('nister.remember');
+          localStorage.removeItem('nister.username');
+          localStorage.removeItem('nister.password');
+        }
+      }catch(_){}
+    }
+
+    function updateBuyLink(){
+      var u = (document.getElementById('user').value || '').trim();
+      var buy = document.getElementById('buy_link');
+      if (!buy) return;
+      var base = 'pay.html?username=';
+      buy.href = base + encodeURIComponent(u || '$(username)' || '');
+    }
+
+    function redirectIfLoggedIn(){
+      var loggedIn = '$(logged-in)';
+      var status = '$(link-status)';
+      if (loggedIn && loggedIn.indexOf('$(') === -1 && loggedIn === 'yes' &&
+          status && status.indexOf('$(') === -1) {
+        try { window.location.replace(status); }
+        catch(e){ window.location = status; }
+        return true;
+      }
+      return false;
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      if (typeof hexMD5 !== 'function') {
+        console.warn('md5.js not loaded; falling back to PAP');
+      }
+
+      if (redirectIfLoggedIn()) { return; }
+
+      initAuthFrame();
+
+      loadRemembered();
+
+      // Prefill username (querystring has priority)
+      var pre = qs('username') || '$(username)';
+      if (pre && pre.indexOf('$(') === -1) { document.getElementById('user').value = pre; }
+
+      // Show MikroTik-provided error if any, else friendly message from ?msg=
+      if ('$(error)' != '') {
+        showBanner('err','$(error)');
+      } else {
+        var m = qs('msg');
+        if (m) { showBanner('success', m); }
+      }
+
+      // Keep router happy in case it inspects fields
+      var f = document.forms['miklogin'];
+      f.elements['dst'].value   = '$(link-orig)';
+      f.elements['popup'].value = 'false';
+
+      // Enter on password triggers login
+      document.getElementById('pass').addEventListener('keydown', function(ev){
+        if(ev.key === 'Enter'){ doLogin(ev); }
+      });
+
+      document.getElementById('user').addEventListener('input', updateBuyLink);
+      updateBuyLink();
+      bindToggle('toggle_pass', 'pass');
+    });
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo">
+        <div class="dot"></div>
+        <div class="name">NISTER Wi-Fi</div>
+        <span class="tag">login</span>
+      </div>
+
+      <h2 class="h">Welcome back</h2>
+      <p class="sub">Sign in to get online. New here? <a class="link" href="signup.html?dst=$(link-orig)">Create an account</a>.</p>
+
+      <!-- One banner used for success OR error -->
+      <div id="banner" class="banner"><span id="banner-text"></span></div>
+      <div id="mk-error" data-error="$(error)" style="display:none"></div>
+      <noscript><div class="banner err" style="display:block">This page requires JavaScript to log in.</div></noscript>
+
+      <!-- Hidden iframe prevents navigation to MikroTik "Logging in..." page -->
+      <iframe name="authframe" id="authframe" style="display:none;width:0;height:0;border:0"></iframe>
+
+      <!-- Hidden form posting to MikroTik login endpoint (into the iframe) -->
+      <form name="miklogin" action="$(link-login-only)" method="post" target="authframe" accept-charset="utf-8" style="display:none">
+        <input type="hidden" name="username" autocomplete="off">
+        <input type="hidden" name="password" autocomplete="off">
+        <input type="hidden" name="dst" value="">
+        <input type="hidden" name="popup" value="false">
+      </form>
+
+      <!-- Visible form -->
+      <form onsubmit="return doLogin(event)">
+        <label class="small" for="user">Phone number</label>
+        <input id="user" name="username" class="input" inputmode="tel" autocomplete="username" placeholder="0240000000" autofocus>
+
+        <div style="height:10px"></div>
+
+        <label class="small" for="pass">Password</label>
+        <div class="input-wrap">
+          <input id="pass" name="password" class="input" type="password" autocomplete="current-password" placeholder="Your password">
+          <button class="toggle-btn" id="toggle_pass" type="button" aria-pressed="false">Show</button>
+        </div>
+
+        <label class="check-row">
+          <input id="remember" type="checkbox">
+          <span>Remember me on this device</span>
+        </label>
+
+        <div class="helper">If you just signed up, use the same phone number and password.</div>
+
+        <div style="height:14px"></div>
+
+        <button class="btn btn-primary btn-full" type="submit">Log in</button>
+      </form>
+
+      <hr>
+
+      <div class="row">
+        <a class="btn btn-ghost" href="signup.html?dst=$(link-orig)">Create account</a>
+        <a class="btn btn-ghost" id="buy_link" href="pay.html" target="_top">Buy data</a>
+      </div>
+      <div style="height:10px"></div>
+      <div class="center small">
+        Already online?
+        <a class="link" href="$(link-status)">Check status / logout</a>
+      </div>
+
+      <div class="support">
+        <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+        <span class="note">Need help logging in? Chat with us.</span>
+      </div>
+
+      <div class="footer">
+        Device: <span class="tag">$(mac)</span> | IP: <span class="tag">$(ip)</span>
+      </div>
+    </div>
+  </div>
+</body>
+<script src="config.js"></script>
+</html>

@@ -80,13 +80,17 @@ function db_pdo(array $env): PDO {
     return ($v === false) ? null : $v;
   };
 
-  // Prefer PAY DB_*, then MYSQL_*, else fall back to RADIUS_* (your env has these)
-  $dsn  = (string)($get('DB_DSN') ?? $get('MYSQL_DSN') ?? $get('RADIUS_DSN') ?? '');
-  $user = (string)($get('DB_USER') ?? $get('MYSQL_USER') ?? $get('RADIUS_USER') ?? '');
-  $pass = (string)($get('DB_PASS') ?? $get('MYSQL_PASSWORD') ?? $get('RADIUS_PASS') ?? '');
+  // Prefer PAY_DB_*, then DB_*, then MYSQL_*, else fall back to RADIUS_*
+  $dsn  = (string)($get('PAY_DB_DSN') ?? $get('DB_DSN') ?? $get('MYSQL_DSN') ?? $get('RADIUS_DSN') ?? '');
+  $user = (string)($get('PAY_DB_USER') ?? $get('DB_USER') ?? $get('MYSQL_USER') ?? $get('RADIUS_USER') ?? '');
+  $pass = (string)($get('PAY_DB_PASS') ?? $get('DB_PASS') ?? $get('MYSQL_PASSWORD') ?? $get('RADIUS_PASS') ?? '');
   if ($dsn === '') {
-    $host = $env['DB_HOST'] ?? getenv('DB_HOST') ?? ($_ENV['DB_HOST'] ?? '');
-    $name = $env['DB_NAME'] ?? getenv('DB_NAME') ?? ($_ENV['DB_NAME'] ?? '');
+    $host = $env['PAY_DB_HOST'] ?? getenv('PAY_DB_HOST') ?? ($_ENV['PAY_DB_HOST'] ?? '') ?? '';
+    $name = $env['PAY_DB_NAME'] ?? getenv('PAY_DB_NAME') ?? ($_ENV['PAY_DB_NAME'] ?? '') ?? '';
+    if ($host === '' || $name === '') {
+      $host = $env['DB_HOST'] ?? getenv('DB_HOST') ?? ($_ENV['DB_HOST'] ?? '');
+      $name = $env['DB_NAME'] ?? getenv('DB_NAME') ?? ($_ENV['DB_NAME'] ?? '');
+    }
     if ($host === '') $host = '127.0.0.1';
     if ($name === '') $name = 'radius';
     $dsn = "mysql:host={$host};dbname={$name};charset=utf8mb4";

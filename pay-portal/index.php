@@ -1,3 +1,20 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/lib/settings.php';
+require_once __DIR__.'/lib/common.php';
+$ENV = app_boot();
+$s = settings_get_all();
+$get = static function(string $k, $def=null) use ($s, $ENV) {
+  if (isset($s[$k]) && $s[$k] !== '') return $s[$k];
+  if (isset($ENV[$k]) && $ENV[$k] !== '') return $ENV[$k];
+  $v = getenv($k);
+  if ($v !== false && $v !== '') return $v;
+  return $def;
+};
+$waSupport = preg_replace('/\D+/', '', (string)$get('WHATSAPP_SUPPORT','233598544768'));
+$waHref = $waSupport !== '' ? ('https://wa.me/'.$waSupport) : 'https://wa.me/233598544768';
+$topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
+?>
 <!doctype html>
 <html lang="en">
 <head>
@@ -185,7 +202,7 @@
           </div>
         </div>
         <h1>Fast, simple access for every device.</h1>
-        <p class="lead">Check your wallet, top up via MTN MoMo, and buy a plan in minutes.</p>
+        <p class="lead">Check your wallet, top up via <?=htmlspecialchars($topupNetwork, ENT_QUOTES, 'UTF-8')?>, and buy a plan in minutes.</p>
         <div class="hero-actions">
           <button class="btn primary" id="topup_now" type="button">Top up wallet</button>
           <a class="btn ghost" href="#plans_section">Browse plans</a>
@@ -221,7 +238,7 @@
             </div>
           </div>
           <div class="support">
-            <a id="wa_link" class="link" href="https://wa.me/233530488905" target="_blank" rel="noopener">WhatsApp support</a>
+            <a id="wa_link" class="link" href="<?=htmlspecialchars($waHref, ENT_QUOTES, 'UTF-8')?>" target="_blank" rel="noopener">WhatsApp support</a>
             <span class="sub">Support team replies quickly during working hours.</span>
           </div>
         </div>

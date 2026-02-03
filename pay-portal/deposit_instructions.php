@@ -1,5 +1,8 @@
 <?php declare(strict_types=1);
 require __DIR__ . '/config.php';
+require_once __DIR__ . '/lib/settings.php';
+require_once __DIR__ . '/lib/common.php';
+$ENV = $ENV ?? app_boot();
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store, no-cache, must-revalidate');
 header('Pragma: no-cache');
@@ -7,10 +10,19 @@ header('Pragma: no-cache');
 /**
  * Canonical values (can be overridden via ENV in config.php if desired)
  */
-$network = $ENV['TOPUP_NETWORK'] ?? 'MTN Ghana';
-$name    = $ENV['TOPUP_NAME']    ?? 'GRASAG-UHAS';
-$number  = $ENV['TOPUP_NUMBER']  ?? '0530488905';
-$waText  = $ENV['TOPUP_WA_TEXT'] ?? 'Hi, I need assistance with Nister Wifi';
+$s = settings_get_all();
+$get = static function(string $k, $def=null) use ($s, $ENV) {
+  if (isset($s[$k]) && $s[$k] !== '') return $s[$k];
+  if (isset($ENV[$k]) && $ENV[$k] !== '') return $ENV[$k];
+  $v = getenv($k);
+  if ($v !== false && $v !== '') return $v;
+  return $def;
+};
+
+$network = (string)$get('TOPUP_NETWORK', 'MTN Ghana');
+$name    = (string)$get('TOPUP_NAME', 'GRASAG-UHAS');
+$number  = (string)$get('TOPUP_NUMBER', '0530488905');
+$waText  = (string)$get('TOPUP_WA_TEXT', 'Hi, I need assistance with Nister Wifi');
 
 /**
  * Build WhatsApp deep link:

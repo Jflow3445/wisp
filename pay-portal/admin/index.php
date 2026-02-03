@@ -143,6 +143,48 @@ admin_require_login();
 
   <div class="card">
     <div class="section-head">
+      <h2>Portal Settings</h2>
+      <div class="muted">Configure API base and support contact details shown to users.</div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="set_api_base">Hotspot API base</label>
+        <input id="set_api_base" type="text" placeholder="https://api.nister.org">
+      </div>
+      <div class="field">
+        <label for="set_pay_base">Pay portal base</label>
+        <input id="set_pay_base" type="text" placeholder="https://pay.nister.org">
+      </div>
+      <div class="field">
+        <label for="set_whatsapp">WhatsApp support (digits)</label>
+        <input id="set_whatsapp" type="text" placeholder="233598544768">
+      </div>
+      <div class="field">
+        <label for="set_topup_network">Top up network</label>
+        <input id="set_topup_network" type="text" placeholder="MTN Ghana">
+      </div>
+      <div class="field">
+        <label for="set_topup_name">Top up name</label>
+        <input id="set_topup_name" type="text" placeholder="GRASAG-UHAS">
+      </div>
+      <div class="field">
+        <label for="set_topup_number">Top up number</label>
+        <input id="set_topup_number" type="text" placeholder="0530488905">
+      </div>
+      <div class="field">
+        <label for="set_topup_text">Top up WhatsApp text</label>
+        <input id="set_topup_text" type="text" placeholder="Hi, I need assistance with Nister Wifi">
+      </div>
+    </div>
+    <div class="tool-actions">
+      <button class="btn approve" id="settings_save" type="button">Save Settings</button>
+      <button class="btn" id="settings_reload" type="button">Reload</button>
+    </div>
+    <div class="note" id="settings_status">Settings load on refresh.</div>
+  </div>
+
+  <div class="card">
+    <div class="section-head">
       <h2>Payments</h2>
       <div class="muted">Approve or decline with notes for audit trail.</div>
     </div>
@@ -303,12 +345,50 @@ admin_require_login();
             <label for="tool_notes">Notes</label>
             <input id="tool_notes" type="text" placeholder="Optional">
           </div>
+          <div class="field">
+            <label for="tool_expiry">Expiry date (YYYY-MM-DD HH:MM:SS)</label>
+            <input id="tool_expiry" type="text" placeholder="2026-05-08 23:59:59">
+          </div>
+          <div class="field">
+            <label for="tool_days">Expiry + days</label>
+            <input id="tool_days" type="text" placeholder="30">
+          </div>
+          <div class="field">
+            <label for="tool_add_gb">Add quota (GB)</label>
+            <input id="tool_add_gb" type="text" placeholder="3">
+          </div>
+          <div class="field">
+            <label for="tool_set_gb">Set quota (GB)</label>
+            <input id="tool_set_gb" type="text" placeholder="10">
+          </div>
+          <div class="field">
+            <label for="tool_addrlist">Address list</label>
+            <input id="tool_addrlist" type="text" placeholder="HS_ACTIVE / HS_LIMITED / HS_NOPAID">
+          </div>
+          <div class="field">
+            <label for="tool_rate">Rate limit</label>
+            <input id="tool_rate" type="text" placeholder="2M/2M">
+          </div>
+          <div class="field">
+            <label for="tool_group">Plan group</label>
+            <input id="tool_group" type="text" placeholder="PLAN_3GB">
+          </div>
         </div>
         <div class="tool-actions">
           <button class="btn" id="tool_lookup" type="button">Lookup</button>
           <button class="btn approve" id="tool_credit" type="button">Credit Wallet</button>
           <button class="btn" id="tool_apply" type="button">Apply Plan</button>
           <button class="btn decline" id="tool_disconnect" type="button">Disconnect</button>
+        </div>
+        <div class="tool-actions">
+          <button class="btn" id="tool_set_expiry" type="button">Set Expiry</button>
+          <button class="btn" id="tool_add_quota" type="button">Add Quota</button>
+          <button class="btn" id="tool_set_quota" type="button">Set Quota</button>
+          <button class="btn" id="tool_clear_quota" type="button">Clear Quota</button>
+          <button class="btn" id="tool_set_addr" type="button">Set Address List</button>
+          <button class="btn" id="tool_set_rate" type="button">Set Rate</button>
+          <button class="btn" id="tool_set_group" type="button">Set Group</button>
+          <button class="btn decline" id="tool_reset_nopaid" type="button">Reset to NoPay</button>
         </div>
         <div class="note" id="tool_status">No user loaded.</div>
       </div>
@@ -364,12 +444,11 @@ function fmtBytes(bytes){
 function statusLabel(st){
   if (!st) return 'unknown';
   if (st.can_browse) return 'active';
-  const tags = [];
-  if (st.expired) tags.push('expired');
-  if (st.exhausted) tags.push('exhausted');
-  if (!tags.length && st.paid) tags.push('paid-limited');
-  if (!tags.length) tags.push('nopaid');
-  return tags.join(' / ');
+  if (st.policy_limited) return 'limited';
+  if (st.expired) return 'expired';
+  if (st.exhausted) return 'exhausted';
+  if (st.paid) return 'paid';
+  return 'nopaid';
 }
 function parseAmountCents(val){
   const n = parseFloat(String(val || '').replace(/[^\d.]/g,''));
@@ -558,6 +637,52 @@ async function loadPlans(){
     return;
   }
   renderPlans(j.plans || []);
+}
+
+function setSettingsStatus(msg, state){
+  const el = document.getElementById('settings_status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error','success');
+  if (state === 'error') el.classList.add('error');
+  if (state === 'success') el.classList.add('success');
+}
+
+async function loadSettings(){
+  const j = await api('settings_get');
+  if (!j.ok){
+    setSettingsStatus(j.error || 'Failed to load settings.', 'error');
+    return;
+  }
+  const s = j.settings || {};
+  const set = (id, val)=>{ const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('set_api_base', s.HOTSPOT_API_BASE || '');
+  set('set_pay_base', s.PAY_BASE || '');
+  set('set_whatsapp', s.WHATSAPP_SUPPORT || '');
+  set('set_topup_network', s.TOPUP_NETWORK || '');
+  set('set_topup_name', s.TOPUP_NAME || '');
+  set('set_topup_number', s.TOPUP_NUMBER || '');
+  set('set_topup_text', s.TOPUP_WA_TEXT || '');
+  setSettingsStatus('Settings loaded.', 'success');
+}
+
+async function saveSettings(){
+  const body = {
+    HOTSPOT_API_BASE: toolValue('set_api_base'),
+    PAY_BASE: toolValue('set_pay_base'),
+    WHATSAPP_SUPPORT: toolValue('set_whatsapp'),
+    TOPUP_NETWORK: toolValue('set_topup_network'),
+    TOPUP_NAME: toolValue('set_topup_name'),
+    TOPUP_NUMBER: toolValue('set_topup_number'),
+    TOPUP_WA_TEXT: toolValue('set_topup_text'),
+  };
+  setSettingsStatus('Saving...');
+  const j = await api('settings_save', body);
+  if (!j.ok){
+    setSettingsStatus(j.error || 'Save failed.', 'error');
+    return;
+  }
+  setSettingsStatus('Settings saved.', 'success');
 }
 
 async function savePlan(){
@@ -800,6 +925,146 @@ async function disconnectUser(){
   setToolStatus('Disconnect sent.', 'success');
 }
 
+async function setExpiry(){
+  const msisdn = toolValue('tool_msisdn');
+  const expires_at = toolValue('tool_expiry');
+  const days = toolValue('tool_days');
+  if (!msisdn){
+    setToolStatus('MSISDN is required.', 'error');
+    return;
+  }
+  if (!expires_at && !days){
+    setToolStatus('Provide expiry date or days.', 'error');
+    return;
+  }
+  setToolStatus('Setting expiry...');
+  const j = await api('user_set_expiry', { msisdn, expires_at, days });
+  if (!j.ok){
+    setToolStatus(j.error || 'Expiry update failed.', 'error');
+    return;
+  }
+  await lookupUser();
+  setToolStatus(`Expiry set to ${j.expires_at || expires_at}.`, 'success');
+}
+
+async function addQuota(){
+  const msisdn = toolValue('tool_msisdn');
+  const gb = toolValue('tool_add_gb');
+  if (!msisdn || !gb){
+    setToolStatus('MSISDN and add quota (GB) are required.', 'error');
+    return;
+  }
+  setToolStatus('Adding quota...');
+  const j = await api('user_add_quota', { msisdn, gb });
+  if (!j.ok){
+    setToolStatus(j.error || 'Add quota failed.', 'error');
+    return;
+  }
+  await lookupUser();
+  setToolStatus('Quota added.', 'success');
+}
+
+async function setQuota(){
+  const msisdn = toolValue('tool_msisdn');
+  const gb = toolValue('tool_set_gb');
+  if (!msisdn || !gb){
+    setToolStatus('MSISDN and set quota (GB) are required.', 'error');
+    return;
+  }
+  setToolStatus('Setting quota...');
+  const j = await api('user_set_quota', { msisdn, gb });
+  if (!j.ok){
+    setToolStatus(j.error || 'Set quota failed.', 'error');
+    return;
+  }
+  await lookupUser();
+  setToolStatus('Quota updated.', 'success');
+}
+
+async function clearQuota(){
+  const msisdn = toolValue('tool_msisdn');
+  if (!msisdn){
+    setToolStatus('MSISDN is required.', 'error');
+    return;
+  }
+  setToolStatus('Clearing quota...');
+  const j = await api('user_clear_quota', { msisdn });
+  if (!j.ok){
+    setToolStatus(j.error || 'Clear quota failed.', 'error');
+    return;
+  }
+  await lookupUser();
+  setToolStatus('Quota cleared.', 'success');
+}
+
+async function setAddrList(){
+  const msisdn = toolValue('tool_msisdn');
+  const addrlist = toolValue('tool_addrlist');
+  if (!msisdn || !addrlist){
+    setToolStatus('MSISDN and address list are required.', 'error');
+    return;
+  }
+  setToolStatus('Setting address list...');
+  const j = await api('user_set_addrlist', { msisdn, addrlist });
+  if (!j.ok){
+    setToolStatus(j.error || 'Set address list failed.', 'error');
+    return;
+  }
+  await lookupUser();
+  setToolStatus('Address list updated.', 'success');
+}
+
+async function setRate(){
+  const msisdn = toolValue('tool_msisdn');
+  const rate_limit = toolValue('tool_rate');
+  if (!msisdn || !rate_limit){
+    setToolStatus('MSISDN and rate limit are required.', 'error');
+    return;
+  }
+  setToolStatus('Setting rate limit...');
+  const j = await api('user_set_rate', { msisdn, rate_limit });
+  if (!j.ok){
+    setToolStatus(j.error || 'Set rate failed.', 'error');
+    return;
+  }
+  await lookupUser();
+  setToolStatus('Rate limit updated.', 'success');
+}
+
+async function setGroup(){
+  const msisdn = toolValue('tool_msisdn');
+  const group = toolValue('tool_group');
+  if (!msisdn || !group){
+    setToolStatus('MSISDN and group are required.', 'error');
+    return;
+  }
+  setToolStatus('Setting group...');
+  const j = await api('user_set_group', { msisdn, group });
+  if (!j.ok){
+    setToolStatus(j.error || 'Set group failed.', 'error');
+    return;
+  }
+  await lookupUser();
+  setToolStatus('Group updated.', 'success');
+}
+
+async function resetNoPaid(){
+  const msisdn = toolValue('tool_msisdn');
+  if (!msisdn){
+    setToolStatus('MSISDN is required.', 'error');
+    return;
+  }
+  if (!confirm(`Reset ${msisdn} to HS_NOPAID?`)) return;
+  setToolStatus('Resetting user...');
+  const j = await api('user_reset_nopaid', { msisdn });
+  if (!j.ok){
+    setToolStatus(j.error || 'Reset failed.', 'error');
+    return;
+  }
+  await lookupUser();
+  setToolStatus('User reset to HS_NOPAID.', 'success');
+}
+
 async function refreshAll(){
   const btn = document.getElementById('refresh_btn');
   if (btn) btn.disabled = true;
@@ -807,6 +1072,7 @@ async function refreshAll(){
   await loadStats();
   await loadPending();
   await loadPlans();
+  await loadSettings();
   if (btn) btn.disabled = false;
 }
 
@@ -822,11 +1088,31 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (applyBtn) applyBtn.addEventListener('click', applyPlan);
   const disconnectBtn = document.getElementById('tool_disconnect');
   if (disconnectBtn) disconnectBtn.addEventListener('click', disconnectUser);
+  const setExpBtn = document.getElementById('tool_set_expiry');
+  if (setExpBtn) setExpBtn.addEventListener('click', setExpiry);
+  const addQuotaBtn = document.getElementById('tool_add_quota');
+  if (addQuotaBtn) addQuotaBtn.addEventListener('click', addQuota);
+  const setQuotaBtn = document.getElementById('tool_set_quota');
+  if (setQuotaBtn) setQuotaBtn.addEventListener('click', setQuota);
+  const clearQuotaBtn = document.getElementById('tool_clear_quota');
+  if (clearQuotaBtn) clearQuotaBtn.addEventListener('click', clearQuota);
+  const setAddrBtn = document.getElementById('tool_set_addr');
+  if (setAddrBtn) setAddrBtn.addEventListener('click', setAddrList);
+  const setRateBtn = document.getElementById('tool_set_rate');
+  if (setRateBtn) setRateBtn.addEventListener('click', setRate);
+  const setGroupBtn = document.getElementById('tool_set_group');
+  if (setGroupBtn) setGroupBtn.addEventListener('click', setGroup);
+  const resetBtn = document.getElementById('tool_reset_nopaid');
+  if (resetBtn) resetBtn.addEventListener('click', resetNoPaid);
 
   const planSave = document.getElementById('plan_save');
   if (planSave) planSave.addEventListener('click', savePlan);
   const planReset = document.getElementById('plan_reset');
   if (planReset) planReset.addEventListener('click', resetPlanForm);
+  const settingsSave = document.getElementById('settings_save');
+  if (settingsSave) settingsSave.addEventListener('click', saveSettings);
+  const settingsReload = document.getElementById('settings_reload');
+  if (settingsReload) settingsReload.addEventListener('click', loadSettings);
 
   const planTable = document.getElementById('plans_tbl');
   if (planTable && planTable.dataset.bound !== '1') {

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="cache-control" content="no-store">
+<title>Logging in...</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .card{max-width:560px;text-align:center}
+  .loader{
+    width:32px;height:32px;margin:12px auto 0;border-radius:50%;
+    border:3px solid rgba(15,118,110,.2);border-top-color:var(--accent);
+    animation:spin .9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<script src="/md5.js"></script>
+<script>
+var loggedIn = '$(logged-in)';
+
+function isLoggedIn(){
+  return loggedIn && loggedIn.indexOf('$(') === -1 && loggedIn === 'yes';
+}
+
+function goStatus(){
+  var status = '$(link-status)';
+  if (!status || status.indexOf('$(') !== -1) {
+    showFallback();
+    return;
+  }
+  try { location.replace(status); } catch(e){ location.href = status; }
+}
+
+function loopGuard(){
+  var key = 'nister.alogin.redirect';
+  var now = Date.now();
+  try{
+    var last = Number(sessionStorage.getItem(key) || 0);
+    sessionStorage.setItem(key, String(now));
+    return last && (now - last) < 5000;
+  }catch(e){
+    return false;
+  }
+}
+
+function clearGuard(){
+  try{ sessionStorage.removeItem('nister.alogin.redirect'); }catch(e){}
+}
+
+function showFallback(){
+  var title = document.getElementById('statusTitle');
+  var msg = document.getElementById('statusMsg');
+  var fb = document.getElementById('fallback');
+  var spinner = document.getElementById('spinner');
+  var link = document.getElementById('fallbackLink');
+  if (title) title.textContent = 'Open the login page';
+  if (msg) msg.textContent = 'We could not auto-sign you in. Use the login page to continue.';
+  if (isLoggedIn()){
+    if (title) title.textContent = 'You are already online';
+    if (msg) msg.textContent = 'Open the status page to manage your session.';
+    if (link) { link.textContent = 'Open status page'; link.href = '$(link-status)'; }
+  } else {
+    if (link) { link.textContent = 'Open login page'; link.href = 'login.html'; }
+  }
+  if (spinner) spinner.style.display = 'none';
+  if (fb) fb.style.display = 'block';
+}
+
+function start(){
+  if (isLoggedIn()) { goStatus(); return; }
+  doLogin();
+}
+
+function doLogin(){
+  var f=document.forms[0];
+  var u=(f.username.value||'').trim();
+  var p=(f.password.value||'');
+  if (u==='' || p==='') {
+    if (!loopGuard()) { location.replace('login.html'); return; }
+    showFallback();
+    return;
+  }
+  clearGuard();
+  if ('$(chap-id)'!=='' && typeof hexMD5 === 'function') {
+    f.password.value = hexMD5('$(chap-id)'+p+'$(chap-challenge)');
+  }
+  f.submit();
+}
+</script>
+</head>
+<body onload="start()">
+  <div class="container">
+    <div class="card">
+      <div class="logo">
+        <div class="dot"></div>
+        <div class="name">NISTER Wi-Fi</div>
+        <span class="tag">auto</span>
+      </div>
+      <h2 class="h" id="statusTitle">Signing you in...</h2>
+      <p class="sub" id="statusMsg">Please wait while we connect your session.</p>
+      <div class="loader" id="spinner" aria-hidden="true"></div>
+
+      <div id="fallback" style="display:none;margin-top:14px">
+        <a class="btn btn-primary btn-full" id="fallbackLink" href="login.html">Open login page</a>
+        <div class="note" style="margin-top:8px">If you keep seeing this screen, use the login form instead.</div>
+      </div>
+
+      <div class="support">
+        <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+        <span class="note">Need help? Chat with us.</span>
+      </div>
+    </div>
+  </div>
+
+  <form action="$(link-login-only)" method="post" style="display:none">
+    <input type="hidden" name="username" value="$(username)">
+    <input type="hidden" name="password" value="$(password)">
+    <input type="hidden" name="dst" value="$(link-orig)">
+    <input type="hidden" name="popup" value="true">
+  </form>
+<script src="config.js"></script>
+</body>
+</html>

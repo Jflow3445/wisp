@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NISTER Wi-Fi | Account Status</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests; form-action https:">
+<link rel="stylesheet" href="common.css">
+
+<style>
+  .card.wide{max-width:760px}
+  .headline{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+  .badge{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    padding:4px 10px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#fff;
+    color:var(--muted);
+    font-weight:600;
+  }
+  .badge.ok{
+    background:rgba(34,197,94,.12);
+    border-color:rgba(34,197,94,.35);
+    color:#14532d;
+  }
+  .badge.warn{
+    background:rgba(217,119,6,.12);
+    border-color:rgba(217,119,6,.35);
+    color:#7c4a10;
+  }
+  .badge.err{
+    background:rgba(239,68,68,.12);
+    border-color:rgba(239,68,68,.35);
+    color:#7f1d1d;
+  }
+  .kv{
+    background:var(--bg-2);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:12px;
+    margin-top:12px;
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:1fr auto;
+    gap:8px;
+    align-items:center;
+  }
+  .chips{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:8px;
+  }
+  .chip{
+    font-size:12px;
+    padding:3px 10px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:#fff;
+    color:var(--muted);
+  }
+  .bar{
+    height:10px;
+    border-radius:999px;
+    background:#f7f3ec;
+    border:1px solid var(--line);
+    overflow:hidden;
+    margin-top:8px;
+  }
+  .bar > i{
+    display:block;
+    height:100%;
+    width:0%;
+    background:linear-gradient(135deg,var(--accent),#0f8a7f);
+  }
+  .row .btn{flex:1}
+  .section-title{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:18px;
+    margin-bottom:6px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+  }
+  .note{
+    display:none;
+    margin-top:10px;
+    border-radius:12px;
+    padding:10px 12px;
+    font-size:12px;
+  }
+  .note.warn{
+    display:block;
+    background:rgba(217,119,6,.12);
+    border:1px solid rgba(217,119,6,.35);
+    color:#7c4a10;
+  }
+  .note.err{
+    display:block;
+    background:rgba(239,68,68,.12);
+    border:1px solid rgba(239,68,68,.35);
+    color:#7f1d1d;
+  }
+  .small{
+    font-size:11px;
+    color:var(--muted);
+    margin-top:8px;
+    word-break:break-all;
+  }
+</style>
+
+<script>
+function h(id){ return document.getElementById(id); }
+function qs(k){ try{ return new URLSearchParams(location.search).get(k)||'' }catch(e){ return '' } }
+
+function fmtBytes(n){
+  n = Number(n||0);
+  var u=['B','KB','MB','GB','TB','PB']; var i=0;
+  while(n>=1024 && i<u.length-1){ n/=1024; i++; }
+  return (i<=1 ? n.toFixed(0) : n.toFixed(2)) + ' ' + u[i];
+}
+function fmtDate(s){
+  if(!s) return 'N/A';
+  var d=new Date(s);
+  return isNaN(d)? s : d.toUTCString().replace('GMT','UTC');
+}
+function timeLeftStr(exp){
+  if(!exp) return '';
+  var end=new Date(exp); if(isNaN(end)) return '';
+  var ms=end - new Date(); if(ms<=0) return 'expired';
+  var d=Math.floor(ms/86400000); ms%=86400000;
+  var h=Math.floor(ms/3600000);  ms%=3600000;
+  var m=Math.floor(ms/60000);
+  return (d>0? d+'d ':'')+(h>0? h+'h ':'')+(m>0? m+'m':'').trim();
+}
+function pct(n,d){
+  n=Number(n||0); d=Number(d||0);
+  if(d<=0) return 0;
+  return Math.min(100, Math.max(0, Math.round((n/d)*100)));
+}
+function fetchWithTimeout(url, opts, ms){
+  var ctrl=new AbortController();
+  var t=setTimeout(function(){ try{ctrl.abort();}catch(_){ } }, ms||5000);
+  return fetch(url, Object.assign({signal: ctrl.signal, cache:'no-store', mode:'cors', credentials:'omit'}, opts||{}))
+    .finally(function(){ clearTimeout(t); });
+}
+
+function pickApiUrl(username){
+  var cfgBase = (window.NISTER_CFG && window.NISTER_CFG.api_base) ? window.NISTER_CFG.api_base : '';
+  var base = (qs('api')||cfgBase||'https://api.nister.org').replace(/\/+$/,'');
+  if (!/\/status\.php$/i.test(base) && base.indexOf('/hotspot-api/status.php') === -1) {
+    base = base.replace(/\/+$/,'') + '/hotspot-api/status.php';
+  }
+  if(!/\.php($|\?)/.test(base)) base += '/status.php';
+  var t = Date.now();
+  var extra = qs('diag') ? '&diag=1' : '';
+  return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t + extra;
+}
+
+var state = {
+  acct:'UNKNOWN',
+  flags:{
+    nearCap:false,
+    nearExpiry:false,
+    exhausted:false,
+    expired:false,
+    paid:false,
+    canBrowse:false,
+    policyLimited:false,
+    rawCanBrowse:null
+  },
+  lastUrl:'',
+  lastErr:'',
+  fetchSupported:(typeof fetch === 'function')
+};
+
+function setHeaderByAccount(j){
+  var title=h('title'), badge=h('statusBadge'), note=h('statusNote');
+
+  // 1) Paid?
+  var paid = (typeof j.paid === 'boolean') ? !!j.paid : (j.state === 'PAID' || j.status === 'PAID');
+  var policy = String(j.addrlist || '').toUpperCase();
+  var plan = String(j.plan_name || j.group || '').toLowerCase();
+  var isNoPaid = (plan === 'nopaid' || policy === 'HS_NOPAID');
+  var policyLimited = (typeof j.policy_limited === 'boolean') ? !!j.policy_limited : (policy === 'HS_LIMITED' || policy === 'HS_NOPAID');
+  if (typeof j.paid === 'boolean') {
+    isNoPaid = (!j.paid && !policyLimited && !j.expired && !j.exhausted);
+  }
+  if (isNoPaid) paid = false;
+
+  // 2) Local expiry / quota checks
+  var now = new Date();
+  var q   = Number(j.quota_bytes || 0);
+  var u   = Number(j.used_bytes  || 0);
+  var expired   = (typeof j.expired === 'boolean') ? !!j.expired : false;
+  var exhausted = (typeof j.exhausted === 'boolean') ? !!j.exhausted : false;
+
+  if (j.expiry_str && (typeof j.expired !== 'boolean')){
+    var exp = new Date(j.expiry_str);
+    if (!isNaN(exp)) expired = (exp <= now);
+  }
+  if ((typeof j.exhausted !== 'boolean') && q > 0 && u >= q) exhausted = true;
+
+  var nearCap    = (q > 0 && pct(u,q) >= 80 && !exhausted);
+  var nearExpiry = false;
+  if (j.expiry_str && !expired){
+    nearExpiry = ((new Date(j.expiry_str) - now) <= 48*3600*1000);
+  }
+
+  // 3) API's view
+  var rawCanBrowse = (typeof j.can_browse !== 'undefined') ? !!j.can_browse : null;
+
+  // 4) Our effective decision
+  var canBrowse = (typeof j.can_browse === 'boolean')
+    ? !!j.can_browse
+    : (paid && !expired && !exhausted && !policyLimited);
+
+  state.flags = {
+    nearCap:nearCap,
+    nearExpiry:nearExpiry,
+    exhausted:exhausted,
+    expired:expired,
+    paid:paid,
+    canBrowse:canBrowse,
+    policyLimited:policyLimited,
+    rawCanBrowse:rawCanBrowse,
+    isNoPaid:isNoPaid
+  };
+
+  var reason = '';
+
+  if (paid && canBrowse){
+    state.acct='ACTIVE';
+    badge.className='badge ok';
+    badge.textContent='ACTIVE - Full Internet Access';
+    title.textContent='Account active';
+
+    if(nearCap || nearExpiry){
+      note.className='note warn'; note.style.display='block';
+      note.textContent =
+        nearCap && nearExpiry ? 'Heads up: You are close to your data cap and near plan expiry.' :
+        nearCap              ? 'Heads up: You have used most of your data.' :
+                               'Heads up: Your plan is nearing expiry.';
+    } else {
+      note.style.display='none';
+    }
+  } else {
+    state.acct='INACTIVE';
+
+    if (isNoPaid){
+      reason = 'Not paid';
+    } else if (policyLimited){
+      reason = 'Exhausted/Expired';
+    } else if (!paid){
+      reason = j.state || j.status || 'UNPAID';
+    } else if (expired){
+      reason = 'Plan expired';
+    } else if (exhausted){
+      reason = 'Data exhausted';
+    } else {
+      reason = 'Limited policy';
+    }
+
+    badge.className='badge err';
+    badge.textContent='INACTIVE - ' + reason;
+    title.textContent='No Internet Access';
+
+    note.className='note err';
+    note.textContent='You do not have an active data plan. Please buy or renew to get online.';
+    note.style.display='block';
+  }
+}
+
+function populateFromServer(j){
+  setHeaderByAccount(j);
+
+  var isNoPaid = state.flags.isNoPaid;
+  var q=Number(j.quota_bytes||0), u=Number(j.used_bytes||0), r=(q>0)? Math.max(q-u,0):0;
+  if (isNoPaid){
+    h('quota').textContent = 'N/A';
+    h('used').textContent  = 'N/A';
+    h('remain').textContent= 'N/A';
+    h('pct').textContent   = '';
+    h('barfill').style.width = '0%';
+  } else {
+    h('quota').textContent = (q>0)? fmtBytes(q) : 'Unlimited';
+    h('used').textContent  = fmtBytes(u);
+    h('remain').textContent= (q>0)? fmtBytes(r) : (state.acct==='ACTIVE' ? 'Unlimited' : 'N/A');
+    var p=(q>0)? pct(u,q):0;
+    h('pct').textContent=(q>0)? (p+'% used'):'';
+    h('barfill').style.width=(q>0? p:0)+'%';
+  }
+
+  if (isNoPaid){
+    h('period').textContent = 'N/A';
+    h('expiry').textContent = 'N/A';
+    h('left').textContent = '';
+  } else {
+    h('period').textContent = (j.period_start_str && j.expiry_str)
+      ? (j.period_start_str + ' to ' + j.expiry_str)
+      : (j.period_start_str || j.expiry_str || 'N/A');
+
+    h('expiry').textContent = fmtDate(j.expiry_str);
+    var left=timeLeftStr(j.expiry_str);
+    h('left').textContent = left ? ('Time left: '+left) : (state.flags.expired ? 'Expired' : '');
+  }
+
+  if (isNoPaid){
+    h('group').textContent = 'No plan';
+    h('rate').textContent  = 'N/A';
+  } else {
+    h('group').textContent = j.plan_name || j.group || 'N/A';
+    h('rate').textContent  = j.rate || 'N/A';
+  }
+  h('alist').textContent = j.addrlist || (state.acct==='ACTIVE' ? 'HS_ACTIVE' : 'HS_LIMITED');
+
+  var paidBadge=h('paidbadge');
+  if (state.flags.isNoPaid){
+    paidBadge.className='badge err';
+    paidBadge.textContent='NOT PAID';
+  } else if (state.flags.policyLimited){
+    paidBadge.className='badge err';
+    paidBadge.textContent='EXHAUSTED/EXPIRED';
+  } else if (state.flags.paid && state.flags.canBrowse){
+    paidBadge.className='badge ok';
+    paidBadge.textContent='PAID';
+  } else {
+    paidBadge.className='badge err';
+    paidBadge.textContent='NOT PAID';
+  }
+
+  if (j.diag) {
+    h('debug3').textContent = 'server diag: ' + JSON.stringify(j.diag);
+  }
+
+  var user = j.username || ('$(username)');
+  if (user.indexOf('$(') !== -1) user = '';
+  h('btnBuy').href='pay.html?username=' + encodeURIComponent(user);
+  var mac = qs('mac') || '$(mac)';
+  if (mac.indexOf('$(') !== -1) mac = '';
+  var changeUrl = 'change-password.html?username=' + encodeURIComponent(user);
+  if (mac) changeUrl += '&mac=' + encodeURIComponent(mac);
+  h('btnChange').href = changeUrl;
+}
+
+function setUnknownUI(){
+  var badge=h('statusBadge'); badge.className='badge warn';
+  var err = state.lastErr ? (' Details: '+state.lastErr) : '';
+  badge.textContent='Unable to verify - limited access assumed';
+  h('title').textContent='Status unknown';
+  var note=h('statusNote'); note.className='note warn';
+  note.textContent='We could not reach the billing server.'+err+' You may have limited access until verification succeeds.';
+  note.style.display='block';
+
+  ['quota','used','remain','period','expiry','left','group','alist','pct','rate'].forEach(function(id){
+    h(id).textContent='N/A';
+  });
+  h('barfill').style.width='0%';
+
+  // Keep a minimal version marker only
+  h('debug').textContent = 'build v2025-11-15d';
+}
+
+function loadViaJsonp(username){
+  window._nister_cb = function(j){
+    try{ populateFromServer(j); }
+    catch(e){ try{state.lastErr='JSONP parse error';}catch(_){ } setUnknownUI(); }
+  };
+  var s = document.createElement('script');
+  var url = pickApiUrl(username) + '&callback=_nister_cb';
+  state.lastUrl = url;
+  s.src = url; s.async = true;
+  s.onerror = function(){ try{state.lastErr='JSONP load error';}catch(_){ } setUnknownUI(); };
+  document.head.appendChild(s);
+}
+
+function loadViaXHR(url){
+  return new Promise(function(resolve,reject){
+    try{
+      var x = new XMLHttpRequest();
+      x.open('GET', url, true);
+      x.timeout = 6000;
+      x.onreadystatechange = function(){
+        if (x.readyState === 4){
+          if (x.status >= 200 && x.status < 300){
+            try{ resolve(JSON.parse(x.responseText)); }catch(e){ reject(e); }
+          } else reject(new Error('HTTP '+x.status));
+        }
+      };
+      x.ontimeout = function(){ reject(new Error('timeout')); };
+      x.onerror = function(){ reject(new Error('xhr error')); };
+      x.send();
+    }catch(e){ reject(e); }
+  });
+}
+
+function loadRadiusStatus(){
+  h('title').textContent='Checking account...';
+  h('statusNote').style.display='none';
+  var badge=h('statusBadge'); badge.className='badge'; badge.textContent='Verifying...';
+
+  var user = (qs('username') || '$(username)' || '').trim();
+  if (user.indexOf('$(') !== -1) user = '';
+  if(!user){
+    badge.className='badge err'; badge.textContent='Need username';
+    h('title').textContent='Status needs your username';
+    var note=h('statusNote'); note.className='note warn'; note.style.display='block';
+    note.textContent='Open this page from the hotspot success screen or add ?username=YOUR_NUMBER to the URL.';
+    return;
+  }
+
+  var url = pickApiUrl(user);
+  state.lastUrl = url;
+
+  var doJsonp = function(){
+    try{ loadViaJsonp(user); }
+    catch(e){ try{ state.lastErr = 'jsonp init error'; }catch(_){ } setUnknownUI(); }
+  };
+
+  if (state.fetchSupported){
+    fetchWithTimeout(url, {}, 6000)
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(j){ if(!j || j.ok!==true) throw new Error('badjson'); populateFromServer(j); })
+      .catch(function(err){
+        try{ state.lastErr = (err && (err.name||err.message)) || 'fetch failed'; }catch(_){}
+        loadViaXHR(url).then(function(j){
+          if(!j || j.ok!==true) throw new Error('badjson');
+          populateFromServer(j);
+        }).catch(function(err2){
+          try{ state.lastErr = (err2 && (err2.message||'xhr failed')) || 'xhr failed'; }catch(_){}
+          doJsonp();
+        });
+      });
+  } else {
+    loadViaXHR(url).then(function(j){
+      if(!j || j.ok!==true) throw new Error('badjson');
+      populateFromServer(j);
+    }).catch(function(_){ doJsonp(); });
+  }
+}
+
+var _poll;
+document.addEventListener('DOMContentLoaded', function(){
+  loadRadiusStatus();
+  clearInterval(_poll);
+  _poll = setInterval(loadRadiusStatus, 15000);
+
+  var lf = document.getElementById('logoutForm');
+  if(lf){
+    var raw = '$(link-logout)';
+    try {
+      var u = new URL(raw);
+      u.protocol = 'https:';
+      lf.action = u.toString();
+    } catch(e){
+      lf.action = (raw||'').replace(/^http:\/\//, 'https://');
+    }
+  }
+
+  var browse = document.getElementById('btnBrowse');
+  if (browse){
+    var cont = qs('continue') || '';
+    if (cont && cont.indexOf('http') === 0){
+      browse.href = cont;
+    } else {
+      var orig = '$(link-orig)';
+      if (orig && orig.indexOf('$(') === -1) browse.href = orig;
+      else browse.href = 'https://nister.org';
+    }
+  }
+});
+</script>
+</head>
+<body>
+<div class="container">
+  <div class="card wide">
+    <div class="logo">
+      <div class="dot"></div><div class="name">NISTER Wi-Fi</div><span class="tag">status</span>
+    </div>
+
+    <div class="headline">
+      <h2 class="h" id="title">Checking account...</h2>
+      <span class="badge" id="statusBadge">Verifying...</span>
+    </div>
+    <div class="note" id="statusNote"></div>
+
+    <div class="section-title">Session</div>
+    <div class="kv">
+      <div class="grid"><b>Username</b><span>$(username)</span></div>
+      <div class="grid"><b>IP</b><span>$(ip)</span></div>
+      <div class="grid"><b>Uptime</b><span>$(uptime)</span></div>
+      <div class="grid"><b>This session</b><span>$(bytes-in-nice) / $(bytes-out-nice)</span></div>
+      <div class="chips">
+        <span class="chip">Device: $(mac)</span>
+        <span class="chip">Hotspot: $(hostname)</span>
+      </div>
+      <div class="small" id="debug">build v2025-11-15d</div>
+      <div class="small" id="debug3"></div>
+      <div class="small" id="debug2"></div>
+    </div>
+
+    <div class="section-title">Plan and usage</div>
+    <div class="kv">
+      <div class="grid"><b>Billing status</b><span class="badge" id="paidbadge">...</span></div>
+      <div class="grid"><b>Plan</b><span id="group">N/A</span></div>
+      <div class="grid"><b>Quota</b><span id="quota">N/A</span></div>
+      <div class="grid"><b>Used</b><span id="used">N/A</span></div>
+      <div class="grid"><b>Remain</b><span id="remain">N/A</span></div>
+      <div class="bar"><i id="barfill"></i></div>
+      <div class="muted" id="pct" style="text-align:right;margin-top:4px"></div>
+      <div class="grid" style="margin-top:8px"><b>Period</b><span id="period">N/A</span></div>
+      <div class="grid"><b>Expires</b><span id="expiry">N/A</span></div>
+      <div class="muted" id="left" style="text-align:right;margin-top:4px"></div>
+      <div class="grid" style="margin-top:8px"><b>Policy</b><span id="alist">N/A</span></div>
+      <div class="grid"><b>Rate</b><span id="rate">N/A</span></div>
+    </div>
+
+    <div class="row" style="margin-top:16px">
+      <a class="btn btn-ghost" id="btnBrowse" target="_top">Continue browsing</a>
+      <form id="logoutForm" action="#" method="post" style="flex:1">
+        <button class="btn btn-primary" type="submit">Logout</button>
+      </form>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <a class="btn btn-ghost" id="btnBuy" href="pay.html?username=$(username)" target="_top">Buy or renew data</a>
+      <a class="btn btn-ghost" id="btnChange" href="change-password.html?username=$(username)&mac=$(mac)">Change password</a>
+      <a class="btn btn-ghost" href="#" onclick="loadRadiusStatus();return false;">Refresh</a>
+    </div>
+
+    <div class="support">
+      <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+      <span class="note">If something looks wrong, chat with us.</span>
+    </div>
+  </div>
+</div>
+<script src="config.js"></script>
+</body>
+</html>

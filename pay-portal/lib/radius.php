@@ -321,7 +321,7 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
             radius_set_check($r, $u, 'Expiration', ':=', $expStr);
 
             radius_set_user_group($r, $u, $planCode);
-            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname='HS_LIMITED'")->execute([':u'=>$u]);
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
             $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                          SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
                          WHERE NOT EXISTS (
@@ -413,6 +413,7 @@ function radius_user_status(string $msisdn): array {
     'expired' => $expired,
     'exhausted' => $exhausted,
     'can_browse' => $canBrowse,
+    'policy_limited' => $policyLimited,
     'group' => $planGroup,
     'addrlist' => $addrList,
     'expires_at' => $expiry ? $expiry->format('d M Y H:i:s') : null,
@@ -505,9 +506,15 @@ if (!function_exists('nister_username_variants')) {
  */
 
 function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
-  $nasIp = trim((string)($ENV['NAS_IP'] ?? ''));
+  $nasRaw = (string)($ENV['NAS_IPS'] ?? ($ENV['NAS_IP'] ?? ''));
+  $nasIps = [];
+  foreach (preg_split('/[,\s]+/', $nasRaw, -1, PREG_SPLIT_NO_EMPTY) as $ip) {
+    $ip = trim($ip);
+    if ($ip !== '') $nasIps[$ip] = true;
+  }
+  $nasIps = array_keys($nasIps);
   $port  = (int)($ENV['COA_PORT'] ?? 3799);
-  if ($nasIp === '' || $port <= 0) return;
+  if (!$nasIps || $port <= 0) return;
 
   // Secret: inline or file
   $secret = trim((string)($ENV['COA_SECRET'] ?? ''));
@@ -546,17 +553,18 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
   elseif (function_exists('db_pdo')) $pdo = db_pdo($ENV);
   if (!$pdo instanceof PDO) return;
 
-  // Find active sessions on THIS NAS; match by trailing last9 digits (handles 0xxxxxxxxx vs 233xxxxxxxxx)
+  // Find active sessions across configured NAS IPs; match by trailing last9 digits.
+  $nasPlaceholders = implode(',', array_fill(0, count($nasIps), '?'));
   $st = $pdo->prepare(
-    "SELECT username, acctsessionid, framedipaddress, callingstationid, acctstarttime
+    "SELECT username, acctsessionid, framedipaddress, callingstationid, acctstarttime, nasipaddress
      FROM radacct
      WHERE acctstoptime IS NULL
-       AND nasipaddress = :nas
-       AND username LIKE CONCAT('%', :last9)
+       AND nasipaddress IN ($nasPlaceholders)
+       AND username LIKE CONCAT('%', ?)
      ORDER BY acctstarttime DESC
      LIMIT 200"
   );
-  $st->execute([':nas'=>$nasIp, ':last9'=>$last9]);
+  $st->execute(array_merge($nasIps, [$last9]));
   $rows = $st->fetchAll(PDO::FETCH_ASSOC);
   if (!$rows) return;
 
@@ -589,9 +597,11 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
     $fip = trim((string)($r['framedipaddress'] ?? ''));
     $mac = strtoupper(trim((string)($r['callingstationid'] ?? '')));
 
-    $k = $sidSafe.'|'.$fip.'|'.$mac;
+    $nas = trim((string)($r['nasipaddress'] ?? ''));
+    if ($nas === '') continue;
+    $k = $sidSafe.'|'.$fip.'|'.$mac.'|'.$nas;
     if (!isset($sessions[$k])) {
-      $sessions[$k] = ['sid'=>$sidSafe,'fip'=>$fip,'mac'=>$mac];
+      $sessions[$k] = ['sid'=>$sidSafe,'fip'=>$fip,'mac'=>$mac,'nas'=>$nas];
     }
   }
   if (!$sessions) return;
@@ -599,6 +609,8 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
   $tryUsers = array_keys($tryUsersMap);
 
   foreach ($sessions as $sess) {
+    $nas = $sess['nas'] ?? '';
+    if ($nas === '') continue;
     $base = [];
     $base[] = 'Acct-Session-Id = "'.$sess['sid'].'"';
 
@@ -619,7 +631,7 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
 
       $payload = 'User-Name = "'.$u."\"\n".$basePayload;
 
-      $cmd = [$radclient, '-x', $nasIp.':'.$port, 'disconnect', $secret];
+      $cmd = [$radclient, '-x', $nas.':'.$port, 'disconnect', $secret];
       $des = [0=>['pipe','w'], 1=>['pipe','r'], 2=>['pipe','r']];
       $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
       if (!is_resource($proc)) continue;
