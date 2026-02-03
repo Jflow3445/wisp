@@ -18,7 +18,7 @@ function go(){
   const mac = '$(mac)';
   const ip = '$(ip)';
   const base = payBase();
-  const url = base.replace(/\/+$/,'') + '/checkout?' + new URLSearchParams({username, mac, ip}).toString();
+  const url = base.replace(/\/+$/,'') + '/login.php?' + new URLSearchParams({username, mac, ip, autologin: '1'}).toString();
   location.href = url;
 }
 </script>

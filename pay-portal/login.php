@@ -5,6 +5,21 @@ $ENV = user_boot();
 
 $err = '';
 $msg = (string)($_GET['msg'] ?? '');
+$prefill = (string)($_GET['username'] ?? $_GET['user'] ?? $_GET['msisdn'] ?? '');
+$prefill = msisdn_display(normalize_msisdn($prefill)) ?: $prefill;
+
+if (!user_logged_in() && isset($_GET['autologin']) && $_GET['autologin'] !== '0') {
+  $u = (string)($_GET['username'] ?? $_GET['user'] ?? $_GET['msisdn'] ?? '');
+  $ip = (string)($_GET['ip'] ?? '');
+  $mac = (string)($_GET['mac'] ?? '');
+  if ($u !== '' && $ip !== '' && user_do_autologin($u, $ip, $mac)) {
+    header('Location: /index.php');
+    exit;
+  } else {
+    $err = 'Please login to continue.';
+  }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $msisdn = (string)($_POST['msisdn'] ?? '');
   $pass   = (string)($_POST['password'] ?? '');
@@ -61,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <form method="post" action="/login.php" autocomplete="off">
       <div class="field">
         <label class="label" for="msisdn">Phone number</label>
-        <input id="msisdn" name="msisdn" type="tel" placeholder="e.g. 059xxxxxxx" required>
+        <input id="msisdn" name="msisdn" type="tel" placeholder="e.g. 059xxxxxxx" value="<?=htmlspecialchars($prefill, ENT_QUOTES, 'UTF-8')?>" required>
       </div>
       <div class="field">
         <label class="label" for="password">Password</label>

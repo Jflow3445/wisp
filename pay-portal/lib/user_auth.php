@@ -104,6 +104,39 @@ function user_do_login(string $rawMsisdn, string $password): bool {
   return false;
 }
 
+function user_do_autologin(string $rawMsisdn, string $ip, string $mac=''): bool {
+  $msisdn = normalize_msisdn($rawMsisdn);
+  if ($msisdn === '') return false;
+  if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) return false;
+
+  $mac = strtoupper(trim($mac));
+  if ($mac !== '' && !preg_match('/^[0-9A-F:]{11,17}$/', $mac)) $mac = '';
+
+  $r = rdb_pdo();
+  $targets = nister_username_variants($msisdn);
+  $ph = implode(',', array_fill(0, count($targets), '?'));
+
+  $sql = "SELECT 1 FROM radacct
+          WHERE acctstoptime IS NULL
+            AND framedipaddress = ?
+            AND username IN ($ph)";
+  $args = array_merge([$ip], $targets);
+  if ($mac !== '') {
+    $sql .= " AND UPPER(callingstationid) = ?";
+    $args[] = $mac;
+  }
+  $sql .= " ORDER BY acctstarttime DESC LIMIT 1";
+
+  $st = $r->prepare($sql);
+  $st->execute($args);
+  if ($st->fetchColumn()) {
+    $_SESSION['user_msisdn'] = $msisdn;
+    $_SESSION['user_at'] = time();
+    return true;
+  }
+  return false;
+}
+
 function radius_password_match(string $password, string $stored, string $attr): bool {
   $stored = trim($stored);
   if ($stored === '') return false;
