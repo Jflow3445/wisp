@@ -103,7 +103,7 @@ admin_require_login();
   @media (max-width:900px){
     .layout{grid-template-columns:1fr}
     .side{position:static}
-    .menu{flex-direction:row;overflow:auto;padding-bottom:6px}
+    .menu{flex-direction:row;flex-wrap:wrap;overflow:visible;padding-bottom:6px}
     .menu .btn{white-space:nowrap}
   }
   @media (max-width:900px){
