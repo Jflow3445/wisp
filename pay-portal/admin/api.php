@@ -7,6 +7,7 @@ require_once __DIR__.'/../lib/plans_radius.php';
 require_once __DIR__.'/../lib/common.php';
 require_once __DIR__.'/../lib/settings.php';
 require_once __DIR__.'/../lib/alerts.php';
+require_once __DIR__.'/../lib/health.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 
 $ENV = admin_boot();
@@ -195,6 +196,27 @@ try {
           ->execute([':u'=>$who, ':id'=>$id]);
       alerts_insert($PDO, null, 'coa_retry', $user, 'COA retry requested by admin', $_SERVER['REMOTE_ADDR'] ?? null);
       echo json_encode(['ok'=>true]);
+      break;
+    }
+
+    case 'health_status': {
+      try {
+        $pdo = db_pdo($ENV);
+        $latest = health_latest($pdo);
+        $events = health_events($pdo, 30);
+        $coaRate = health_coa_success_rate($pdo, 120);
+        $uptime24 = health_uptime_ratio($pdo, 24);
+        echo json_encode([
+          'ok' => true,
+          'latest' => $latest,
+          'events' => $events,
+          'coa_rate' => $coaRate,
+          'uptime24' => $uptime24,
+        ]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'health_failed','detail'=>$e->getMessage()]);
+      }
       break;
     }
 

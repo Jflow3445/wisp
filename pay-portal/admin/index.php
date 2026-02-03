@@ -180,6 +180,40 @@ admin_require_login();
         <div class="value" id="active_sessions">n/a</div>
       </div>
     </div>
+    <div class="section-head" style="margin-top:14px">
+      <h3>Network Health</h3>
+      <span class="badge" id="health_updated">Last check: -</span>
+    </div>
+    <div class="grid" id="health_grid">
+      <div class="kpi compact">
+        <div class="label">Overall</div>
+        <div class="value" id="health_overall">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">RADIUS auth</div>
+        <div class="value" id="health_radius">-</div>
+        <div class="muted" id="health_radius_ms">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">CoA success rate</div>
+        <div class="value" id="health_coa_rate">-</div>
+        <div class="muted" id="health_coa_ms">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Tunnel status</div>
+        <div class="value" id="health_tunnel">-</div>
+        <div class="muted" id="health_route">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Latency / Loss</div>
+        <div class="value" id="health_latency">-</div>
+        <div class="muted" id="health_loss">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Download speed</div>
+        <div class="value" id="health_speed">-</div>
+      </div>
+    </div>
   </div>
 
   <div class="card" data-section="settings">
@@ -380,6 +414,20 @@ admin_require_login();
           </tr>
         </thead>
         <tbody><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="section-head" style="margin-top:14px">
+      <h3>Downtime timeline</h3>
+      <div class="muted">Health outages detected by cron checks.</div>
+    </div>
+    <div class="table-wrap">
+      <table class="table small" id="health_downtime_tbl">
+        <thead>
+          <tr>
+            <th>Start</th><th>End</th><th>Minutes</th><th>Reason</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="4" class="muted">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -597,6 +645,29 @@ function bytesToGb(bytes){
   const rounded = Math.round(gb * 100) / 100;
   return String(rounded);
 }
+function healthFlag(v){
+  if (v === 1 || v === true) return 'OK';
+  if (v === 0 || v === false) return 'FAIL';
+  return 'n/a';
+}
+function fmtMs(v){
+  if (v === null || v === undefined || v === '') return '-';
+  const n = Number(v);
+  if (!isFinite(n)) return '-';
+  return `${Math.round(n)} ms`;
+}
+function fmtLoss(v){
+  if (v === null || v === undefined || v === '') return '-';
+  const n = Number(v);
+  if (!isFinite(n)) return '-';
+  return `${Math.round(n)}% loss`;
+}
+function fmtMpbs(v){
+  if (v === null || v === undefined || v === '') return '-';
+  const n = Number(v);
+  if (!isFinite(n)) return '-';
+  return `${n.toFixed(2)} Mbps`;
+}
 
 let adminPlansByCode = {};
 let alertsAutoRetryRunning = false;
@@ -632,6 +703,71 @@ async function loadStats(){
   document.getElementById('purchase_failed_cnt').textContent = j.purchases?.failed_cnt ?? 0;
   renderTopPlans(j.purchases?.top_plans || []);
   renderSeries(j.payments?.series || [], j.purchases?.series || []);
+}
+
+function renderHealth(j){
+  const latest = j.latest || null;
+  const updated = latest && latest.ts ? latest.ts : '-';
+  const overall = latest ? healthFlag(latest.overall_ok) : '-';
+  const radius = latest ? healthFlag(latest.radius_ok) : '-';
+  const coaRate = (j.coa_rate !== null && j.coa_rate !== undefined) ? `${j.coa_rate}%` : '-';
+  const tunnel = latest ? healthFlag(latest.tunnel_ok) : '-';
+  const routeDev = latest && latest.route_dev ? `via ${latest.route_dev}` : '-';
+  const latency = latest ? fmtMs(latest.ping_ms) : '-';
+  const loss = latest ? fmtLoss(latest.loss_pct) : '-';
+  const speed = latest ? fmtMpbs(latest.speed_mbps) : '-';
+
+  const updEl = document.getElementById('health_updated');
+  if (updEl) updEl.textContent = `Last check: ${updated}`;
+  const oEl = document.getElementById('health_overall');
+  if (oEl) oEl.textContent = overall;
+  const rEl = document.getElementById('health_radius');
+  if (rEl) rEl.textContent = radius;
+  const rMs = document.getElementById('health_radius_ms');
+  if (rMs) rMs.textContent = latest ? fmtMs(latest.radius_ms) : '-';
+  const cEl = document.getElementById('health_coa_rate');
+  if (cEl) cEl.textContent = coaRate;
+  const cMs = document.getElementById('health_coa_ms');
+  if (cMs) cMs.textContent = latest ? fmtMs(latest.coa_ms) : '-';
+  const tEl = document.getElementById('health_tunnel');
+  if (tEl) tEl.textContent = tunnel;
+  const rtEl = document.getElementById('health_route');
+  if (rtEl) rtEl.textContent = routeDev;
+  const lEl = document.getElementById('health_latency');
+  if (lEl) lEl.textContent = latency;
+  const lossEl = document.getElementById('health_loss');
+  if (lossEl) lossEl.textContent = loss;
+  const sEl = document.getElementById('health_speed');
+  if (sEl) sEl.textContent = speed;
+
+  const tbl = document.getElementById('health_downtime_tbl');
+  if (!tbl) return;
+  const rows = (j.events || []).map((e)=>{
+    const start = e.start_ts || '-';
+    const end = e.end_ts || 'ongoing';
+    let mins = '-';
+    try {
+      if (e.start_ts) {
+        const s = new Date(e.start_ts.replace(' ', 'T'));
+        const eDate = e.end_ts ? new Date(e.end_ts.replace(' ', 'T')) : new Date();
+        const diff = Math.max(0, eDate - s);
+        mins = Math.round(diff / 60000);
+      }
+    } catch (err) {}
+    const reason = safe(e.reason || '');
+    return `<tr><td>${safe(start)}</td><td>${safe(end)}</td><td>${mins}</td><td>${reason}</td></tr>`;
+  }).join('');
+  tbl.querySelector('tbody').innerHTML = rows || '<tr><td colspan="4" class="muted">No downtime recorded.</td></tr>';
+}
+
+async function loadHealth(){
+  const j = await api('health_status');
+  if (!j.ok){
+    console.warn(j);
+    renderHealth({});
+    return;
+  }
+  renderHealth(j);
 }
 
 function rowHTML(p){
@@ -1349,6 +1485,7 @@ async function refreshAll(){
   if (btn) btn.disabled = true;
   await loadWho();
   await loadStats();
+  await loadHealth();
   await loadPending();
   await loadPlans();
   await loadSettings();
