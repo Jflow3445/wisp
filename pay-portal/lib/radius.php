@@ -793,5 +793,10 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   @proc_close($proc);
 
   $ok = (strpos($out, 'Disconnect-ACK') !== false || strpos($err, 'Disconnect-ACK') !== false);
-  return ['ok'=>$ok, 'out'=>trim($out."\n".$err), 'nas'=>$nas, 'user'=>$user];
+  $combined = trim($out."\n".$err);
+  if ($ok) {
+    return ['ok'=>true, 'out'=>$combined, 'nas'=>$nas, 'user'=>$user];
+  }
+  $errCode = ($combined === '') ? 'no_reply' : 'no_ack';
+  return ['ok'=>false, 'error'=>$errCode, 'out'=>$combined, 'nas'=>$nas, 'user'=>$user];
 }
