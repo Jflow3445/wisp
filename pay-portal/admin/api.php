@@ -700,10 +700,33 @@ try {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $addr = trim((string)from_any([$in],'addrlist',''));
       if ($msisdn === '' || $addr === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and addrlist required']); break; }
+      $addrUp = strtoupper($addr);
       try {
         $r = rdb_pdo();
         foreach (nister_username_variants($msisdn) as $u) {
           radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addr);
+          if ($addrUp === 'HS_ACTIVE') {
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
+            $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
+                         SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
+                         WHERE NOT EXISTS (
+                           SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'
+                         )")->execute([':u'=>$u]);
+          } elseif ($addrUp === 'HS_LIMITED') {
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'")->execute([':u'=>$u]);
+            $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
+                         SELECT :u, 'HS_LIMITED', 0 FROM DUAL
+                         WHERE NOT EXISTS (
+                           SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_LIMITED'
+                         )")->execute([':u'=>$u]);
+          } elseif ($addrUp === 'HS_NOPAID') {
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED')")->execute([':u'=>$u]);
+            $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
+                         SELECT :u, 'HS_NOPAID', 0 FROM DUAL
+                         WHERE NOT EXISTS (
+                           SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_NOPAID'
+                         )")->execute([':u'=>$u]);
+          }
         }
         echo json_encode(['ok'=>true,'addrlist'=>$addr]);
       } catch (Throwable $e) {

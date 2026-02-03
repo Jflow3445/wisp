@@ -193,9 +193,10 @@ function nister_sum_used_bytes(PDO $r, array $users, DateTimeImmutable $startAt,
               AND (
                     (acctstarttime IS NOT NULL AND acctstarttime >= ?)
                  OR (acctstoptime  IS NOT NULL AND acctstoptime  >= ?)
-                 OR acctstoptime IS NULL
+                 OR (acctstoptime IS NULL AND acctstarttime IS NOT NULL AND acctstarttime >= ?)
               )";
     $params = $users;
+    $params[] = $startAt->format('Y-m-d H:i:s');
     $params[] = $startAt->format('Y-m-d H:i:s');
     $params[] = $startAt->format('Y-m-d H:i:s');
     if ($endAt) { $sql .= " AND acctstarttime <= ?"; $params[] = $endAt->format('Y-m-d H:i:s'); }
