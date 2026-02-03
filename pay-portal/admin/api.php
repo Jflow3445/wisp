@@ -1071,7 +1071,7 @@ try {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($ip === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'ip required']); break; }
       try {
-        $res = radius_force_kick_ip($ip, $msisdn !== '' ? $msisdn : null, $_ENV);
+        $res = radius_force_kick_ip($ip, $msisdn !== '' ? $msisdn : null, $ENV);
         if (!empty($res['ok'])) {
           echo json_encode(['ok'=>true,'nas'=>$res['nas'] ?? null,'user'=>$res['user'] ?? null]);
         } else {
