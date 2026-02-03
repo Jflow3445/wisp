@@ -6,6 +6,7 @@ require_once __DIR__.'/../lib/radius.php';
 require_once __DIR__.'/../lib/plans_radius.php';
 require_once __DIR__.'/../lib/common.php';
 require_once __DIR__.'/../lib/settings.php';
+require_once __DIR__.'/../lib/alerts.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 
 $ENV = admin_boot();
@@ -146,6 +147,132 @@ try {
         }
       }
       echo json_encode(['ok'=>true]);
+      break;
+    }
+
+    case 'alerts_list': {
+      alerts_bootstrap($PDO);
+      $limit = isset($in['limit']) ? max(1, min(500, (int)$in['limit'])) : 200;
+      $st = $PDO->prepare("SELECT id, ts, type, username, msg, remote_addr, acked, acked_at, acked_by, created_at
+                           FROM admin_alerts
+                           ORDER BY id DESC
+                           LIMIT :lim");
+      $st->bindValue(':lim', $limit, PDO::PARAM_INT);
+      $st->execute();
+      $rows = $st->fetchAll() ?: [];
+      echo json_encode(['ok'=>true,'alerts'=>$rows]);
+      break;
+    }
+
+    case 'alerts_ack': {
+      alerts_bootstrap($PDO);
+      $id = (int)($in['id'] ?? 0);
+      if ($id <= 0) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'id required']); break; }
+      $who = $_SESSION['admin_user'] ?? 'admin';
+      $st = $PDO->prepare("UPDATE admin_alerts SET acked=1, acked_at=NOW(), acked_by=:u WHERE id=:id");
+      $st->execute([':u'=>$who, ':id'=>$id]);
+      echo json_encode(['ok'=>true]);
+      break;
+    }
+
+    case 'alerts_retry': {
+      alerts_bootstrap($PDO);
+      $id = (int)($in['id'] ?? 0);
+      if ($id <= 0) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'id required']); break; }
+      $row = $PDO->prepare("SELECT username, type, msg FROM admin_alerts WHERE id=:id");
+      $row->execute([':id'=>$id]);
+      $r = $row->fetch();
+      if (!$r) { http_response_code(404); echo json_encode(['ok'=>false,'error'=>'not_found']); break; }
+      $user = (string)($r['username'] ?? '');
+      if ($user === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'username missing']); break; }
+      try {
+        radius_try_disconnect($user, is_array($ENV) ? $ENV : []);
+      } catch (Throwable $e) {
+        // fall through; still record retry attempt
+      }
+      $who = $_SESSION['admin_user'] ?? 'admin';
+      $PDO->prepare("UPDATE admin_alerts SET acked=1, acked_at=NOW(), acked_by=:u WHERE id=:id")
+          ->execute([':u'=>$who, ':id'=>$id]);
+      alerts_insert($PDO, null, 'coa_retry', $user, 'COA retry requested by admin', $_SERVER['REMOTE_ADDR'] ?? null);
+      echo json_encode(['ok'=>true]);
+      break;
+    }
+
+    case 'user_state_list': {
+      $r = rdb_pdo();
+      $limit = isset($in['limit']) ? max(1, min(1000, (int)$in['limit'])) : 300;
+      $where = "rug.groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')";
+      $params = [];
+      if (!empty($in['group'])) {
+        $g = (string)$in['group'];
+        if (in_array($g, ['HS_ACTIVE','HS_LIMITED','HS_NOPAID'], true)) {
+          $where = "rug.groupname = :g";
+          $params[':g'] = $g;
+        }
+      }
+      if (!empty($in['search'])) {
+        $where .= " AND rug.username LIKE :q";
+        $params[':q'] = '%'.preg_replace('/\D+/', '', (string)$in['search']).'%';
+      }
+      $having = [];
+      if (!empty($in['expired_only'])) $having[] = "expired_flag = 1";
+      if (!empty($in['exhausted_only'])) $having[] = "exhausted_flag = 1";
+      $havingSql = $having ? ("HAVING ".implode(" AND ", $having)) : "";
+
+      $st = $r->prepare("
+        SELECT
+          rug.username,
+          rug.groupname,
+          rc.value AS expires,
+          ws.value AS window_start,
+          rq.value AS quota_bytes,
+          rl.value AS rate_limit,
+          (
+            SELECT COALESCE(SUM(
+              COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0) +
+              4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
+            ),0)
+            FROM radacct ra
+            WHERE ra.username = rug.username
+              AND ra.acctstarttime >= COALESCE(ws.value, DATE_SUB(NOW(), INTERVAL 30 DAY))
+          ) AS used_bytes,
+          CASE
+            WHEN rc.value IS NULL THEN 0
+            WHEN STR_TO_DATE(rc.value, '%d %b %Y %H:%i:%s') <= NOW() THEN 1
+            ELSE 0
+          END AS expired_flag,
+          CASE
+            WHEN rq.value IS NULL THEN 0
+            WHEN (
+              SELECT COALESCE(SUM(
+                COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0) +
+                4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
+              ),0)
+              FROM radacct ra
+              WHERE ra.username = rug.username
+                AND ra.acctstarttime >= COALESCE(ws.value, DATE_SUB(NOW(), INTERVAL 30 DAY))
+            ) >= CAST(rq.value AS UNSIGNED) THEN 1
+            ELSE 0
+          END AS exhausted_flag
+        FROM radusergroup rug
+        LEFT JOIN radcheck rc
+          ON rc.username = rug.username AND rc.attribute='Expiration'
+        LEFT JOIN radreply rq
+          ON rq.username = rug.username AND rq.attribute='Nister-Quota-Bytes'
+        LEFT JOIN radreply ws
+          ON ws.username = rug.username AND ws.attribute='Nister-Window-Start'
+        LEFT JOIN radreply rl
+          ON rl.username = rug.username AND rl.attribute='Mikrotik-Rate-Limit'
+        WHERE {$where}
+        {$havingSql}
+        ORDER BY rug.groupname, rug.username
+        LIMIT :lim
+      ");
+      $st->bindValue(':lim', $limit, PDO::PARAM_INT);
+      foreach ($params as $k=>$v) $st->bindValue($k, $v);
+      $st->execute();
+      $rows = $st->fetchAll() ?: [];
+      echo json_encode(['ok'=>true,'users'=>$rows]);
       break;
     }
 
@@ -597,6 +724,20 @@ try {
         }
       } catch (Throwable $e) {
         $out['ledger'] = [];
+      }
+
+      try {
+        alerts_bootstrap($PDO);
+        $vars = nister_username_variants($msisdn);
+        $ph = implode(",", array_fill(0, count($vars), "?"));
+        $st = $PDO->prepare("SELECT id, ts, msg, created_at
+                             FROM admin_alerts
+                             WHERE type='coa_fail' AND username IN ($ph)
+                             ORDER BY id DESC LIMIT 1");
+        $st->execute($vars);
+        $out['last_coa_fail'] = $st->fetch() ?: null;
+      } catch (Throwable $e) {
+        $out['last_coa_fail'] = null;
       }
 
       echo json_encode($out);

@@ -323,6 +323,66 @@ admin_require_login();
 
   <div class="card">
     <div class="section-head">
+      <h2>Alerts</h2>
+      <div class="muted">CoA failures and limit events.</div>
+    </div>
+    <div class="form-grid" style="margin-bottom:10px">
+      <div class="field">
+        <label class="check"><input id="alerts_auto_retry" type="checkbox"> Auto‑retry CoA fails on refresh</label>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="table small" id="alerts_tbl">
+        <thead>
+          <tr>
+            <th>When</th><th>Type</th><th>User</th><th>Message</th><th>From</th><th>Action</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-head">
+      <h2>User States</h2>
+      <div class="muted">Expiry/quota status per user (HS_* only).</div>
+    </div>
+    <div class="form-grid" style="margin-bottom:10px">
+      <div class="field">
+        <label for="state_search">Search MSISDN</label>
+        <input id="state_search" type="text" placeholder="233xxxxxxxxx or 0xxxxxxxxx">
+      </div>
+      <div class="field">
+        <label for="state_group">Group</label>
+        <select id="state_group">
+          <option value="">All</option>
+          <option value="HS_ACTIVE">HS_ACTIVE</option>
+          <option value="HS_LIMITED">HS_LIMITED</option>
+          <option value="HS_NOPAID">HS_NOPAID</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="check"><input id="state_expired" type="checkbox"> Expired only</label>
+      </div>
+      <div class="field">
+        <label class="check"><input id="state_exhausted" type="checkbox"> Exhausted only</label>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="table small" id="user_states_tbl">
+        <thead>
+          <tr>
+            <th>User</th><th>Group</th><th>Expires</th><th>Quota</th><th>Used</th><th>Window</th><th>Expired</th><th>Exhausted</th><th>Rate</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="9" class="muted">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-head">
       <h2>User Tools</h2>
       <div class="muted">Lookup users, credit wallets, apply plans, or disconnect sessions.</div>
     </div>
@@ -465,6 +525,7 @@ function bytesToGb(bytes){
 }
 
 let adminPlansByCode = {};
+let alertsAutoRetryRunning = false;
 
 async function loadWho(){
   const j = await api('whoami');
@@ -551,6 +612,63 @@ function renderSeries(paySeries, purSeries){
     <td>${safe(d)}</td>
     <td>${centsToGHS(pmap[d] || 0)}</td>
     <td>${centsToGHS(umap[d] || 0)}</td>
+  </tr>`).join('');
+}
+
+function renderAlerts(rows){
+  const tb = document.querySelector('#alerts_tbl tbody');
+  if (!tb) return;
+  if (!rows || rows.length === 0) {
+    tb.innerHTML = '<tr><td colspan="6" class="muted">No alerts.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(r => `<tr>
+    <td>${safe(r.created_at || r.ts || '')}</td>
+    <td>${safe(r.type || '')}</td>
+    <td>${safe(r.username || '')}</td>
+    <td>${safe(r.msg || '')}</td>
+    <td>${safe(r.remote_addr || '')}</td>
+    <td>
+      ${r.acked ? '<span class="muted">acked</span>' : `
+        <button class="btn small" data-act="ack" data-id="${safe(r.id)}">Ack</button>
+        <button class="btn small approve" data-act="retry" data-id="${safe(r.id)}">Retry</button>
+      `}
+    </td>
+  </tr>`).join('');
+
+  tb.querySelectorAll('button[data-act]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      const id = ev.currentTarget.getAttribute('data-id');
+      const act = ev.currentTarget.getAttribute('data-act');
+      if (!id) return;
+      if (act === 'ack') {
+        await api('alerts_ack', { id });
+        await loadAlerts();
+      } else if (act === 'retry') {
+        await api('alerts_retry', { id });
+        await loadAlerts();
+      }
+    });
+  });
+}
+
+function renderUserStates(rows){
+  const tb = document.querySelector('#user_states_tbl tbody');
+  if (!tb) return;
+  if (!rows || rows.length === 0) {
+    tb.innerHTML = '<tr><td colspan="9" class="muted">No users.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(r => `<tr>
+    <td>${safe(r.username || '')}</td>
+    <td>${safe(r.groupname || '')}</td>
+    <td>${safe(r.expires || '')}</td>
+    <td>${fmtBytes(r.quota_bytes)}</td>
+    <td>${fmtBytes(r.used_bytes)}</td>
+    <td>${safe(r.window_start || '')}</td>
+    <td>${r.expired_flag ? 'yes' : 'no'}</td>
+    <td>${r.exhausted_flag ? 'yes' : 'no'}</td>
+    <td>${safe(r.rate_limit || '')}</td>
   </tr>`).join('');
 }
 
@@ -763,6 +881,35 @@ async function loadPending(){
   });
 }
 
+async function loadAlerts(){
+  const j = await api('alerts_list', { limit: 200 });
+  if (!j.ok){ console.warn(j); return; }
+  renderAlerts(j.alerts || []);
+
+  const autoRetry = document.getElementById('alerts_auto_retry');
+  if (autoRetry && autoRetry.checked && !alertsAutoRetryRunning) {
+    alertsAutoRetryRunning = true;
+    const alerts = Array.isArray(j.alerts) ? j.alerts : [];
+    for (const a of alerts) {
+      if (a && a.type === 'coa_fail' && !a.acked) {
+        await api('alerts_retry', { id: a.id });
+      }
+    }
+    alertsAutoRetryRunning = false;
+    await loadAlerts();
+  }
+}
+
+async function loadUserStates(){
+  const search = document.getElementById('state_search')?.value || '';
+  const group = document.getElementById('state_group')?.value || '';
+  const expired_only = !!document.getElementById('state_expired')?.checked;
+  const exhausted_only = !!document.getElementById('state_exhausted')?.checked;
+  const j = await api('user_state_list', { limit: 300, search, group, expired_only, exhausted_only });
+  if (!j.ok){ console.warn(j); return; }
+  renderUserStates(j.users || []);
+}
+
 function toolValue(id){
   const el = document.getElementById(id);
   return el ? el.value.trim() : '';
@@ -811,6 +958,14 @@ function renderUserSnapshot(data){
 
   const rate = plan && plan.rate_limit ? safe(plan.rate_limit) : '-';
   const addr = plan && plan.address_list ? safe(plan.address_list) : (status && status.addrlist ? safe(status.addrlist) : '-');
+  const lastCoa = data.last_coa_fail || null;
+  let coaLine = '-';
+  if (lastCoa) {
+    const bits = [];
+    if (lastCoa.created_at) bits.push(safe(lastCoa.created_at));
+    if (lastCoa.msg) bits.push(safe(lastCoa.msg));
+    if (bits.length) coaLine = bits.join(' | ');
+  }
 
   let lastLine = '-';
   if (last) {
@@ -834,6 +989,7 @@ function renderUserSnapshot(data){
     <div><span class="muted">Rate limit:</span> ${rate}</div>
     <div><span class="muted">Address list:</span> ${addr}</div>
     <div><span class="muted">Last purchase:</span> ${lastLine}</div>
+    <div><span class="muted">Last CoA fail:</span> ${coaLine}</div>
   `;
 
   const ledger = Array.isArray(data.ledger) ? data.ledger : [];
@@ -1075,6 +1231,8 @@ async function refreshAll(){
   await loadPending();
   await loadPlans();
   await loadSettings();
+  await loadAlerts();
+  await loadUserStates();
   if (btn) btn.disabled = false;
 }
 
@@ -1106,6 +1264,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (setGroupBtn) setGroupBtn.addEventListener('click', setGroup);
   const resetBtn = document.getElementById('tool_reset_nopaid');
   if (resetBtn) resetBtn.addEventListener('click', resetNoPaid);
+
+  const stateSearch = document.getElementById('state_search');
+  if (stateSearch) stateSearch.addEventListener('input', loadUserStates);
+  const stateGroup = document.getElementById('state_group');
+  if (stateGroup) stateGroup.addEventListener('change', loadUserStates);
+  const stateExpired = document.getElementById('state_expired');
+  if (stateExpired) stateExpired.addEventListener('change', loadUserStates);
+  const stateExhausted = document.getElementById('state_exhausted');
+  if (stateExhausted) stateExhausted.addEventListener('change', loadUserStates);
 
   const planSave = document.getElementById('plan_save');
   if (planSave) planSave.addEventListener('click', savePlan);
