@@ -1475,37 +1475,50 @@ try {
       }
 
       $url = $base . '/sms/quick?key=' . rawurlencode($apiKey);
-      $payload = [
-        'recipient' => array_values($recipients),
-        'sender' => $sender,
-        'message' => $message,
-        'is_schedule' => false,
-        'schedule_date' => '',
-      ];
+      $chunkSize = 200;
+      $sent = 0;
+      $lastGateway = null;
 
-      $ch = curl_init($url);
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-      curl_setopt($ch, CURLOPT_POST, true);
-      curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-      curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-      $resp = curl_exec($ch);
-      $err = curl_error($ch);
-      $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-      curl_close($ch);
+      foreach (array_chunk(array_values($recipients), $chunkSize) as $idx => $chunk) {
+        $payload = [
+          'recipient' => $chunk,
+          'sender' => $sender,
+          'message' => $message,
+          'is_schedule' => false,
+          'schedule_date' => '',
+        ];
 
-      if ($resp === false) {
-        http_response_code(500);
-        echo json_encode(['ok'=>false,'error'=>'sms_http_failed','detail'=>$err]);
-        break;
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        $resp = curl_exec($ch);
+        $err = curl_error($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($resp === false) {
+          http_response_code(500);
+          echo json_encode(['ok'=>false,'error'=>'sms_http_failed','detail'=>$err,'batch'=>$idx+1]);
+          break 2;
+        }
+
+        $j = json_decode((string)$resp, true);
+        if ($code < 200 || $code >= 300) {
+          http_response_code(502);
+          echo json_encode(['ok'=>false,'error'=>'sms_gateway_error','status_code'=>$code,'response'=>$j ?: $resp,'batch'=>$idx+1]);
+          break 2;
+        }
+
+        $lastGateway = $j;
+        $sent += count($chunk);
+        if (count($chunk) === $chunkSize) {
+          usleep(200000);
+        }
       }
 
-      $j = json_decode((string)$resp, true);
-      if ($code < 200 || $code >= 300) {
-        http_response_code(502);
-        echo json_encode(['ok'=>false,'error'=>'sms_gateway_error','status_code'=>$code,'response'=>$j ?: $resp]);
-        break;
-      }
-      echo json_encode(['ok'=>true,'gateway'=>$j,'recipients'=>count($recipients)]);
+      echo json_encode(['ok'=>true,'gateway'=>$lastGateway,'recipients'=>$sent]);
       break;
     }
 
