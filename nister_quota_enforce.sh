@@ -79,6 +79,51 @@ HS_LIMITED="${HS_LIMITED:-HS_LIMITED}"
 HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
 HS_PRIO="${HS_PRIO:-0}"
 
+sms_setting(){ sql_one "SELECT v FROM app_settings WHERE k='${1}' LIMIT 1;" || true; }
+msisdn_local(){
+  local d="${1//[^0-9]/}"
+  [[ -z "$d" ]] && echo "" && return 0
+  if [[ "$d" =~ ^233[0-9]{9}$ ]]; then
+    echo "0${d:3}"
+  elif [[ "$d" =~ ^0[0-9]{9}$ ]]; then
+    echo "$d"
+  else
+    echo "$d"
+  fi
+}
+sms_template(){
+  local tpl="$1"; shift
+  local k v
+  while [[ "$#" -gt 1 ]]; do
+    k="$1"; v="$2"; shift 2
+    tpl="${tpl//\{$k\}/$v}"
+  done
+  echo "$tpl"
+}
+sms_send(){
+  local to="$1" msg="$2"
+  local api_key sender base url payload
+  api_key="$(sms_setting MNOTIFY_API_KEY)"
+  sender="$(sms_setting MNOTIFY_SENDER)"
+  base="$(sms_setting MNOTIFY_BASE)"
+  [[ -z "${api_key:-}" || -z "${sender:-}" || -z "${msg:-}" ]] && return 0
+  [[ -z "${base:-}" ]] && base="https://api.mnotify.com/api"
+  base="${base%/}"
+  url="${base}/sms/quick?key=${api_key}"
+  payload=$(printf '{"recipient":["%s"],"sender":"%s","message":"%s","is_schedule":false,"schedule_date":""}' \
+    "$to" "$sender" "${msg//\"/\\\"}")
+  curl -sS -m 6 -X POST "$url" -H 'Content-Type: application/json' -d "$payload" >/dev/null 2>&1 || true
+}
+sms_should_send(){
+  local stamp="$1" now="$2" debounce="$3"
+  [[ -z "$debounce" ]] && debounce=24
+  [[ -f "$stamp" ]] || return 0
+  local last; last="$(cat "$stamp" 2>/dev/null || echo 0)"
+  [[ "$last" =~ ^[0-9]+$ ]] || last=0
+  (( now - last >= debounce*3600 )) && return 0
+  return 1
+}
+
 # SWEEP_NO_USER: if no USER passed, sweep active sessions and recently-limited users
 if [[ -z "${USER:-}" ]]; then
   mapfile -t U < <(sql_all "
@@ -93,6 +138,38 @@ if [[ -z "${USER:-}" ]]; then
   for u in "${U[@]}"; do
     /usr/local/sbin/nister_quota_enforce.sh "$u" --force || true
   done
+  SMS_INACTIVE_DAYS="$(sms_setting SMS_INACTIVE_DAYS)"; [[ -z "${SMS_INACTIVE_DAYS:-}" ]] && SMS_INACTIVE_DAYS=0
+  SMS_INACTIVE_TEXT="$(sms_setting SMS_INACTIVE_TEXT)"
+  if [[ -n "${SMS_INACTIVE_TEXT:-}" && "${SMS_INACTIVE_DAYS:-0}" =~ ^[0-9]+$ && "$SMS_INACTIVE_DAYS" -gt 0 ]]; then
+    mapfile -t INACTIVE_USERS < <(sql_all "
+      SELECT u.username
+      FROM radcheck u
+      LEFT JOIN (
+        SELECT username, MAX(COALESCE(acctstoptime, acctstarttime)) AS last_seen
+        FROM radacct
+        GROUP BY username
+      ) a ON a.username = u.username
+      WHERE u.attribute='Cleartext-Password'
+        AND (a.last_seen IS NULL OR a.last_seen < (NOW() - INTERVAL ${SMS_INACTIVE_DAYS} DAY))
+      LIMIT 200
+    " | awk 'NF')
+    declare -A _seen_inactive
+    for u in "${INACTIVE_USERS[@]}"; do
+      TO="$(msisdn_local "$u")"
+      [[ -z "$TO" ]] && continue
+      [[ -n "${_seen_inactive[$TO]:-}" ]] && continue
+      _seen_inactive["$TO"]=1
+      STAMP="$STATE_DIR/${TO}.sms_inactive"
+      if sms_should_send "$STAMP" "$NOW_EPOCH" "${SMS_DEBOUNCE_HOURS:-24}"; then
+        MSG="$(sms_template "$SMS_INACTIVE_TEXT" NAME "" MSISDN "$TO")"
+        if [[ -n "$MSG" ]]; then
+          sms_send "$TO" "$MSG"
+          echo "$NOW_EPOCH" >"$STAMP"
+          log "SMS_INACTIVE user=$TO"
+        fi
+      fi
+    done
+  fi
   exit 0
 fi
 
@@ -190,6 +267,10 @@ get_expiry_epoch(){
     sql_all "SELECT value FROM radcheck WHERE username IN (${IN_USERS}) AND attribute='Expiration' ORDER BY id DESC LIMIT 10;" | awk 'NF'
   )
   echo "$max"
+}
+
+get_expiry_str(){
+  sql_one "SELECT value FROM radcheck WHERE username IN (${IN_USERS}) AND attribute='Expiration' ORDER BY STR_TO_DATE(value,'%d %b %Y %H:%i:%s') DESC LIMIT 1;" || true
 }
 
 get_window_start(){
@@ -366,6 +447,79 @@ if [[ "$MODE" == "--limit" ]]; then
   EXHAUSTED=1
 fi
 
+if (( EXPIRED == 0 && EXHAUSTED == 0 )); then
+  SMS_DEBOUNCE_HOURS="$(sms_setting SMS_DEBOUNCE_HOURS)"; [[ -z "${SMS_DEBOUNCE_HOURS:-}" ]] && SMS_DEBOUNCE_HOURS=24
+  SMS_LOGIN_URL="$(sms_setting SMS_LOGIN_URL)"
+  [[ -z "${SMS_LOGIN_URL:-}" ]] && SMS_LOGIN_URL="https://wifi.nister.org/login.html"
+  SMS_QUOTA_WARN_PCT="$(sms_setting SMS_QUOTA_WARN_PCT)"; [[ -z "${SMS_QUOTA_WARN_PCT:-}" ]] && SMS_QUOTA_WARN_PCT=10
+  SMS_QUOTA_WARN_MB="$(sms_setting SMS_QUOTA_WARN_MB)"; [[ -z "${SMS_QUOTA_WARN_MB:-}" ]] && SMS_QUOTA_WARN_MB=200
+  SMS_EXPIRY_WARN_HOURS="$(sms_setting SMS_EXPIRY_WARN_HOURS)"; [[ -z "${SMS_EXPIRY_WARN_HOURS:-}" ]] && SMS_EXPIRY_WARN_HOURS=24
+  SMS_RENEW_REMINDER_HOURS="$(sms_setting SMS_RENEW_REMINDER_HOURS)"; [[ -z "${SMS_RENEW_REMINDER_HOURS:-}" ]] && SMS_RENEW_REMINDER_HOURS=24
+
+  if (( CAP_BYTES > 0 )); then
+    REMAIN_BYTES=$(( CAP_BYTES - USED )); (( REMAIN_BYTES < 0 )) && REMAIN_BYTES=0
+    REMAIN_MB=$(( (REMAIN_BYTES + 1048575) / 1048576 ))
+    REMAIN_PCT=$(( (REMAIN_BYTES * 100) / CAP_BYTES ))
+    if (( REMAIN_PCT <= SMS_QUOTA_WARN_PCT || REMAIN_MB <= SMS_QUOTA_WARN_MB )); then
+      SMS_QUOTA_WARN_TEXT="$(sms_setting SMS_QUOTA_WARN_TEXT)"
+      if [[ -n "${SMS_QUOTA_WARN_TEXT:-}" ]]; then
+        SMS_STAMP="$STATE_DIR/${USER}.sms_quota_warn"
+        if sms_should_send "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS"; then
+          MSG="$(sms_template "$SMS_QUOTA_WARN_TEXT" \
+            NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
+            REMAIN_MB "$REMAIN_MB" REMAIN_PCT "$REMAIN_PCT" LOGIN_URL "$SMS_LOGIN_URL")"
+          TO="$(msisdn_local "$USER")"
+          if [[ -n "$TO" && -n "$MSG" ]]; then
+            sms_send "$TO" "$MSG"
+            echo "$NOW_EPOCH" >"$SMS_STAMP"
+            log "SMS_QUOTA_WARN user=$USER remain_mb=$REMAIN_MB remain_pct=$REMAIN_PCT"
+          fi
+        fi
+      fi
+    fi
+  fi
+
+  if (( EXP_EPOCH > 0 )); then
+    SECS_LEFT=$(( EXP_EPOCH - NOW_EPOCH ))
+    if (( SECS_LEFT > 0 && SECS_LEFT <= SMS_EXPIRY_WARN_HOURS*3600 )); then
+      SMS_EXPIRY_WARN_TEXT="$(sms_setting SMS_EXPIRY_WARN_TEXT)"
+      if [[ -n "${SMS_EXPIRY_WARN_TEXT:-}" ]]; then
+        EXP_STR="$(get_expiry_str)"
+        SMS_STAMP="$STATE_DIR/${USER}.sms_expiry_warn"
+        if sms_should_send "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS"; then
+          MSG="$(sms_template "$SMS_EXPIRY_WARN_TEXT" \
+            NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
+            EXPIRES_AT "${EXP_STR:-}" LOGIN_URL "$SMS_LOGIN_URL")"
+          TO="$(msisdn_local "$USER")"
+          if [[ -n "$TO" && -n "$MSG" ]]; then
+            sms_send "$TO" "$MSG"
+            echo "$NOW_EPOCH" >"$SMS_STAMP"
+            log "SMS_EXPIRY_WARN user=$USER expires_at=${EXP_STR:-}"
+          fi
+        fi
+      fi
+    fi
+    if (( SECS_LEFT > 0 && SECS_LEFT <= SMS_RENEW_REMINDER_HOURS*3600 )); then
+      SMS_RENEW_REMINDER_TEXT="$(sms_setting SMS_RENEW_REMINDER_TEXT)"
+      if [[ -n "${SMS_RENEW_REMINDER_TEXT:-}" ]]; then
+        EXP_STR="$(get_expiry_str)"
+        SMS_STAMP="$STATE_DIR/${USER}.sms_renew_reminder"
+        if sms_should_send "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS"; then
+          MSG="$(sms_template "$SMS_RENEW_REMINDER_TEXT" \
+            NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
+            EXPIRES_AT "${EXP_STR:-}" LOGIN_URL "$SMS_LOGIN_URL")"
+          TO="$(msisdn_local "$USER")"
+          if [[ -n "$TO" && -n "$MSG" ]]; then
+            sms_send "$TO" "$MSG"
+            echo "$NOW_EPOCH" >"$SMS_STAMP"
+            log "SMS_RENEW_REMINDER user=$USER expires_at=${EXP_STR:-}"
+          fi
+        fi
+      fi
+    fi
+  fi
+fi
+
 if (( EXPIRED == 1 || EXHAUSTED == 1 )); then
   set_cap_zero
   set_hs_limited
@@ -377,6 +531,21 @@ else
     clear_limited_state
     kick_sessions
     log "UNLIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS"
+    SMS_BACK_ONLINE_TEXT="$(sms_setting SMS_BACK_ONLINE_TEXT)"
+    if [[ -n "${SMS_BACK_ONLINE_TEXT:-}" ]]; then
+      SMS_STAMP="$STATE_DIR/${USER}.sms_back_online"
+      if sms_should_send "$SMS_STAMP" "$NOW_EPOCH" "${SMS_DEBOUNCE_HOURS:-24}"; then
+        MSG="$(sms_template "$SMS_BACK_ONLINE_TEXT" \
+          NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
+          EXPIRES_AT "$(get_expiry_str)")"
+        TO="$(msisdn_local "$USER")"
+        if [[ -n "$TO" && -n "$MSG" ]]; then
+          sms_send "$TO" "$MSG"
+          echo "$NOW_EPOCH" >"$SMS_STAMP"
+          log "SMS_BACK_ONLINE user=$USER"
+        fi
+      fi
+    fi
   fi
   if (( EXP_EPOCH > 0 || CAP_BYTES > 0 )); then
     ensure_hs_active

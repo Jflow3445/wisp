@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__.'/../lib/db.php';
 require_once __DIR__.'/../lib/wallet.php';
 require_once __DIR__.'/../lib/common.php';
+require_once __DIR__.'/../lib/sms.php';
 
 require_bearer($ENV['APP_SECRET']??'');
 
@@ -33,10 +34,36 @@ if($action==='approve'){
       $cents = (int)round(((float)$row['amount']) * 100);
     }
     wallet_credit($row['msisdn'],$cents,$ref,'MoMo deposit approved');
+    try {
+      $bal = null;
+      try { $bal = wallet_balance($row['msisdn']); } catch (Throwable $e) { $bal = null; }
+      $tpl = trim((string)(sms_setting('SMS_TOPUP_CONFIRM_TEXT', '') ?? ''));
+      if ($tpl !== '') {
+        $msg = sms_template($tpl, [
+          'NAME' => '',
+          'MSISDN' => sms_normalize_local((string)$row['msisdn']),
+          'AMOUNT_GHS' => number_format($cents / 100, 2),
+          'BALANCE_GHS' => $bal !== null ? number_format($bal / 100, 2) : '',
+          'REF' => $ref,
+        ]);
+        sms_send((string)$row['msisdn'], $msg);
+      }
+    } catch (Throwable $e) { /* ignore */ }
   }
   json_out(['ok'=>true,'ref'=>$ref,'msisdn'=>$row['msisdn'],'status'=>'approved']);
 } else {
   $PDO->prepare("UPDATE payments SET status='declined',approved_at=NULL,approved_by=:w,notes=IFNULL(:n,notes) WHERE ref=:r")
       ->execute([':w'=>$who,':n'=>$notes,':r'=>$ref]);
+  try {
+    $tpl = trim((string)(sms_setting('SMS_PAYMENT_FAILED_TEXT', '') ?? ''));
+    if ($tpl !== '') {
+      $msg = sms_template($tpl, [
+        'NAME' => '',
+        'MSISDN' => sms_normalize_local((string)$row['msisdn']),
+        'REF' => $ref,
+      ]);
+      sms_send((string)$row['msisdn'], $msg);
+    }
+  } catch (Throwable $e) { /* ignore */ }
   json_out(['ok'=>true,'ref'=>$ref,'msisdn'=>$row['msisdn'],'status'=>'declined']);
 }

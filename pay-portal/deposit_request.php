@@ -9,6 +9,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate');
 
 require __DIR__ . '/lib/user_auth.php';
 require __DIR__ . '/config.php'; // must define $PDO
+require_once __DIR__ . '/lib/sms.php';
 
 // ---- helpers ----
 $normalize_msisdn = static function(?string $s): string {
@@ -128,6 +129,19 @@ try {
   if (isset($has['ua'])) $bind[':ua'] = $_SERVER['HTTP_USER_AGENT']  ?? '';
 
   $st->execute($bind);
+
+  try {
+    $tpl = trim((string)(sms_setting('SMS_PAYMENT_PENDING_TEXT', '') ?? ''));
+    if ($tpl !== '') {
+      $msg = sms_template($tpl, [
+        'NAME' => '',
+        'MSISDN' => sms_normalize_local($msisdn),
+        'REF' => $ref,
+        'AMOUNT_GHS' => number_format($amount_cents / 100, 2),
+      ]);
+      sms_send($msisdn, $msg);
+    }
+  } catch (Throwable $e) { /* ignore */ }
 
   echo json_encode(['ok'=>true,'ref'=>$ref], JSON_UNESCAPED_SLASHES);
 } catch (PDOException $e) {

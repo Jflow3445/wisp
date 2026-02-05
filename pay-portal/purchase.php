@@ -53,6 +53,7 @@ require_once __DIR__.'/lib/radius.php';
 require_once __DIR__.'/lib/plans_radius.php';
 require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/settings.php';
+require_once __DIR__.'/lib/sms.php';
 
 try {
   $ENV = user_boot();
@@ -186,6 +187,37 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
     $expiresStr = $actualExpires->format('Y-m-d H:i:s');
     $PDO->prepare("UPDATE purchases SET status='applied', activated_at=NOW(), expires_at=:e WHERE id=:id")
         ->execute([':e'=>$expiresStr, ':id'=>$pid]);
+
+    try {
+      $tpl = trim((string)(sms_setting('SMS_PURCHASE_CONFIRM_TEXT', '') ?? ''));
+      if ($tpl !== '') {
+        $loginUrl = trim((string)(sms_setting('SMS_LOGIN_URL', '') ?? ''));
+        if ($loginUrl === '') $loginUrl = 'https://wifi.nister.org/login.html';
+        $msg = sms_template($tpl, [
+          'NAME' => '',
+          'MSISDN' => sms_normalize_local($msisdn),
+          'PLAN' => (string)($plan['name'] ?? $plan['code'] ?? ''),
+          'EXPIRES_AT' => $expiresStr,
+          'REF' => $ref,
+          'AMOUNT_GHS' => number_format($price / 100, 2),
+          'LOGIN_URL' => $loginUrl,
+        ]);
+        sms_send($msisdn, $msg);
+      }
+
+      $tpl2 = trim((string)(sms_setting('SMS_BACK_ONLINE_TEXT', '') ?? ''));
+      if ($tpl2 !== '') {
+        $msg2 = sms_template($tpl2, [
+          'NAME' => '',
+          'MSISDN' => sms_normalize_local($msisdn),
+          'PLAN' => (string)($plan['name'] ?? $plan['code'] ?? ''),
+          'EXPIRES_AT' => $expiresStr,
+        ]);
+        sms_send($msisdn, $msg2);
+      }
+    } catch (Throwable $e) {
+      // ignore SMS failures
+    }
 
     json_out(['ok'=>true,'ref'=>$ref,'purchase_id'=>$pid,'status'=>'applied','expires_at'=>$expiresStr]);
 

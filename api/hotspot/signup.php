@@ -10,6 +10,9 @@ declare(strict_types=1);
 */
 
 require_once __DIR__ . '/_db.php';
+if (is_readable(__DIR__ . '/../../pay-portal/lib/settings.php')) {
+  require_once __DIR__ . '/../../pay-portal/lib/settings.php';
+}
 
 // --- Input normalization ---
 $name     = isset($_POST['name']) ? trim((string)$_POST['name']) : '';
@@ -51,6 +54,66 @@ function fail(string $code, string $username = '', string $dst = '', string $nam
   header('Cache-Control: no-store');
   header('Location: ' . $url, true, 303);
   exit;
+}
+
+function sms_setting(string $k, ?string $default=null): ?string {
+  if (function_exists('settings_get')) {
+    return settings_get($k, $default);
+  }
+  return $default;
+}
+
+function sms_template(string $tpl, array $vars): string {
+  foreach ($vars as $k=>$v) {
+    $tpl = str_replace('{' . $k . '}', (string)$v, $tpl);
+  }
+  return $tpl;
+}
+
+function sms_normalize_local(string $raw): string {
+  $d = preg_replace('/\D+/', '', $raw);
+  if ($d === '') return '';
+  if (preg_match('/^233\d{9}$/', $d)) return '0' . substr($d, 3);
+  if (preg_match('/^0\d{9}$/', $d)) return $d;
+  return $d;
+}
+
+function sms_send_mnotify(string $to, string $message): void {
+  $apiKey = trim((string)(sms_setting('MNOTIFY_API_KEY', '') ?? ''));
+  $sender = trim((string)(sms_setting('MNOTIFY_SENDER', '') ?? ''));
+  $base = trim((string)(sms_setting('MNOTIFY_BASE', '') ?? ''));
+  if ($apiKey === '' || $sender === '' || $message === '') return;
+  if ($base === '') $base = 'https://api.mnotify.com/api';
+  $base = rtrim($base, '/');
+  $payload = [
+    'recipient' => [$to],
+    'sender' => $sender,
+    'message' => $message,
+    'is_schedule' => false,
+    'schedule_date' => '',
+  ];
+  $url = $base . '/sms/quick?key=' . rawurlencode($apiKey);
+
+  if (function_exists('curl_init')) {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_exec($ch);
+    curl_close($ch);
+    return;
+  }
+
+  $opts = [
+    'http' => [
+      'method' => 'POST',
+      'header' => "Content-Type: application/json\r\n",
+      'content' => json_encode($payload),
+      'timeout' => 5,
+    ],
+  ];
+  @file_get_contents($url, false, stream_context_create($opts));
 }
 
 // Minimal safety
@@ -132,6 +195,23 @@ try {
   if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }
   error_log('Signup error for '.$username.': '.$e->getMessage());
   fail('server_error', $username, $dst, $name);
+}
+
+try {
+  $tpl = trim((string)(sms_setting('SMS_WELCOME_TEXT', '') ?? ''));
+  if ($tpl !== '') {
+    $loginUrl = trim((string)(sms_setting('SMS_LOGIN_URL', '') ?? ''));
+    if ($loginUrl === '') $loginUrl = $LOGIN_URL;
+    $msg = sms_template($tpl, [
+      'NAME' => $name,
+      'MSISDN' => sms_normalize_local($username),
+      'LOGIN_URL' => $loginUrl,
+    ]);
+    $to = sms_normalize_local($username);
+    if ($to !== '' && $msg !== '') sms_send_mnotify($to, $msg);
+  }
+} catch (Throwable $e) {
+  // ignore SMS failures
 }
 
 // Return a registration success page (no auto-login).

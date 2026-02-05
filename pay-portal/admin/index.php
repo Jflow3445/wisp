@@ -69,7 +69,15 @@ admin_require_login();
     width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;
     font-family:var(--font-body);font-size:.95rem;
   }
+  .field select,
+  .field textarea{
+    width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;
+    font-family:var(--font-body);font-size:.95rem;
+  }
+  .field textarea{min-height:110px;resize:vertical}
   .field input:focus{outline:2px solid rgba(15,118,110,.2);border-color:var(--accent)}
+  .field select:focus,
+  .field textarea:focus{outline:2px solid rgba(15,118,110,.2);border-color:var(--accent)}
   .tool-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .meta{font-size:.9rem;color:var(--muted);margin-top:8px;display:grid;gap:4px}
   .note{font-size:.85rem;color:var(--muted);margin-top:10px}
@@ -249,6 +257,90 @@ admin_require_login();
       <div class="field">
         <label for="set_topup_text">Top up WhatsApp text</label>
         <input id="set_topup_text" type="text" placeholder="Hi, I need assistance with Nister Wifi">
+      </div>
+      <div class="field">
+        <label for="set_sms_base">mNotify API base</label>
+        <input id="set_sms_base" type="text" placeholder="https://api.mnotify.com/api">
+      </div>
+      <div class="field">
+        <label for="set_sms_key">mNotify API key</label>
+        <input id="set_sms_key" type="text" placeholder="YOUR_API_KEY">
+      </div>
+      <div class="field">
+        <label for="set_sms_sender">mNotify Sender ID</label>
+        <input id="set_sms_sender" type="text" placeholder="mNotify">
+      </div>
+      <div class="field">
+        <label for="set_sms_login_url">SMS login URL</label>
+        <input id="set_sms_login_url" type="text" placeholder="https://wifi.nister.org/login.html">
+      </div>
+      <div class="field">
+        <label for="set_sms_welcome">SMS welcome template</label>
+        <textarea id="set_sms_welcome" placeholder="Hi {NAME}, your Nister account is ready. Login: {LOGIN_URL}"></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_quota_warn">SMS quota warning template</label>
+        <textarea id="set_sms_quota_warn" placeholder="Hi {NAME}, you have {REMAIN_MB}MB ({REMAIN_PCT}%) left. Top up or buy a plan."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_expiry_warn">SMS expiry warning template</label>
+        <textarea id="set_sms_expiry_warn" placeholder="Hi {NAME}, your plan expires on {EXPIRES_AT}. Renew to stay online."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_quota_pct">Quota warn %</label>
+        <input id="set_sms_quota_pct" type="text" placeholder="10">
+      </div>
+      <div class="field">
+        <label for="set_sms_quota_mb">Quota warn MB</label>
+        <input id="set_sms_quota_mb" type="text" placeholder="200">
+      </div>
+      <div class="field">
+        <label for="set_sms_expiry_hours">Expiry warn hours</label>
+        <input id="set_sms_expiry_hours" type="text" placeholder="24">
+      </div>
+      <div class="field">
+        <label for="set_sms_debounce">SMS debounce hours</label>
+        <input id="set_sms_debounce" type="text" placeholder="24">
+      </div>
+      <div class="field">
+        <label for="set_sms_purchase">SMS purchase confirmation template</label>
+        <textarea id="set_sms_purchase" placeholder="Hi {NAME}, your purchase {PLAN} is active. Expires {EXPIRES_AT}. Ref {REF}."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_topup">SMS wallet top-up confirmation</label>
+        <textarea id="set_sms_topup" placeholder="Top-up confirmed: {AMOUNT_GHS}. New balance {BALANCE_GHS}."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_pending">SMS payment pending</label>
+        <textarea id="set_sms_pending" placeholder="We received your payment request {REF}. It is pending review."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_failed">SMS payment failed/declined</label>
+        <textarea id="set_sms_failed" placeholder="Payment {REF} failed or was declined. Please try again or contact support."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_renew">SMS auto-renew reminder</label>
+        <textarea id="set_sms_renew" placeholder="Your plan {PLAN} expires on {EXPIRES_AT}. Renew to stay online."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_renew_hours">Renew reminder hours</label>
+        <input id="set_sms_renew_hours" type="text" placeholder="24">
+      </div>
+      <div class="field">
+        <label for="set_sms_pwd_reset">SMS password reset confirmation</label>
+        <textarea id="set_sms_pwd_reset" placeholder="Your Wi-Fi password has been updated. If this wasn't you, contact support."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_back_online">SMS back online notice</label>
+        <textarea id="set_sms_back_online" placeholder="You are back online. Enjoy your connection."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_inactive">SMS inactive re-engagement</label>
+        <textarea id="set_sms_inactive" placeholder="We miss you! Come back and enjoy Nister Wi-Fi."></textarea>
+      </div>
+      <div class="field">
+        <label for="set_sms_inactive_days">Inactive days</label>
+        <input id="set_sms_inactive_days" type="text" placeholder="30">
       </div>
     </div>
     <div class="tool-actions">
@@ -499,6 +591,14 @@ admin_require_login();
             <input id="tool_notes" type="text" placeholder="Optional">
           </div>
           <div class="field">
+            <label for="tool_new_password">New password</label>
+            <input id="tool_new_password" type="text" placeholder="Set a new password">
+          </div>
+          <div class="field">
+            <label for="tool_new_password2">Confirm password</label>
+            <input id="tool_new_password2" type="text" placeholder="Re-enter password">
+          </div>
+          <div class="field">
             <label for="tool_expiry">Expiry date (YYYY-MM-DD HH:MM:SS)</label>
             <input id="tool_expiry" type="text" placeholder="2026-05-08 23:59:59">
           </div>
@@ -533,6 +633,7 @@ admin_require_login();
           <button class="btn" id="tool_apply" type="button">Apply Plan</button>
           <button class="btn decline" id="tool_disconnect" type="button">Disconnect</button>
           <button class="btn decline" id="tool_force_kick_ip" type="button">Force Kick by IP</button>
+          <button class="btn approve" id="tool_set_password" type="button">Set Password</button>
         </div>
         <div class="tool-actions">
           <button class="btn" id="tool_set_expiry" type="button">Set Expiry</button>
@@ -561,6 +662,49 @@ admin_require_login();
         </div>
       </div>
     </div>
+  </div>
+  <div class="card" data-section="users">
+    <div class="section-head">
+      <h2>SMS Broadcast</h2>
+      <div class="muted">Send SMS to all users, a group, or specific numbers.</div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="sms_audience">Audience</label>
+        <select id="sms_audience">
+          <option value="list">Specific list</option>
+          <option value="all">All users</option>
+          <option value="group">By group</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="sms_group">Group</label>
+        <select id="sms_group">
+          <option value="">Select group</option>
+          <option value="HS_ACTIVE">HS_ACTIVE</option>
+          <option value="HS_LIMITED">HS_LIMITED</option>
+          <option value="HS_NOPAID">HS_NOPAID</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="sms_sender">Sender ID (optional)</label>
+        <input id="sms_sender" type="text" placeholder="Uses mNotify Sender ID by default">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="sms_recipients">Recipients (comma / space separated)</label>
+        <textarea id="sms_recipients" placeholder="0241234567, 0201234567"></textarea>
+      </div>
+      <div class="field">
+        <label for="sms_message">Message</label>
+        <textarea id="sms_message" placeholder="Your SMS content..."></textarea>
+      </div>
+    </div>
+    <div class="tool-actions">
+      <button class="btn approve" id="sms_send" type="button">Send SMS</button>
+    </div>
+    <div class="note" id="sms_status">SMS will use mNotify settings from Portal Settings.</div>
   </div>
     </main>
   </div>
@@ -1013,6 +1157,27 @@ async function loadSettings(){
   set('set_topup_name', s.TOPUP_NAME || '');
   set('set_topup_number', s.TOPUP_NUMBER || '');
   set('set_topup_text', s.TOPUP_WA_TEXT || '');
+  set('set_sms_base', s.MNOTIFY_BASE || '');
+  set('set_sms_key', s.MNOTIFY_API_KEY || '');
+  set('set_sms_sender', s.MNOTIFY_SENDER || '');
+  set('set_sms_login_url', s.SMS_LOGIN_URL || '');
+  set('set_sms_welcome', s.SMS_WELCOME_TEXT || '');
+  set('set_sms_quota_warn', s.SMS_QUOTA_WARN_TEXT || '');
+  set('set_sms_expiry_warn', s.SMS_EXPIRY_WARN_TEXT || '');
+  set('set_sms_quota_pct', s.SMS_QUOTA_WARN_PCT || '');
+  set('set_sms_quota_mb', s.SMS_QUOTA_WARN_MB || '');
+  set('set_sms_expiry_hours', s.SMS_EXPIRY_WARN_HOURS || '');
+  set('set_sms_debounce', s.SMS_DEBOUNCE_HOURS || '');
+  set('set_sms_purchase', s.SMS_PURCHASE_CONFIRM_TEXT || '');
+  set('set_sms_topup', s.SMS_TOPUP_CONFIRM_TEXT || '');
+  set('set_sms_pending', s.SMS_PAYMENT_PENDING_TEXT || '');
+  set('set_sms_failed', s.SMS_PAYMENT_FAILED_TEXT || '');
+  set('set_sms_renew', s.SMS_RENEW_REMINDER_TEXT || '');
+  set('set_sms_renew_hours', s.SMS_RENEW_REMINDER_HOURS || '');
+  set('set_sms_pwd_reset', s.SMS_PASSWORD_RESET_TEXT || '');
+  set('set_sms_back_online', s.SMS_BACK_ONLINE_TEXT || '');
+  set('set_sms_inactive', s.SMS_INACTIVE_TEXT || '');
+  set('set_sms_inactive_days', s.SMS_INACTIVE_DAYS || '');
   setSettingsStatus('Settings loaded.', 'success');
 }
 
@@ -1025,6 +1190,27 @@ async function saveSettings(){
     TOPUP_NAME: toolValue('set_topup_name'),
     TOPUP_NUMBER: toolValue('set_topup_number'),
     TOPUP_WA_TEXT: toolValue('set_topup_text'),
+    MNOTIFY_BASE: toolValue('set_sms_base'),
+    MNOTIFY_API_KEY: toolValue('set_sms_key'),
+    MNOTIFY_SENDER: toolValue('set_sms_sender'),
+    SMS_LOGIN_URL: toolValue('set_sms_login_url'),
+    SMS_WELCOME_TEXT: toolValue('set_sms_welcome'),
+    SMS_QUOTA_WARN_TEXT: toolValue('set_sms_quota_warn'),
+    SMS_EXPIRY_WARN_TEXT: toolValue('set_sms_expiry_warn'),
+    SMS_QUOTA_WARN_PCT: toolValue('set_sms_quota_pct'),
+    SMS_QUOTA_WARN_MB: toolValue('set_sms_quota_mb'),
+    SMS_EXPIRY_WARN_HOURS: toolValue('set_sms_expiry_hours'),
+    SMS_DEBOUNCE_HOURS: toolValue('set_sms_debounce'),
+    SMS_PURCHASE_CONFIRM_TEXT: toolValue('set_sms_purchase'),
+    SMS_TOPUP_CONFIRM_TEXT: toolValue('set_sms_topup'),
+    SMS_PAYMENT_PENDING_TEXT: toolValue('set_sms_pending'),
+    SMS_PAYMENT_FAILED_TEXT: toolValue('set_sms_failed'),
+    SMS_RENEW_REMINDER_TEXT: toolValue('set_sms_renew'),
+    SMS_RENEW_REMINDER_HOURS: toolValue('set_sms_renew_hours'),
+    SMS_PASSWORD_RESET_TEXT: toolValue('set_sms_pwd_reset'),
+    SMS_BACK_ONLINE_TEXT: toolValue('set_sms_back_online'),
+    SMS_INACTIVE_TEXT: toolValue('set_sms_inactive'),
+    SMS_INACTIVE_DAYS: toolValue('set_sms_inactive_days'),
   };
   setSettingsStatus('Saving...');
   const j = await api('settings_save', body);
@@ -1159,6 +1345,23 @@ function setToolStatus(msg, state){
   el.classList.remove('error','success');
   if (state === 'error') el.classList.add('error');
   if (state === 'success') el.classList.add('success');
+}
+
+function setSmsStatus(msg, state){
+  const el = document.getElementById('sms_status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error','success');
+  if (state === 'error') el.classList.add('error');
+  if (state === 'success') el.classList.add('success');
+}
+
+function updateSmsAudience(){
+  const audience = toolValue('sms_audience');
+  const groupEl = document.getElementById('sms_group');
+  const recEl = document.getElementById('sms_recipients');
+  if (groupEl) groupEl.disabled = (audience !== 'group');
+  if (recEl) recEl.disabled = (audience !== 'list');
 }
 
 function renderUserSnapshot(data){
@@ -1480,6 +1683,60 @@ async function resetNoPaid(){
   setToolStatus('User reset to HS_NOPAID.', 'success');
 }
 
+async function setPassword(){
+  const msisdn = toolValue('tool_msisdn');
+  const password = toolValue('tool_new_password');
+  const confirm = toolValue('tool_new_password2');
+  if (!msisdn || !password){
+    setToolStatus('MSISDN and new password are required.', 'error');
+    return;
+  }
+  if (confirm && confirm !== password){
+    setToolStatus('Passwords do not match.', 'error');
+    return;
+  }
+  if (!confirm && !window.confirm('Set password without confirmation?')) return;
+  setToolStatus('Updating password...');
+  const j = await api('user_set_password', { msisdn, password });
+  if (!j.ok){
+    setToolStatus(j.error || 'Password update failed.', 'error');
+    return;
+  }
+  setToolStatus('Password updated.', 'success');
+}
+
+async function sendSms(){
+  const audience = toolValue('sms_audience') || 'list';
+  const group = toolValue('sms_group');
+  const sender = toolValue('sms_sender');
+  const msgEl = document.getElementById('sms_message');
+  const recEl = document.getElementById('sms_recipients');
+  const message = msgEl ? msgEl.value.trim() : '';
+  const recipients = recEl ? recEl.value.trim() : '';
+  if (!message){
+    setSmsStatus('Message is required.', 'error');
+    return;
+  }
+  if (audience === 'list' && !recipients){
+    setSmsStatus('Recipients list is required for specific list.', 'error');
+    return;
+  }
+  if (audience === 'group' && !group){
+    setSmsStatus('Select a group to message.', 'error');
+    return;
+  }
+  if (!confirm('Send this SMS now?')) return;
+  setSmsStatus('Sending...');
+  const body = { audience, group, sender, message, recipients };
+  const j = await api('sms_send', body);
+  if (!j.ok){
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'SMS failed.');
+    setSmsStatus(msg, 'error');
+    return;
+  }
+  setSmsStatus(`SMS sent to ${j.recipients || 0} recipients.`, 'success');
+}
+
 async function refreshAll(){
   const btn = document.getElementById('refresh_btn');
   if (btn) btn.disabled = true;
@@ -1525,6 +1782,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (setGroupBtn) setGroupBtn.addEventListener('click', setGroup);
   const resetBtn = document.getElementById('tool_reset_nopaid');
   if (resetBtn) resetBtn.addEventListener('click', resetNoPaid);
+  const setPassBtn = document.getElementById('tool_set_password');
+  if (setPassBtn) setPassBtn.addEventListener('click', setPassword);
 
   const stateSearch = document.getElementById('state_search');
   if (stateSearch) stateSearch.addEventListener('input', loadUserStates);
@@ -1543,6 +1802,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (settingsSave) settingsSave.addEventListener('click', saveSettings);
   const settingsReload = document.getElementById('settings_reload');
   if (settingsReload) settingsReload.addEventListener('click', loadSettings);
+
+  const smsAudience = document.getElementById('sms_audience');
+  if (smsAudience) smsAudience.addEventListener('change', updateSmsAudience);
+  updateSmsAudience();
+  const smsSendBtn = document.getElementById('sms_send');
+  if (smsSendBtn) smsSendBtn.addEventListener('click', sendSms);
 
   const planTable = document.getElementById('plans_tbl');
   if (planTable && planTable.dataset.bound !== '1') {

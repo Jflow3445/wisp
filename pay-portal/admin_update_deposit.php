@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/nister_pdo.php';
 require_once __DIR__.'/lib/common.php';
+require_once __DIR__.'/lib/sms.php';
 header('Content-Type: application/json; charset=utf-8');
 
 $env = array_merge(
@@ -28,6 +29,17 @@ if ($action==='decline'){
   $j['status']='declined'; $j['decided_at']=date('Y-m-d H:i:s');
   $dst = __DIR__.'/data/manual_deposits/declined/'.$id.'.json'; @mkdir(dirname($dst),0755,true);
   file_put_contents($dst,json_encode($j,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)); @unlink($src);
+  try {
+    $tpl = trim((string)(sms_setting('SMS_PAYMENT_FAILED_TEXT', '') ?? ''));
+    if ($tpl !== '') {
+      $msg = sms_template($tpl, [
+        'NAME' => '',
+        'MSISDN' => sms_normalize_local((string)($j['msisdn'] ?? '')),
+        'REF' => (string)($j['ref'] ?? $id),
+      ]);
+      sms_send((string)($j['msisdn'] ?? ''), $msg);
+    }
+  } catch (Throwable $e) { /* ignore */ }
   echo json_encode(['ok'=>true,'id'=>$id,'status'=>'declined']); exit;
 }
 
@@ -74,4 +86,26 @@ if (!$credited){
 $j['status']='approved'; $j['decided_at']=date('Y-m-d H:i:s'); $j['approved_ref']=$ref;
 $dst = __DIR__.'/data/manual_deposits/approved/'.$id.'.json'; @mkdir(dirname($dst),0755,true);
 file_put_contents($dst,json_encode($j,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)); @unlink($src);
+try {
+  $tpl = trim((string)(sms_setting('SMS_TOPUP_CONFIRM_TEXT', '') ?? ''));
+  if ($tpl !== '') {
+    $bal = '';
+    try {
+      if ($credited && $pdo instanceof PDO) {
+        $st = $pdo->prepare("SELECT balance_cents FROM accounts WHERE msisdn=:m");
+        $st->execute([':m'=>$msisdn]);
+        $b = $st->fetchColumn();
+        if ($b !== false && $b !== null) $bal = number_format(((int)$b) / 100, 2);
+      }
+    } catch (Throwable $e) { $bal = ''; }
+    $msg = sms_template($tpl, [
+      'NAME' => '',
+      'MSISDN' => sms_normalize_local((string)$msisdn),
+      'AMOUNT_GHS' => number_format($amount_cents / 100, 2),
+      'BALANCE_GHS' => $bal,
+      'REF' => $ref,
+    ]);
+    sms_send((string)$msisdn, $msg);
+  }
+} catch (Throwable $e) { /* ignore */ }
 echo json_encode(['ok'=>true,'id'=>$id,'status'=>'approved','ref'=>$ref,'db_ok'=>$credited,'db_error'=>$db_error]);

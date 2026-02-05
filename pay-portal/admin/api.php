@@ -9,6 +9,7 @@ require_once __DIR__.'/../lib/settings.php';
 require_once __DIR__.'/../lib/alerts.php';
 require_once __DIR__.'/../lib/health.php';
 require_once __DIR__.'/../lib/admin_auth.php';
+require_once __DIR__.'/../lib/sms.php';
 
 $ENV = admin_boot();
 header('Content-Type: application/json; charset=utf-8');
@@ -60,6 +61,27 @@ function settings_allowed_keys(): array {
     'TOPUP_NAME',
     'TOPUP_NUMBER',
     'TOPUP_WA_TEXT',
+    'MNOTIFY_BASE',
+    'MNOTIFY_API_KEY',
+    'MNOTIFY_SENDER',
+    'SMS_LOGIN_URL',
+    'SMS_WELCOME_TEXT',
+    'SMS_QUOTA_WARN_TEXT',
+    'SMS_EXPIRY_WARN_TEXT',
+    'SMS_QUOTA_WARN_PCT',
+    'SMS_QUOTA_WARN_MB',
+    'SMS_EXPIRY_WARN_HOURS',
+    'SMS_DEBOUNCE_HOURS',
+    'SMS_PURCHASE_CONFIRM_TEXT',
+    'SMS_TOPUP_CONFIRM_TEXT',
+    'SMS_PAYMENT_PENDING_TEXT',
+    'SMS_PAYMENT_FAILED_TEXT',
+    'SMS_RENEW_REMINDER_TEXT',
+    'SMS_RENEW_REMINDER_HOURS',
+    'SMS_PASSWORD_RESET_TEXT',
+    'SMS_BACK_ONLINE_TEXT',
+    'SMS_INACTIVE_TEXT',
+    'SMS_INACTIVE_DAYS',
   ];
 }
 
@@ -68,8 +90,17 @@ function normalize_setting_value(string $k, ?string $v): string {
   if ($k === 'HOTSPOT_API_BASE' || $k === 'PAY_BASE') {
     $v = rtrim($v, '/');
   }
+  if ($k === 'MNOTIFY_BASE') {
+    $v = rtrim($v, '/');
+  }
   if ($k === 'WHATSAPP_SUPPORT') {
     $v = preg_replace('/\D+/', '', $v);
+  }
+  if ($k === 'MNOTIFY_SENDER') {
+    if (strlen($v) > 11) $v = substr($v, 0, 11);
+  }
+  if (in_array($k, ['SMS_QUOTA_WARN_PCT','SMS_QUOTA_WARN_MB','SMS_EXPIRY_WARN_HOURS','SMS_DEBOUNCE_HOURS','SMS_RENEW_REMINDER_HOURS','SMS_INACTIVE_DAYS'], true)) {
+    $v = preg_replace('/[^\d.]/', '', $v);
   }
   return $v;
 }
@@ -94,6 +125,46 @@ function plan_reserved(string $code): bool {
   $lc = strtolower($code);
   if (str_starts_with($lc, 'hs_')) return true;
   return false;
+}
+
+function sms_recipient_normalize(string $raw): string {
+  $canon = normalize_msisdn($raw);
+  if ($canon === '') return '';
+  return msisdn_local($canon);
+}
+
+function sms_parse_recipient_list($raw): array {
+  if (is_array($raw)) $raw = implode(' ', $raw);
+  $raw = (string)$raw;
+  $parts = preg_split('/[\s,;]+/', $raw, -1, PREG_SPLIT_NO_EMPTY);
+  $out = [];
+  foreach ($parts as $p) {
+    $v = sms_recipient_normalize($p);
+    if ($v !== '') $out[$v] = true;
+  }
+  return array_keys($out);
+}
+
+function sms_fetch_all_users(PDO $r): array {
+  $out = [];
+  $st = $r->prepare("SELECT DISTINCT username FROM radcheck WHERE attribute='Cleartext-Password'");
+  $st->execute();
+  foreach ($st->fetchAll(PDO::FETCH_COLUMN, 0) as $u) {
+    $v = sms_recipient_normalize((string)$u);
+    if ($v !== '') $out[$v] = true;
+  }
+  return array_keys($out);
+}
+
+function sms_fetch_group_users(PDO $r, string $group): array {
+  $out = [];
+  $st = $r->prepare("SELECT DISTINCT username FROM radusergroup WHERE groupname=:g");
+  $st->execute([':g'=>$group]);
+  foreach ($st->fetchAll(PDO::FETCH_COLUMN, 0) as $u) {
+    $v = sms_recipient_normalize((string)$u);
+    if ($v !== '') $out[$v] = true;
+  }
+  return array_keys($out);
 }
 
 function parse_quota_bytes(array $in): ?int {
@@ -1038,6 +1109,47 @@ try {
       break;
     }
 
+    case 'user_set_password': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      $pass = trim((string)from_any([$in],'password',''));
+      if ($msisdn === '' || $pass === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and password required']); break; }
+      if (strlen($pass) < 4) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'password_too_short']); break; }
+      try {
+        $r = rdb_pdo();
+        $targets = nister_username_variants($msisdn);
+        $ph = implode(",", array_fill(0, count($targets), "?"));
+        $st = $r->prepare("SELECT COUNT(*) FROM radcheck WHERE username IN ($ph) AND attribute='Cleartext-Password'");
+        $st->execute($targets);
+        $cnt = (int)$st->fetchColumn();
+        if ($cnt <= 0) {
+          http_response_code(404);
+          echo json_encode(['ok'=>false,'error'=>'user_not_found']); break;
+        }
+        $upsert = $r->prepare(
+          "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
+           ON DUPLICATE KEY UPDATE value = VALUES(value), op=':='"
+        );
+        foreach ($targets as $u) {
+          $upsert->execute([$u, $pass]);
+        }
+        try {
+          $tpl = trim((string)(sms_setting('SMS_PASSWORD_RESET_TEXT', '') ?? ''));
+          if ($tpl !== '') {
+            $msg = sms_template($tpl, [
+              'NAME' => '',
+              'MSISDN' => sms_normalize_local($msisdn),
+            ]);
+            sms_send($msisdn, $msg);
+          }
+        } catch (Throwable $e) { /* ignore */ }
+        echo json_encode(['ok'=>true]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'password_update_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
     case 'user_force_expire': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
@@ -1316,6 +1428,87 @@ try {
       break;
     }
 
+    case 'sms_send': {
+      $message = trim((string)from_any([$in], 'message', ''));
+      $audience = trim((string)from_any([$in], 'audience', 'list'));
+      $group = trim((string)from_any([$in], 'group', ''));
+      $sender = trim((string)from_any([$in], 'sender', ''));
+      $recipientsRaw = $in['recipients'] ?? $in['recipient'] ?? '';
+
+      if ($message === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'message required']); break; }
+
+      $apiKey = settings_get('MNOTIFY_API_KEY', '') ?? '';
+      $base = settings_get('MNOTIFY_BASE', '') ?? '';
+      $senderDefault = settings_get('MNOTIFY_SENDER', '') ?? '';
+      if ($sender === '') $sender = $senderDefault;
+
+      if ($apiKey === '' || $sender === '') {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'sms_settings_missing','detail'=>'MNOTIFY_API_KEY and MNOTIFY_SENDER are required']);
+        break;
+      }
+
+      if ($base === '') $base = 'https://api.mnotify.com/api';
+      $base = rtrim($base, '/');
+
+      $recipients = [];
+      try {
+        $r = rdb_pdo();
+        if ($audience === 'all') {
+          $recipients = sms_fetch_all_users($r);
+        } elseif ($audience === 'group') {
+          if ($group === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'group required']); break; }
+          $recipients = sms_fetch_group_users($r, $group);
+        } else {
+          $recipients = sms_parse_recipient_list($recipientsRaw);
+        }
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'recipients_failed','detail'=>$e->getMessage()]);
+        break;
+      }
+
+      if (!$recipients) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'no_recipients']);
+        break;
+      }
+
+      $url = $base . '/sms/quick?key=' . rawurlencode($apiKey);
+      $payload = [
+        'recipient' => array_values($recipients),
+        'sender' => $sender,
+        'message' => $message,
+        'is_schedule' => false,
+        'schedule_date' => '',
+      ];
+
+      $ch = curl_init($url);
+      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+      curl_setopt($ch, CURLOPT_POST, true);
+      curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+      curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+      $resp = curl_exec($ch);
+      $err = curl_error($ch);
+      $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      curl_close($ch);
+
+      if ($resp === false) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'sms_http_failed','detail'=>$err]);
+        break;
+      }
+
+      $j = json_decode((string)$resp, true);
+      if ($code < 200 || $code >= 300) {
+        http_response_code(502);
+        echo json_encode(['ok'=>false,'error'=>'sms_gateway_error','status_code'=>$code,'response'=>$j ?: $resp]);
+        break;
+      }
+      echo json_encode(['ok'=>true,'gateway'=>$j,'recipients'=>count($recipients)]);
+      break;
+    }
+
     case 'credit_wallet': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $amount = parse_amount_cents($in);
@@ -1327,6 +1520,19 @@ try {
         wallet_credit($msisdn, $amount, $ref, $notes);
         $bal = null;
         try { $bal = wallet_balance($msisdn); } catch (Throwable $e) { $bal = null; }
+        try {
+          $tpl = trim((string)(sms_setting('SMS_TOPUP_CONFIRM_TEXT', '') ?? ''));
+          if ($tpl !== '') {
+            $msg = sms_template($tpl, [
+              'NAME' => '',
+              'MSISDN' => sms_normalize_local($msisdn),
+              'AMOUNT_GHS' => number_format($amount / 100, 2),
+              'BALANCE_GHS' => $bal !== null ? number_format($bal / 100, 2) : '',
+              'REF' => $ref,
+            ]);
+            sms_send($msisdn, $msg);
+          }
+        } catch (Throwable $e) { /* ignore */ }
         echo json_encode(['ok'=>true,'ref'=>$ref,'balance_cents'=>$bal]);
       } catch (Throwable $e) {
         http_response_code(500);
@@ -1402,7 +1608,20 @@ try {
         $purchaseErr = $e->getMessage();
       }
 
-      echo json_encode(['ok'=>true,'expires_at'=>$expires->format('Y-m-d H:i:s'),'purchase_id'=>$pid,'purchase_error'=>$purchaseErr]);
+      $expiresStr = $expires->format('Y-m-d H:i:s');
+      try {
+        $tpl = trim((string)(sms_setting('SMS_BACK_ONLINE_TEXT', '') ?? ''));
+        if ($tpl !== '') {
+          $msg = sms_template($tpl, [
+            'NAME' => '',
+            'MSISDN' => sms_normalize_local($msisdn),
+            'PLAN' => (string)($plan['name'] ?? $plan['code'] ?? ''),
+            'EXPIRES_AT' => $expiresStr,
+          ]);
+          sms_send($msisdn, $msg);
+        }
+      } catch (Throwable $e) { /* ignore */ }
+      echo json_encode(['ok'=>true,'expires_at'=>$expiresStr,'purchase_id'=>$pid,'purchase_error'=>$purchaseErr]);
       break;
     }
 

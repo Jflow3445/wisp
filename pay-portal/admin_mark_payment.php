@@ -4,6 +4,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/db.php';
+require_once __DIR__.'/lib/sms.php';
 
 try{
   $ENV = app_boot();
@@ -31,6 +32,17 @@ try{
   if ($action === 'decline') {
     $up = $PDO->prepare("UPDATE payments SET status='declined', approved_at=NOW(), approved_by='admin' WHERE id=:id");
     $up->execute([':id'=>$p['id']]);
+    try {
+      $tpl = trim((string)(sms_setting('SMS_PAYMENT_FAILED_TEXT', '') ?? ''));
+      if ($tpl !== '') {
+        $msg = sms_template($tpl, [
+          'NAME' => '',
+          'MSISDN' => sms_normalize_local((string)$p['msisdn']),
+          'REF' => $ref,
+        ]);
+        sms_send((string)$p['msisdn'], $msg);
+      }
+    } catch (Throwable $e) { /* ignore */ }
     echo json_encode(['ok'=>true,'ref'=>$ref,'status'=>'declined'], JSON_UNESCAPED_SLASHES);
     exit;
   }
@@ -83,6 +95,20 @@ try{
   $bal = $PDO->prepare("SELECT balance_cents FROM accounts WHERE msisdn=:m");
   $bal->execute([':m'=>$msisdn]);
   $b = (int)($bal->fetchColumn() ?: 0);
+
+  try {
+    $tpl = trim((string)(sms_setting('SMS_TOPUP_CONFIRM_TEXT', '') ?? ''));
+    if ($tpl !== '') {
+      $msg = sms_template($tpl, [
+        'NAME' => '',
+        'MSISDN' => sms_normalize_local($msisdn),
+        'AMOUNT_GHS' => number_format($amtc / 100, 2),
+        'BALANCE_GHS' => number_format($b / 100, 2),
+        'REF' => $ref,
+      ]);
+      sms_send($msisdn, $msg);
+    }
+  } catch (Throwable $e) { /* ignore */ }
 
   echo json_encode(['ok'=>true,'ref'=>$ref,'status'=>'approved','balance_cents'=>$b], JSON_UNESCAPED_SLASHES);
 } catch(Throwable $e){
