@@ -1730,7 +1730,13 @@ async function sendSms(){
   const body = { audience, group, sender, message, recipients };
   const j = await api('sms_send', body);
   if (!j.ok){
-    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'SMS failed.');
+    let msg = j.error || 'SMS failed.';
+    if (j.detail) msg = `${j.error}: ${j.detail}`;
+    else if (j.response) {
+      if (j.response.message) msg = `${j.error}: ${j.response.message}`;
+      else if (typeof j.response === 'string') msg = `${j.error}: ${j.response}`;
+      else msg = `${j.error}: ${JSON.stringify(j.response)}`;
+    }
     setSmsStatus(msg, 'error');
     return;
   }

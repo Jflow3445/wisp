@@ -130,7 +130,9 @@ function plan_reserved(string $code): bool {
 function sms_recipient_normalize(string $raw): string {
   $canon = normalize_msisdn($raw);
   if ($canon === '') return '';
-  return msisdn_local($canon);
+  $local = msisdn_local($canon);
+  if (!preg_match('/^0\d{9}$/', $local)) return '';
+  return $local;
 }
 
 function sms_parse_recipient_list($raw): array {
@@ -1475,9 +1477,12 @@ try {
       }
 
       $url = $base . '/sms/quick?key=' . rawurlencode($apiKey);
-      $chunkSize = 200;
+      $chunkSize = 100;
       $sent = 0;
+      $skipped = 0;
       $lastGateway = null;
+      $skipped = count(array_values($recipients)) - count(array_unique($recipients));
+      $recipients = array_values(array_unique($recipients));
 
       foreach (array_chunk(array_values($recipients), $chunkSize) as $idx => $chunk) {
         $payload = [
@@ -1506,8 +1511,20 @@ try {
 
         $j = json_decode((string)$resp, true);
         if ($code < 200 || $code >= 300) {
+          $detail = '';
+          if (is_array($j)) {
+            if (!empty($j['message'])) $detail = (string)$j['message'];
+            elseif (!empty($j['error'])) $detail = (string)$j['error'];
+          }
           http_response_code(502);
-          echo json_encode(['ok'=>false,'error'=>'sms_gateway_error','status_code'=>$code,'response'=>$j ?: $resp,'batch'=>$idx+1]);
+          echo json_encode([
+            'ok'=>false,
+            'error'=>'sms_gateway_error',
+            'detail'=>$detail,
+            'status_code'=>$code,
+            'response'=>$j ?: $resp,
+            'batch'=>$idx+1
+          ]);
           break 2;
         }
 
@@ -1518,7 +1535,7 @@ try {
         }
       }
 
-      echo json_encode(['ok'=>true,'gateway'=>$lastGateway,'recipients'=>$sent]);
+      echo json_encode(['ok'=>true,'gateway'=>$lastGateway,'recipients'=>$sent,'skipped'=>$skipped]);
       break;
     }
 
