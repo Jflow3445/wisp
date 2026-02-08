@@ -80,25 +80,76 @@ $coaSecret = is_readable($coaSecretFile) ? trim((string)file_get_contents($coaSe
 $coaUser = (string)($ENV['HEALTH_COA_USER'] ?? '');
 
 if ($coaSecret !== '' && $coaUser !== '') {
-  // Find active session IP for the test user (variants)
+  // Find active sessions for test user (variants) and target the session's NAS.
   $pdo = db_pdo($ENV);
   $targets = nister_username_variants($coaUser);
-  $ph = implode(',', array_fill(0, count($targets), '?'));
-  $st = $pdo->prepare("SELECT framedipaddress FROM radacct
-                       WHERE acctstoptime IS NULL AND username IN ($ph)
-                       ORDER BY acctstarttime DESC LIMIT 1");
-  $st->execute($targets);
-  $ip = (string)($st->fetchColumn() ?: '');
-
-  if ($ip !== '') {
-    $payload = "User-Name = \"{$coaUser}\"\nFramed-IP-Address = {$ip}\nMessage-Authenticator = 0x00\n";
-    $start = microtime(true);
-    [$rc, $out] = sh("printf %s " . escapeshellarg($payload) . " | /usr/bin/radclient -x -r 1 -t 3 {$coaNas}:{$coaPort} disconnect " . escapeshellarg($coaSecret));
-    $coaMs = ms($start, microtime(true));
-    $coaOk = (strpos($out, 'Disconnect-ACK') !== false) ? 1 : 0;
-    if ($coaOk === 0) $coaNote = 'coa_no_ack';
-  } else {
+  if (!$targets) {
     $coaNote = 'coa_no_active_session';
+  } else {
+    $ph = implode(',', array_fill(0, count($targets), '?'));
+    $st = $pdo->prepare("SELECT username, nasipaddress, framedipaddress, acctsessionid, callingstationid
+                         FROM radacct
+                         WHERE acctstoptime IS NULL AND username IN ($ph)
+                         ORDER BY acctstarttime DESC
+                         LIMIT 50");
+    $st->execute($targets);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $allowedNas = [];
+    $nasRaw = (string)($ENV['NAS_IPS'] ?? ($ENV['NAS_IP'] ?? ''));
+    if ($nasRaw !== '') {
+      foreach (preg_split('/[,\s]+/', $nasRaw, -1, PREG_SPLIT_NO_EMPTY) as $ip) {
+        $ip = trim($ip);
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $allowedNas[$ip] = true;
+      }
+    }
+
+    $hasCandidate = false;
+    foreach ($rows as $row) {
+      $u = trim((string)($row['username'] ?? ''));
+      $nas = trim((string)($row['nasipaddress'] ?? ''));
+      $ip = trim((string)($row['framedipaddress'] ?? ''));
+      $sid = preg_replace('/[^A-Za-z0-9._:-]/', '', (string)($row['acctsessionid'] ?? ''));
+      $mac = strtoupper(trim((string)($row['callingstationid'] ?? '')));
+
+      if (!filter_var($nas, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $nas = (filter_var($coaNas, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $coaNas : '');
+      }
+      if ($nas === '') continue;
+      if ($allowedNas && !isset($allowedNas[$nas])) continue;
+
+      $payloadLines = [];
+      $payloadLines[] = 'User-Name = "'.($u !== '' ? $u : $coaUser).'"';
+      if ($sid !== '') $payloadLines[] = 'Acct-Session-Id = "'.$sid.'"';
+      if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) $payloadLines[] = 'Framed-IP-Address = '.$ip;
+      if (preg_match('/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/', $mac)) $payloadLines[] = 'Calling-Station-Id = "'.$mac.'"';
+      $payloadLines[] = 'NAS-IP-Address = '.$nas;
+      $payloadLines[] = 'Message-Authenticator = 0x00';
+      if ($sid === '' && !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) continue;
+
+      $hasCandidate = true;
+      $payload = implode("\n", $payloadLines)."\n";
+      $start = microtime(true);
+      [$rc, $out] = sh(
+        "printf %s " . escapeshellarg($payload) .
+        " | /usr/bin/radclient -x -r 1 -t 3 " . escapeshellarg($nas.':'.$coaPort) .
+        " disconnect " . escapeshellarg($coaSecret)
+      );
+      $coaMs = ms($start, microtime(true));
+      if (strpos($out, 'Disconnect-ACK') !== false) {
+        $coaOk = 1;
+        break;
+      }
+    }
+
+    if ($coaOk !== 1) {
+      if (!$hasCandidate) {
+        $coaNote = 'coa_no_active_session';
+      } else {
+        $coaOk = 0;
+        $coaNote = 'coa_no_ack';
+      }
+    }
   }
 }
 

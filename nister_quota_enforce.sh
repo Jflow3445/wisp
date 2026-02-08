@@ -100,19 +100,44 @@ sms_template(){
   done
   echo "$tpl"
 }
+sms_to_e164(){
+  local d="${1//[^0-9]/}"
+  [[ -z "$d" ]] && echo "" && return 0
+  if [[ "$d" =~ ^233[0-9]{9}$ ]]; then
+    echo "$d"
+  elif [[ "$d" =~ ^0[0-9]{9}$ ]]; then
+    echo "233${d:1}"
+  elif [[ "$d" =~ ^[0-9]{9}$ ]]; then
+    echo "233${d}"
+  else
+    echo "$d"
+  fi
+}
 sms_send(){
   local to="$1" msg="$2"
-  local api_key sender base url payload
+  local api_key sender base url payload to_e164
   api_key="$(sms_setting MNOTIFY_API_KEY)"
   sender="$(sms_setting MNOTIFY_SENDER)"
   base="$(sms_setting MNOTIFY_BASE)"
   [[ -z "${api_key:-}" || -z "${sender:-}" || -z "${msg:-}" ]] && return 0
-  [[ -z "${base:-}" ]] && base="https://api.mnotify.com/api"
+  [[ -z "${base:-}" ]] && base="https://api.pilosms.com/v1"
   base="${base%/}"
+  if [[ "${base,,}" == */send-message ]]; then base="${base%/send-message}"; fi
+  if [[ "${base,,}" == */sms/quick ]]; then base="${base%/sms/quick}"; fi
+  if [[ "${base,,}" == *"pilosms"* ]]; then
+    to_e164="$(sms_to_e164 "$to")"
+    [[ -z "${to_e164:-}" ]] && return 0
+    url="${base}/send-message?apikey=${api_key}"
+    curl -sS -m 8 -X POST "$url" \
+      --form-string "sender=${sender}" \
+      --form-string "message=${msg}" \
+      --form-string "receipients=${to_e164}" >/dev/null 2>&1 || true
+    return 0
+  fi
   url="${base}/sms/quick?key=${api_key}"
   payload=$(printf '{"recipient":["%s"],"sender":"%s","message":"%s","is_schedule":false,"schedule_date":""}' \
     "$to" "$sender" "${msg//\"/\\\"}")
-  curl -sS -m 6 -X POST "$url" -H 'Content-Type: application/json' -d "$payload" >/dev/null 2>&1 || true
+  curl -sS -m 8 -X POST "$url" -H 'Content-Type: application/json' -d "$payload" >/dev/null 2>&1 || true
 }
 sms_should_send(){
   local stamp="$1" now="$2" debounce="$3"
@@ -207,6 +232,9 @@ is_valid_ipv4(){
     (( o >= 0 && o <= 255 )) || return 1
   done
   return 0
+}
+is_valid_mac(){
+  [[ "${1^^}" =~ ^([0-9A-F]{2}:){5}[0-9A-F]{2}$ ]]
 }
 is_allowed_nas(){
   local ip="$1"
@@ -325,18 +353,24 @@ COMMIT;"
 }
 
 kick_sessions(){
-  local rows row u ip sid nas ok=0 fail=0 payload out
+  local rows row u ip sid nas mac ok=0 fail=0 payload out sid_safe payload_lines has_match
   mapfile -t rows < <(sql_all "
-    SELECT username, framedipaddress, acctsessionid, nasipaddress
+    SELECT username, framedipaddress, acctsessionid, nasipaddress, callingstationid
     FROM radacct
     WHERE username IN (${IN_USERS})
       AND acctstoptime IS NULL
+    ORDER BY acctstarttime DESC
+    LIMIT 200
   " | awk 'NF')
 
   for row in "${rows[@]}"; do
-    IFS=$'	' read -r u ip sid nas <<<"$row"
-    if ! is_valid_ipv4 "${ip:-}"; then
-      log "WARN user=$USER skip_coa_no_framed_ip sid=${sid:-na} nas=${nas:-na}"
+    IFS=$'	' read -r u ip sid nas mac <<<"$row"
+    sid_safe="$(echo "${sid:-}" | tr -cd 'A-Za-z0-9._:-')"
+    has_match=0
+    [[ -n "$sid_safe" ]] && has_match=1
+    is_valid_ipv4 "${ip:-}" && has_match=1
+    if (( has_match == 0 )); then
+      log "WARN user=$USER skip_coa_missing_match_keys sid=${sid:-na} ip=${ip:-na} nas=${nas:-na}"
       continue
     fi
 
@@ -344,20 +378,28 @@ kick_sessions(){
       log "WARN user=$USER bad_nasip=$nas fallback=${NAS_IPS_LIST[0]}"
       nas="${NAS_IPS_LIST[0]}"
     elif ! is_allowed_nas "${nas}"; then
-      log "WARN user=$USER nas_not_allowed=$nas fallback=${NAS_IPS_LIST[0]}"
-      nas="${NAS_IPS_LIST[0]}"
+      log "WARN user=$USER nas_not_allowed=$nas skip_coa=yes"
+      continue
     fi
 
-    payload="User-Name = \"${u}\"
-Framed-IP-Address = ${ip}
-Message-Authenticator = 0x00
-"
+    payload_lines=()
+    payload_lines+=("User-Name = \"${u}\"")
+    [[ -n "$sid_safe" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
+    if is_valid_ipv4 "${ip:-}"; then
+      payload_lines+=("Framed-IP-Address = ${ip}")
+    fi
+    if is_valid_mac "${mac:-}"; then
+      payload_lines+=("Calling-Station-Id = \"${mac^^}\"")
+    fi
+    payload_lines+=("NAS-IP-Address = ${nas}")
+    payload_lines+=("Message-Authenticator = 0x00")
+    payload="$(printf '%s\n' "${payload_lines[@]}")"
 
-    out="$(echo -e "$payload" | radclient -x -r 1 -t 3 "${nas}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
+    out="$(printf '%s' "$payload" | radclient -x -r 1 -t 3 "${nas}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
     if echo "$out" | grep -q "Disconnect-ACK"; then
       (( ok++ ))
     else
-      log "ERR user=$USER coa_disconnect_failed target=${nas}:${COA_PORT} sid=$sid ip=$ip out=$(echo "$out" | tr '
+      log "ERR user=$USER coa_disconnect_failed target=${nas}:${COA_PORT} sid=${sid_safe:-na} ip=${ip:-na} mac=${mac:-na} out=$(echo "$out" | tr '
 ' ' ' | head -c 300)"
       (( fail++ ))
     fi

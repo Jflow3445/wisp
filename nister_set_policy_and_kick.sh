@@ -112,6 +112,9 @@ is_valid_ipv4(){
   done
   return 0
 }
+is_valid_mac(){
+  [[ "${1^^}" =~ ^([0-9A-F]{2}:){5}[0-9A-F]{2}$ ]]
+}
 is_allowed_nas(){
   local ip="$1"
   [[ -z "${NAS_IPS:-}" ]] && return 0
@@ -170,7 +173,7 @@ sql_exec "SELECT username,groupname,priority FROM radusergroup WHERE username IN
 # find ALL active sessions for ANY variant
 mapfile -t rows < <(
   mysql --defaults-extra-file="$CNF" -N -B -e "
-    SELECT username, nasipaddress, framedipaddress, acctsessionid
+    SELECT username, nasipaddress, framedipaddress, acctsessionid, callingstationid
     FROM radacct
     WHERE username IN ($IN_LIST) AND acctstoptime IS NULL
     ORDER BY acctstarttime DESC
@@ -181,36 +184,49 @@ mapfile -t rows < <(
 
 echo "[*] Active sessions:"
 for row in "${rows[@]}"; do
-  IFS=$'\t' read -r u nas ip sid <<<"$row"
-  echo "    user=$u ip=${ip:-na} sid=${sid:-na} nasip=${nas:-$NAS}"
+  IFS=$'\t' read -r u nas ip sid mac <<<"$row"
+  echo "    user=$u ip=${ip:-na} sid=${sid:-na} mac=${mac:-na} nasip=${nas:-$NAS}"
 done
 
 echo "[*] Sending Disconnect-Request (forces re-login onto new policy)..."
 ok=0
 fail=0
 for row in "${rows[@]}"; do
-  IFS=$'\t' read -r SESS_USER NASIP FRAMEDIP ACCTSID <<<"$row"
+  IFS=$'\t' read -r SESS_USER NASIP FRAMEDIP ACCTSID CALLINGSTATIONID <<<"$row"
   [[ -n "${SESS_USER:-}" ]] || continue
+  ACCTSID_SAFE="$(echo "${ACCTSID:-}" | tr -cd 'A-Za-z0-9._:-')"
 
   NAS_TARGET="${NASIP:-$NAS}"
   if ! is_valid_ipv4 "$NAS_TARGET"; then NAS_TARGET="$NAS"; fi
-  if ! is_allowed_nas "$NAS_TARGET"; then NAS_TARGET="$NAS"; fi
-
-  if ! is_valid_ipv4 "${FRAMEDIP:-}"; then
-    echo "[*] Skip user=$SESS_USER (no valid Framed-IP-Address) sid=${ACCTSID:-na}"
+  if ! is_allowed_nas "$NAS_TARGET"; then
+    echo "[*] Skip user=$SESS_USER (nas not allowed by NAS_IPS) nas=${NAS_TARGET}"
     continue
   fi
 
-  payload="User-Name = \"${SESS_USER}\"
-Framed-IP-Address = ${FRAMEDIP}
-Message-Authenticator = 0x00
-"
-  out="$(echo -e "$payload" | radclient -x -r 1 -t 3 "${NAS_TARGET}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
+  if [[ -z "${ACCTSID_SAFE:-}" ]] && ! is_valid_ipv4 "${FRAMEDIP:-}"; then
+    echo "[*] Skip user=$SESS_USER (missing Acct-Session-Id and valid Framed-IP-Address)"
+    continue
+  fi
+
+  payload_lines=()
+  payload_lines+=("User-Name = \"${SESS_USER}\"")
+  [[ -n "${ACCTSID_SAFE:-}" ]] && payload_lines+=("Acct-Session-Id = \"${ACCTSID_SAFE}\"")
+  if is_valid_ipv4 "${FRAMEDIP:-}"; then
+    payload_lines+=("Framed-IP-Address = ${FRAMEDIP}")
+  fi
+  if is_valid_mac "${CALLINGSTATIONID:-}"; then
+    payload_lines+=("Calling-Station-Id = \"${CALLINGSTATIONID^^}\"")
+  fi
+  payload_lines+=("NAS-IP-Address = ${NAS_TARGET}")
+  payload_lines+=("Message-Authenticator = 0x00")
+  payload="$(printf '%s\n' "${payload_lines[@]}")"
+
+  out="$(printf '%s' "$payload" | radclient -x -r 1 -t 3 "${NAS_TARGET}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
   if echo "$out" | grep -q "Disconnect-ACK"; then
     (( ok++ ))
   else
     (( fail++ ))
-    alert "COA_FAIL user=$SESS_USER target=${NAS_TARGET}:${COA_PORT} sid=${ACCTSID:-na} ip=${FRAMEDIP:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 300)"
+    alert "COA_FAIL user=$SESS_USER target=${NAS_TARGET}:${COA_PORT} sid=${ACCTSID_SAFE:-na} ip=${FRAMEDIP:-na} mac=${CALLINGSTATIONID:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 300)"
   fi
 done
 

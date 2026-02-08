@@ -30,6 +30,9 @@ is_valid_ipv4(){
   done
   return 0
 }
+is_valid_mac(){
+  [[ "${1^^}" =~ ^([0-9A-F]{2}:){5}[0-9A-F]{2}$ ]]
+}
 is_allowed_nas(){
   local ip="$1"
   [[ -z "${NAS_IPS:-}" ]] && return 0
@@ -322,7 +325,7 @@ kick_user(){
 
   local in_list; in_list="$(sql_in "$@")"
   mapfile -t rows < <(mysqlq "
-    SELECT username, framedipaddress, acctsessionid, nasipaddress
+    SELECT username, framedipaddress, acctsessionid, nasipaddress, callingstationid
     FROM radacct
     WHERE username IN (${in_list})
       AND acctstoptime IS NULL
@@ -331,23 +334,41 @@ kick_user(){
 
   (( ${#rows[@]} > 0 )) || { echo "[*] No active session found -> nothing to kick."; return 0; }
 
-  local ok=0 fail=0 row u ip sid
+  local ok=0 fail=0 row u ip sid nas mac sid_safe payload payload_lines out
   for row in "${rows[@]}"; do
-    IFS=$'\t' read -r u ip sid nas <<<"$row"
+    IFS=$'\t' read -r u ip sid nas mac <<<"$row"
     [[ -n "${u:-}" ]] || continue
-    if ! is_valid_ipv4 "${ip:-}"; then
-      echo "[*] Skip user=$u (no valid Framed-IP-Address) sid=${sid:-na}"
+    sid_safe="$(echo "${sid:-}" | tr -cd 'A-Za-z0-9._:-')"
+    if [[ -z "${sid_safe:-}" ]] && ! is_valid_ipv4 "${ip:-}"; then
+      echo "[*] Skip user=$u (missing Acct-Session-Id and valid Framed-IP-Address) sid=${sid:-na}"
       continue
     fi
     if ! is_valid_ipv4 "${nas:-}"; then nas="${NAS_IP}"; fi
-    if ! is_allowed_nas "${nas:-}"; then nas="${NAS_IP}"; fi
-    echo "[*] Kicking user=$u ip=$ip sid=$sid via ${nas:-${NAS_IP}}:${COA_PORT}"
-    if printf 'User-Name = "%s"\nFramed-IP-Address = %s\nMessage-Authenticator = 0x00\n' \
-      "$u" "$ip" \
-      | radclient -x -r 1 -t 3 "${nas:-${NAS_IP}}:${COA_PORT}" disconnect "$COA_SECRET" >/dev/null 2>&1; then
+    if ! is_allowed_nas "${nas:-}"; then
+      echo "[*] Skip user=$u (nas not allowed by NAS_IPS) nas=${nas:-na}"
+      continue
+    fi
+
+    payload_lines=()
+    payload_lines+=("User-Name = \"${u}\"")
+    [[ -n "${sid_safe:-}" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
+    if is_valid_ipv4 "${ip:-}"; then
+      payload_lines+=("Framed-IP-Address = ${ip}")
+    fi
+    if is_valid_mac "${mac:-}"; then
+      payload_lines+=("Calling-Station-Id = \"${mac^^}\"")
+    fi
+    payload_lines+=("NAS-IP-Address = ${nas:-${NAS_IP}}")
+    payload_lines+=("Message-Authenticator = 0x00")
+    payload="$(printf '%s\n' "${payload_lines[@]}")"
+
+    echo "[*] Kicking user=$u ip=${ip:-na} sid=${sid_safe:-na} mac=${mac:-na} via ${nas:-${NAS_IP}}:${COA_PORT}"
+    out="$(printf '%s' "$payload" | radclient -x -r 1 -t 3 "${nas:-${NAS_IP}}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
+    if echo "$out" | grep -q "Disconnect-ACK"; then
       ((ok+=1))
     else
       ((fail+=1))
+      echo "[*] CoA failed user=$u sid=${sid_safe:-na} ip=${ip:-na} mac=${mac:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 220)"
     fi
   done
   echo "[*] kick done: ok=$ok fail=$fail"

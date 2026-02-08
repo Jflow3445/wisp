@@ -259,16 +259,16 @@ admin_require_login();
         <input id="set_topup_text" type="text" placeholder="Hi, I need assistance with Nister Wifi">
       </div>
       <div class="field">
-        <label for="set_sms_base">mNotify API base</label>
-        <input id="set_sms_base" type="text" placeholder="https://api.mnotify.com/api">
+        <label for="set_sms_base">SMS API base</label>
+        <input id="set_sms_base" type="text" placeholder="https://api.pilosms.com/v1">
       </div>
       <div class="field">
-        <label for="set_sms_key">mNotify API key</label>
+        <label for="set_sms_key">SMS API key</label>
         <input id="set_sms_key" type="text" placeholder="YOUR_API_KEY">
       </div>
       <div class="field">
-        <label for="set_sms_sender">mNotify Sender ID</label>
-        <input id="set_sms_sender" type="text" placeholder="mNotify">
+        <label for="set_sms_sender">SMS Sender ID</label>
+        <input id="set_sms_sender" type="text" placeholder="PiloSMS">
       </div>
       <div class="field">
         <label for="set_sms_login_url">SMS login URL</label>
@@ -688,7 +688,7 @@ admin_require_login();
       </div>
       <div class="field">
         <label for="sms_sender">Sender ID (optional)</label>
-        <input id="sms_sender" type="text" placeholder="Uses mNotify Sender ID by default">
+        <input id="sms_sender" type="text" placeholder="Uses configured Sender ID by default">
       </div>
     </div>
     <div class="form-grid">
@@ -704,7 +704,7 @@ admin_require_login();
     <div class="tool-actions">
       <button class="btn approve" id="sms_send" type="button">Send SMS</button>
     </div>
-    <div class="note" id="sms_status">SMS will use mNotify settings from Portal Settings.</div>
+    <div class="note" id="sms_status">SMS will use the configured gateway settings from Portal Settings.</div>
   </div>
     </main>
   </div>
