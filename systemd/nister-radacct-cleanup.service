@@ -1,0 +1,12 @@
+[Unit]
+Description=Nister radacct cleanup (close stale/duplicate open sessions)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock -n /run/nister_radacct_cleanup.lock /usr/local/sbin/nister_radacct_cleanup.sh
+
+# Optional overrides:
+# Environment=STALE_MINUTES=1440
+# Environment=DRY_RUN=0

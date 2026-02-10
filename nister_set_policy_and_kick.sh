@@ -3,7 +3,7 @@ set -euo pipefail
 
 USER_RAW="${1:-}"
 TARGET="${2:-HS_LIMITED}"   # HS_LIMITED | HS_ACTIVE | HS_NOPAID
-NAS="${NAS:-192.168.88.1}"
+NAS="${NAS:-}"
 NAS_IPS="${NAS_IPS:-}"
 PORT="${PORT:-3799}"
 COA_NAME="${COA_NAME:-mikrotik_coa}"
@@ -62,11 +62,24 @@ trap cleanup EXIT
 sql_exec(){ mysql --defaults-extra-file="$CNF" -e "$1" 2>/dev/null; }
 sql_one(){ mysql --defaults-extra-file="$CNF" -N -B -e "$1" 2>/dev/null | head -n 1; }
 
+msisdn_local(){
+  local d="${1//[^0-9]/}"
+  [[ -z "$d" ]] && echo "" && return 0
+  if [[ "$d" =~ ^233[0-9]{9}$ ]]; then
+    echo "0${d:3}"
+  elif [[ "$d" =~ ^0[0-9]{9}$ ]]; then
+    echo "$d"
+  else
+    echo "$d"
+  fi
+}
+
 # ---- CoA target ----
 COA_IP="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="ipaddr"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
 COA_PORT="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="port"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
 COA_SECRET_CONF="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="secret"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
 COA_PORT="${COA_PORT:-$PORT}"
+NAS="${NAS:-${COA_IP:-}}"
 
 if [[ -z "$COA_SECRET" ]]; then
   if [[ -n "${COA_SECRET_CONF:-}" ]]; then
@@ -209,7 +222,9 @@ for row in "${rows[@]}"; do
   fi
 
   payload_lines=()
-  payload_lines+=("User-Name = \"${SESS_USER}\"")
+  u_coa="$(msisdn_local "$SESS_USER")"
+  [[ -z "${u_coa:-}" ]] && u_coa="$SESS_USER"
+  payload_lines+=("User-Name = \"${u_coa}\"")
   [[ -n "${ACCTSID_SAFE:-}" ]] && payload_lines+=("Acct-Session-Id = \"${ACCTSID_SAFE}\"")
   if is_valid_ipv4 "${FRAMEDIP:-}"; then
     payload_lines+=("Framed-IP-Address = ${FRAMEDIP}")

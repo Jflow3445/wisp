@@ -91,6 +91,18 @@ variants(){
   fi
 }
 
+msisdn_local(){
+  local d="${1//[^0-9]/}"
+  [[ -z "$d" ]] && echo "" && return 0
+  if [[ "$d" =~ ^233[0-9]{9}$ ]]; then
+    echo "0${d:3}"
+  elif [[ "$d" =~ ^0[0-9]{9}$ ]]; then
+    echo "$d"
+  else
+    echo "$d"
+  fi
+}
+
 sql_in(){
   local out="" x
   for x in "$@"; do out+="'$x',"; done
@@ -350,7 +362,9 @@ kick_user(){
     fi
 
     payload_lines=()
-    payload_lines+=("User-Name = \"${u}\"")
+    u_coa="$(msisdn_local "$u")"
+    [[ -z "${u_coa:-}" ]] && u_coa="$u"
+    payload_lines+=("User-Name = \"${u_coa}\"")
     [[ -n "${sid_safe:-}" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
     if is_valid_ipv4 "${ip:-}"; then
       payload_lines+=("Framed-IP-Address = ${ip}")

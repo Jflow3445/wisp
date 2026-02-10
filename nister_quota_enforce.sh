@@ -12,6 +12,7 @@ STATE_DIR="/var/lib/freeradius/nister-quota"
 LOG_FILE="/var/log/freeradius/nister-quota.log"
 mkdir -p "$STATE_DIR"
 touch "$LOG_FILE" || true
+SELF_PATH="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 
 log(){ local msg="$1"; printf '%s %s\n' "$(date -Is)" "$msg" >>"$LOG_FILE" || true; logger -t nister-quota -- "$msg" || true; }
 alert(){ 
@@ -161,7 +162,12 @@ if [[ -z "${USER:-}" ]]; then
       AND STR_TO_DATE(rc.value, '%d %b %Y %H:%i:%s') > NOW()
   " | awk 'NF')
   for u in "${U[@]}"; do
-    /usr/local/sbin/nister_quota_enforce.sh "$u" --force || true
+    if "$SELF_PATH" "$u" --force; then
+      :
+    else
+      rc=$?
+      log "ERR user=$u sweep_child_failed rc=$rc cmd=$SELF_PATH"
+    fi
   done
   SMS_INACTIVE_DAYS="$(sms_setting SMS_INACTIVE_DAYS)"; [[ -z "${SMS_INACTIVE_DAYS:-}" ]] && SMS_INACTIVE_DAYS=0
   SMS_INACTIVE_TEXT="$(sms_setting SMS_INACTIVE_TEXT)"
@@ -220,6 +226,14 @@ COA_PORT="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1==
 COA_SECRET="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="secret"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
 COA_PORT="${COA_PORT:-3799}"
 
+KICK_RECENT_MINUTES="${KICK_RECENT_MINUTES:-30}"
+[[ "$KICK_RECENT_MINUTES" =~ ^[0-9]+$ ]] || KICK_RECENT_MINUTES=30
+KICK_RECENT_SQL=""
+if (( KICK_RECENT_MINUTES > 0 )); then
+  # Avoid sending CoA for very old/stale "open" radacct rows (reduces Disconnect-NAK noise).
+  KICK_RECENT_SQL="AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${KICK_RECENT_MINUTES} MINUTE)"
+fi
+
 NAS_RAW="${NAS_IPS:-${NAS_IP:-${COA_IP:-}}}"
 NAS_RAW="${NAS_RAW// /,}"
 NAS_IPS_LIST=()
@@ -251,7 +265,11 @@ for ip in "${_tmp[@]}"; do
   fi
 done
 
-[[ -n "${COA_SECRET:-}" && "${#NAS_IPS_LIST[@]}" -gt 0 ]] || { log "ERR user=$USER coa_target_missing"; exit 0; }
+COA_READY=1
+if [[ -z "${COA_SECRET:-}" || "${#NAS_IPS_LIST[@]}" -eq 0 ]]; then
+  COA_READY=0
+  log "WARN user=$USER coa_target_missing skip_coa=yes"
+fi
 
 # ---- Mikrotik hilo helpers ----
 hilo_to_bytes(){ local hi="${1:-0}" lo="${2:-0}"; [[ "$hi" =~ ^[0-9]+$ ]]||hi=0; [[ "$lo" =~ ^[0-9]+$ ]]||lo=0; echo $(( hi*4294967296 + (lo % 4294967296) )); }
@@ -353,12 +371,17 @@ COMMIT;"
 }
 
 kick_sessions(){
+  if (( COA_READY == 0 )); then
+    log "WARN user=$USER skip_kick_coa_unavailable"
+    return 0
+  fi
   local rows row u ip sid nas mac ok=0 fail=0 payload out sid_safe payload_lines has_match
   mapfile -t rows < <(sql_all "
-    SELECT username, framedipaddress, acctsessionid, nasipaddress, callingstationid
+    SELECT DISTINCT username, framedipaddress, acctsessionid, nasipaddress, callingstationid
     FROM radacct
     WHERE username IN (${IN_USERS})
       AND acctstoptime IS NULL
+      ${KICK_RECENT_SQL}
     ORDER BY acctstarttime DESC
     LIMIT 200
   " | awk 'NF')
@@ -383,7 +406,12 @@ kick_sessions(){
     fi
 
     payload_lines=()
-    payload_lines+=("User-Name = \"${u}\"")
+    # MikroTik typically tracks hotspot sessions by the "local" MSISDN (0xxxxxxxxx),
+    # while FreeRADIUS accounting may store the canonical form (233xxxxxxxxx).
+    # Send the local form when we can to improve CoA match rates.
+    u_coa="$(msisdn_local "${u}")"
+    [[ -z "${u_coa:-}" ]] && u_coa="$u"
+    payload_lines+=("User-Name = \"${u_coa}\"")
     [[ -n "$sid_safe" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
     if is_valid_ipv4 "${ip:-}"; then
       payload_lines+=("Framed-IP-Address = ${ip}")
@@ -454,6 +482,10 @@ ensure_hs_active(){
 PLAN_CODE="$(sql_one "SELECT value FROM radreply WHERE username IN (${IN_USERS}) AND attribute='Nister-Plan-Code' ORDER BY username LIMIT 1;" || true)"
 DAYS="$(sql_one "SELECT value FROM radreply WHERE username IN (${IN_USERS}) AND attribute='Nister-Duration-Days' ORDER BY username LIMIT 1;" || true)"
 [[ "${DAYS:-}" =~ ^[0-9]+$ ]] || DAYS=30
+WAS_LIMITED=0
+if is_limited_state; then
+  WAS_LIMITED=1
+fi
 
 EXP_EPOCH="$(get_expiry_epoch)"
 EXPIRED=0
@@ -566,8 +598,10 @@ if (( EXPIRED == 1 || EXHAUSTED == 1 )); then
   set_cap_zero
   set_hs_limited
   kick_sessions
-  log "LIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=$EXPIRED exhausted=$EXHAUSTED"
-  alert "LIMIT user=$USER plan=${PLAN_CODE:-na} expired=$EXPIRED exhausted=$EXHAUSTED used=$USED cap=$CAP_BYTES"
+  if (( WAS_LIMITED == 0 )); then
+    log "LIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=$EXPIRED exhausted=$EXHAUSTED"
+    alert "LIMIT user=$USER plan=${PLAN_CODE:-na} expired=$EXPIRED exhausted=$EXHAUSTED used=$USED cap=$CAP_BYTES"
+  fi
 else
   if is_limited_state; then
     clear_limited_state
