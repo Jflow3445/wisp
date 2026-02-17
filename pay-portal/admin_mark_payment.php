@@ -32,18 +32,36 @@ try{
   if ($action === 'decline') {
     $up = $PDO->prepare("UPDATE payments SET status='declined', approved_at=NOW(), approved_by='admin' WHERE id=:id");
     $up->execute([':id'=>$p['id']]);
+    $sms = ['attempted'=>false,'sent'=>false,'template_source'=>null,'error'=>null];
     try {
-      $tpl = trim((string)(sms_setting('SMS_PAYMENT_FAILED_TEXT', '') ?? ''));
-      if ($tpl !== '') {
-        $msg = sms_template($tpl, [
+      $sms = sms_send_templated(
+        (string)$p['msisdn'],
+        'SMS_PAYMENT_FAILED_TEXT',
+        'Payment request {REF} was declined. Please retry payment or contact support.',
+        [
           'NAME' => '',
           'MSISDN' => sms_normalize_local((string)$p['msisdn']),
           'REF' => $ref,
-        ]);
-        sms_send((string)$p['msisdn'], $msg);
-      }
-    } catch (Throwable $e) { /* ignore */ }
-    echo json_encode(['ok'=>true,'ref'=>$ref,'status'=>'declined'], JSON_UNESCAPED_SLASHES);
+        ]
+      );
+    } catch (Throwable $e) {
+      $sms = ['attempted'=>true,'sent'=>false,'template_source'=>null,'error'=>'sms_exception: '.$e->getMessage()];
+    }
+    $smsAttempted = (bool)($sms['attempted'] ?? false);
+    $smsSent = (bool)($sms['sent'] ?? false);
+    $out = [
+      'ok'=>true,
+      'ref'=>$ref,
+      'status'=>'declined',
+      'sms_attempted'=>$smsAttempted,
+      'sms_sent'=>$smsSent,
+      'sms_template_source'=>$sms['template_source'] ?? null,
+    ];
+    if ($smsAttempted && !$smsSent) {
+      $out['sms_warning'] = 'Decision saved, but SMS could not be delivered.';
+      error_log("[admin_mark_payment sms] ref={$ref} action=decline msisdn={$p['msisdn']} error=" . (string)($sms['error'] ?? 'unknown'));
+    }
+    echo json_encode($out, JSON_UNESCAPED_SLASHES);
     exit;
   }
 
@@ -96,21 +114,40 @@ try{
   $bal->execute([':m'=>$msisdn]);
   $b = (int)($bal->fetchColumn() ?: 0);
 
+  $sms = ['attempted'=>false,'sent'=>false,'template_source'=>null,'error'=>null];
   try {
-    $tpl = trim((string)(sms_setting('SMS_TOPUP_CONFIRM_TEXT', '') ?? ''));
-    if ($tpl !== '') {
-      $msg = sms_template($tpl, [
+    $sms = sms_send_templated(
+      $msisdn,
+      'SMS_TOPUP_CONFIRM_TEXT',
+      'Top up confirmed: GHS {AMOUNT_GHS}. Balance: GHS {BALANCE_GHS}. Ref: {REF}.',
+      [
         'NAME' => '',
         'MSISDN' => sms_normalize_local($msisdn),
         'AMOUNT_GHS' => number_format($amtc / 100, 2),
         'BALANCE_GHS' => number_format($b / 100, 2),
         'REF' => $ref,
-      ]);
-      sms_send($msisdn, $msg);
-    }
-  } catch (Throwable $e) { /* ignore */ }
+      ]
+    );
+  } catch (Throwable $e) {
+    $sms = ['attempted'=>true,'sent'=>false,'template_source'=>null,'error'=>'sms_exception: '.$e->getMessage()];
+  }
 
-  echo json_encode(['ok'=>true,'ref'=>$ref,'status'=>'approved','balance_cents'=>$b], JSON_UNESCAPED_SLASHES);
+  $smsAttempted = (bool)($sms['attempted'] ?? false);
+  $smsSent = (bool)($sms['sent'] ?? false);
+  $out = [
+    'ok'=>true,
+    'ref'=>$ref,
+    'status'=>'approved',
+    'balance_cents'=>$b,
+    'sms_attempted'=>$smsAttempted,
+    'sms_sent'=>$smsSent,
+    'sms_template_source'=>$sms['template_source'] ?? null,
+  ];
+  if ($smsAttempted && !$smsSent) {
+    $out['sms_warning'] = 'Decision saved, but SMS could not be delivered.';
+    error_log("[admin_mark_payment sms] ref={$ref} action=approve msisdn={$msisdn} error=" . (string)($sms['error'] ?? 'unknown'));
+  }
+  echo json_encode($out, JSON_UNESCAPED_SLASHES);
 } catch(Throwable $e){
   if (isset($PDO) && $PDO->inTransaction()) $PDO->rollBack();
   http_response_code(400);

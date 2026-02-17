@@ -31,7 +31,7 @@ function radius_fetch_plans(bool $includeInactive=false): array {
     $st = $r->query("SELECT groupname,attribute,value FROM {$tbl}");
     while ($x = $st->fetch()) {
       $g = $x['groupname'];
-      if (in_array($g, ['HS_ACTIVE','HS_LIMITED'], true)) continue;
+      if (in_array($g, ['HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid'], true)) continue;
       $rows[] = $x;
     }
   }

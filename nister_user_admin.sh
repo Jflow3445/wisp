@@ -16,6 +16,7 @@ COA_SECRET="${COA_SECRET:-}" # optional override
 HS_ACTIVE="${HS_ACTIVE:-HS_ACTIVE}"
 HS_LIMITED="${HS_LIMITED:-HS_LIMITED}"
 HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
+LEGACY_NOPAID="${LEGACY_NOPAID:-nopaid}"
 HS_PRIO="${HS_PRIO:-0}"
 
 die(){ echo "ERROR: $*" >&2; exit 2; }
@@ -297,7 +298,7 @@ WHERE username IN (${in_list})
 
 DELETE FROM radusergroup
 WHERE username IN (${in_list})
-  AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}');
+  AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}');
 INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
 COMMIT;"
 }

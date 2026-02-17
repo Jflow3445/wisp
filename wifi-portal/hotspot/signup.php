@@ -28,10 +28,10 @@ function radius_db_params(): array {
 [$DB_DSN, $DB_USER, $DB_PASS] = radius_db_params();
 
 $LOGIN_URL       = 'https://wifi.nister.org/login.html'; // MikroTik local login page
-$GROUP_ON_CREATE = 'nopaid';                              // matches your hotspot "nopaid" concept
+$GROUP_ON_CREATE = 'HS_NOPAID';                           // canonical unpaid policy group
 $ADDR_LIST       = 'HS_NOPAID';                           // firewall address-list for unpaid
 $ENFORCE_UNIQUE  = true;                                  // do not overwrite existing passwords
-$DEFAULT_EXP_DAYS = 3650;                                 // keep nopaid accounts from auto-expiring
+$DEFAULT_EXP_DAYS = 3650;                                 // keep unpaid accounts from auto-expiring
 /* ---------------------------- */
 
 function fail($code, $username = '', $dst = '', $name = '') {

@@ -115,6 +115,18 @@ function nister_duration_days(PDO $r, array $users, ?string $group, int $default
   return $out > 0 ? $out : $default;
 }
 
+function nister_parse_expiry_datetime(?string $raw, DateTimeZone $tz): ?DateTimeImmutable {
+  $v = trim((string)$raw);
+  if ($v === '') return null;
+  $dt = DateTimeImmutable::createFromFormat('d M Y H:i:s', $v, $tz);
+  if (!$dt) $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $v, $tz);
+  if (!$dt) $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $v, $tz);
+  if (!$dt) {
+    try { $dt = new DateTimeImmutable($v, $tz); } catch (Throwable $e) { $dt = null; }
+  }
+  return ($dt instanceof DateTimeImmutable) ? $dt : null;
+}
+
 function nister_fetch_expiration(PDO $r, array $users, DateTimeZone $tz): ?DateTimeImmutable {
   if (!$users) return null;
   $st = $r->prepare("SELECT `value` FROM radcheck WHERE username=? AND attribute='Expiration' LIMIT 1");
@@ -124,13 +136,7 @@ function nister_fetch_expiration(PDO $r, array $users, DateTimeZone $tz): ?DateT
     $st->execute([$u]);
     $val = $st->fetchColumn();
     if ($val === false || $val === null || $val === '') continue;
-    $v = (string)$val;
-    $dt = DateTimeImmutable::createFromFormat('d M Y H:i:s', $v, $tz);
-    if (!$dt) $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $v, $tz);
-    if (!$dt) $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $v, $tz);
-    if (!$dt) {
-      try { $dt = new DateTimeImmutable($v, $tz); } catch (Throwable $e) { $dt = null; }
-    }
+    $dt = nister_parse_expiry_datetime((string)$val, $tz);
     if ($dt instanceof DateTimeImmutable) {
       if (!$best || $dt > $best) $best = $dt;
     }
@@ -297,14 +303,14 @@ function nister_current_total_quota(PDO $r, array $users, ?string $group): ?int 
 /**
  * Apply plan with ADDITIVE QUOTA semantics:
  * - Carry over remaining data from the current window, then add the new plan's quota
- * - Extend expiry from later of now/current expiry (end-of-day)
+ * - Extend expiry from later of purchase time/current expiry (exact timestamp)
  * - Apply address list, rate limit, and set per-user plan attributes
  * - Annotate with Nister-Duration-Days and Nister-Plan-Name
  */
-function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newExpiresAt): void {
+function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purchaseAt): void {
     $r = rdb_pdo();
     $tz = new DateTimeZone(date_default_timezone_get());
-    $now = new DateTimeImmutable('now', $tz);
+    $now = $purchaseAt->setTimezone($tz);
     $targets = nister_username_variants($msisdn);
 
     // Current plan code (reply or legacy group) and Expiration (for window math)
@@ -333,7 +339,7 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
 
     // Expiration: extend from later of now/current expiry
     $baseStart = ($currExp instanceof DateTimeImmutable && $currExp > $now) ? $currExp : $now;
-    $expAt = $baseStart->modify('+' . $durDays . ' days')->setTime(23, 59, 59);
+    $expAt = $baseStart->modify('+' . $durDays . ' days');
     // DB enforces "DD Mon YYYY HH:MM:SS"
     $expStr = $expAt->format('d M Y H:i:s');
 
@@ -387,16 +393,16 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $newEx
             radius_set_reply($r, $u, 'Nister-Plan-Name', ':=', $planName);
             radius_set_reply($r, $u, 'Nister-Duration-Days', ':=', (string)$durDays);
 
-            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
             $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                          SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
                          WHERE NOT EXISTS (
                            SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'
                          )")->execute([':u'=>$u]);
             $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Address-List','MT-Address-List')")->execute([':u'=>$u]);
-            $windowStartStr = ($currExp instanceof DateTimeImmutable && $currExp > $now && $currWindow)
-              ? $currWindow->format('Y-m-d H:i:s')
-              : $now->format('Y-m-d H:i:s');
+            // Start a fresh usage window on every successful purchase/top-up.
+            // This avoids immediate re-exhaustion when old usage is already at/above cap.
+            $windowStartStr = $now->format('Y-m-d H:i:s');
             radius_set_reply($r, $u, 'Nister-Window-Start', ':=', $windowStartStr);
             if ($addrList !== '') {
                 radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addrList);
@@ -430,6 +436,7 @@ function radius_user_status(string $msisdn): array {
   foreach ($groups as $g) {
     $lg = strtolower($g);
     if ($lg === 'hs_nopaid') { $limitedGroup = true; $hsGroup = 'HS_NOPAID'; break; }
+    if ($lg === 'nopaid') { $limitedGroup = true; if ($hsGroup === null) $hsGroup = 'HS_NOPAID'; continue; }
     if ($lg === 'hs_limited') { $limitedGroup = true; $hsGroup = 'HS_LIMITED'; }
     if ($lg === 'hs_active' && $hsGroup === null) { $hsGroup = 'HS_ACTIVE'; }
   }

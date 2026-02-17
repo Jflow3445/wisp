@@ -306,11 +306,11 @@ try {
     case 'user_state_list': {
       $r = rdb_pdo();
       $limit = isset($in['limit']) ? max(1, min(1000, (int)$in['limit'])) : 300;
-      $where = "rug.groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')";
+      $where = "rug.groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')";
       $params = [];
       if (!empty($in['group'])) {
         $g = (string)$in['group'];
-        if (in_array($g, ['HS_ACTIVE','HS_LIMITED','HS_NOPAID'], true)) {
+        if (in_array($g, ['HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid'], true)) {
           $where = "rug.groupname = :g";
           $params[':g'] = $g;
         }
@@ -832,28 +832,50 @@ try {
         $row = $st->fetch();
         if (!$row) { throw new RuntimeException('not_found'); }
         if ($row['status'] !== 'pending') {
-          echo json_encode(['ok'=>true,'status'=>$row['status'],'ref'=>$ref]);
+          echo json_encode([
+            'ok'=>true,
+            'status'=>$row['status'],
+            'ref'=>$ref,
+            'sms_attempted'=>false,
+            'sms_sent'=>false,
+            'sms_template_source'=>null,
+          ]);
           if ($outerStarted) $PDO->commit();
           break;
         }
 
+        $msisdn = (string)($row['msisdn'] ?? '');
+        $amount_cents = 0;
+        if (isset($row['amount_cents']) && is_numeric($row['amount_cents'])) {
+          $amount_cents = (int)$row['amount_cents'];
+        }
+        if ($amount_cents <= 0 && isset($row['amount'])) {
+          $amount_cents = (int)round(((float)$row['amount']) * 100);
+        }
+        $adminActor = trim((string)($_SESSION['admin_user'] ?? 'admin'));
+        if ($adminActor === '') $adminActor = 'admin';
+        $remoteAddr = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+        $approvedBy = $adminActor . ($remoteAddr !== '' ? (' ' . $remoteAddr) : '');
+        $hasApprovedBy = false;
+        try { $hasApprovedBy = column_exists($PDO, 'payments', 'approved_by'); } catch (Throwable $e) { $hasApprovedBy = false; }
+
         if ($act === 'approve') {
           // mark approved
-          $st = $PDO->prepare("UPDATE payments
-            SET status='approved',
-                notes=CONCAT(COALESCE(notes,''), CASE WHEN :n<>'' THEN CONCAT(' | ', :n) ELSE '' END),
-                approved_at=NOW()
-            WHERE ref=:r");
-          $st->execute([':n'=>$notes, ':r'=>$ref]);
-
-          // Inline credit (avoid nested transactions)
-          $msisdn = (string)$row['msisdn'];
-          $amount_cents = 0;
-          if (isset($row['amount_cents']) && is_numeric($row['amount_cents'])) {
-            $amount_cents = (int)$row['amount_cents'];
-          }
-          if ($amount_cents <= 0 && isset($row['amount'])) {
-            $amount_cents = (int)round(((float)$row['amount']) * 100);
+          if ($hasApprovedBy) {
+            $st = $PDO->prepare("UPDATE payments
+              SET status='approved',
+                  notes=CONCAT(COALESCE(notes,''), CASE WHEN :n<>'' THEN CONCAT(' | ', :n) ELSE '' END),
+                  approved_at=NOW(),
+                  approved_by=:by
+              WHERE ref=:r");
+            $st->execute([':n'=>$notes, ':by'=>$approvedBy, ':r'=>$ref]);
+          } else {
+            $st = $PDO->prepare("UPDATE payments
+              SET status='approved',
+                  notes=CONCAT(COALESCE(notes,''), CASE WHEN :n<>'' THEN CONCAT(' | ', :n) ELSE '' END),
+                  approved_at=NOW()
+              WHERE ref=:r");
+            $st->execute([':n'=>$notes, ':r'=>$ref]);
           }
 
           // ensure account row exists
@@ -871,15 +893,97 @@ try {
               ->execute([':m'=>$msisdn, ':c'=>$amount_cents, ':r'=>$ref]);
         } else {
           // decline
-          $st = $PDO->prepare("UPDATE payments
-            SET status='declined',
-                notes=CONCAT(COALESCE(notes,''), CASE WHEN :n<>'' THEN CONCAT(' | ', :n) ELSE '' END)
-            WHERE ref=:r");
-          $st->execute([':n'=>$notes, ':r'=>$ref]);
+          if ($hasApprovedBy) {
+            $st = $PDO->prepare("UPDATE payments
+              SET status='declined',
+                  notes=CONCAT(COALESCE(notes,''), CASE WHEN :n<>'' THEN CONCAT(' | ', :n) ELSE '' END),
+                  approved_at=NOW(),
+                  approved_by=:by
+              WHERE ref=:r");
+            $st->execute([':n'=>$notes, ':by'=>$approvedBy, ':r'=>$ref]);
+          } else {
+            $st = $PDO->prepare("UPDATE payments
+              SET status='declined',
+                  notes=CONCAT(COALESCE(notes,''), CASE WHEN :n<>'' THEN CONCAT(' | ', :n) ELSE '' END),
+                  approved_at=NOW()
+              WHERE ref=:r");
+            $st->execute([':n'=>$notes, ':r'=>$ref]);
+          }
         }
 
         if ($outerStarted) $PDO->commit();
-        echo json_encode(['ok'=>true,'ref'=>$ref,'status'=>$act === 'approve' ? 'approved':'declined']);
+
+        $sms = [
+          'attempted' => false,
+          'sent' => false,
+          'template_source' => null,
+          'error' => null,
+        ];
+        try {
+          if ($msisdn !== '') {
+            if ($act === 'approve') {
+              $balanceCents = null;
+              try {
+                $bs = $PDO->prepare("SELECT balance_cents FROM accounts WHERE msisdn=:m LIMIT 1");
+                $bs->execute([':m'=>$msisdn]);
+                $bv = $bs->fetchColumn();
+                if ($bv !== false && $bv !== null && is_numeric($bv)) $balanceCents = (int)$bv;
+              } catch (Throwable $e) {
+                $balanceCents = null;
+              }
+              $sms = sms_send_templated(
+                $msisdn,
+                'SMS_TOPUP_CONFIRM_TEXT',
+                'Top up confirmed: GHS {AMOUNT_GHS}. Balance: GHS {BALANCE_GHS}. Ref: {REF}.',
+                [
+                  'NAME' => '',
+                  'MSISDN' => sms_normalize_local($msisdn),
+                  'AMOUNT_GHS' => number_format($amount_cents / 100, 2),
+                  'BALANCE_GHS' => $balanceCents !== null ? number_format($balanceCents / 100, 2) : '',
+                  'REF' => $ref,
+                ]
+              );
+            } else {
+              $sms = sms_send_templated(
+                $msisdn,
+                'SMS_PAYMENT_FAILED_TEXT',
+                'Payment request {REF} was declined. Please retry payment or contact support.',
+                [
+                  'NAME' => '',
+                  'MSISDN' => sms_normalize_local($msisdn),
+                  'REF' => $ref,
+                ]
+              );
+            }
+          }
+        } catch (Throwable $e) {
+          $sms = [
+            'attempted' => true,
+            'sent' => false,
+            'template_source' => null,
+            'error' => 'sms_exception: ' . $e->getMessage(),
+          ];
+        }
+
+        $smsAttempted = (bool)($sms['attempted'] ?? false);
+        $smsSent = (bool)($sms['sent'] ?? false);
+        $smsTemplateSource = $sms['template_source'] ?? null;
+        $smsWarning = null;
+        if ($smsAttempted && !$smsSent) {
+          $smsWarning = 'Decision saved, but SMS could not be delivered.';
+          error_log("[admin/api decision sms] ref={$ref} action={$act} msisdn={$msisdn} error=" . (string)($sms['error'] ?? 'unknown'));
+        }
+
+        $out = [
+          'ok'=>true,
+          'ref'=>$ref,
+          'status'=>$act === 'approve' ? 'approved' : 'declined',
+          'sms_attempted'=>$smsAttempted,
+          'sms_sent'=>$smsSent,
+          'sms_template_source'=>$smsTemplateSource,
+        ];
+        if ($smsWarning !== null) $out['sms_warning'] = $smsWarning;
+        echo json_encode($out);
       } catch (Throwable $e) {
         if ($outerStarted && $PDO->inTransaction()) $PDO->rollBack();
         if ($e->getMessage() === 'not_found') {
@@ -1173,7 +1277,7 @@ try {
         foreach ($targets as $u) {
           radius_set_check($r, $u, 'Expiration', ':=', $expStr);
         }
-        $r->prepare("DELETE FROM radusergroup WHERE username IN ($ph) AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')")
+        $r->prepare("DELETE FROM radusergroup WHERE username IN ($ph) AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')")
           ->execute($targets);
         $vals = implode(",", array_fill(0, count($targets), "(?,'HS_LIMITED',0)"));
         $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES {$vals}")
@@ -1200,7 +1304,7 @@ try {
           radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', 'HS_LIMITED');
         }
         $ph = implode(",", array_fill(0, count($targets), "?"));
-        $r->prepare("DELETE FROM radusergroup WHERE username IN ($ph) AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')")
+        $r->prepare("DELETE FROM radusergroup WHERE username IN ($ph) AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')")
           ->execute($targets);
         $vals = implode(",", array_fill(0, count($targets), "(?,'HS_LIMITED',0)"));
         $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES {$vals}")
@@ -1342,21 +1446,21 @@ try {
         foreach (nister_username_variants($msisdn) as $u) {
           radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addr);
           if ($addrUp === 'HS_ACTIVE') {
-            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
             $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                          SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
                          WHERE NOT EXISTS (
                            SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'
                          )")->execute([':u'=>$u]);
           } elseif ($addrUp === 'HS_LIMITED') {
-            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'")->execute([':u'=>$u]);
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
             $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                          SELECT :u, 'HS_LIMITED', 0 FROM DUAL
                          WHERE NOT EXISTS (
                            SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_LIMITED'
                          )")->execute([':u'=>$u]);
           } elseif ($addrUp === 'HS_NOPAID') {
-            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED')")->execute([':u'=>$u]);
+            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED','nopaid')")->execute([':u'=>$u]);
             $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                          SELECT :u, 'HS_NOPAID', 0 FROM DUAL
                          WHERE NOT EXISTS (
@@ -1402,7 +1506,7 @@ try {
           break;
         }
         foreach (nister_username_variants($msisdn) as $u) {
-          $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
+          $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
           $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                        SELECT :u, :g, 0 FROM DUAL
                        WHERE NOT EXISTS (
@@ -1423,7 +1527,7 @@ try {
       try {
         $r = rdb_pdo();
         foreach (nister_username_variants($msisdn) as $u) {
-          $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
+          $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
           $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
                        SELECT :u, 'HS_NOPAID', 0 FROM DUAL
                        WHERE NOT EXISTS (
@@ -1641,8 +1745,8 @@ try {
 
       $days = (int)($plan['duration_days'] ?? 30);
       if ($days <= 0) $days = 30;
-      $expires = (new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get())))
-        ->modify('+'.$days.' days')->setTime(23,59,59);
+      $tz = new DateTimeZone(date_default_timezone_get());
+      $purchaseAt = new DateTimeImmutable('now', $tz);
 
       $applyPlan = [
         'code'         => $plan['code'],
@@ -1653,7 +1757,7 @@ try {
       ];
 
       try {
-        radius_apply_plan($msisdn, $applyPlan, $expires);
+        radius_apply_plan($msisdn, $applyPlan, $purchaseAt);
         if (function_exists('radius_try_disconnect')) {
           try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         }
@@ -1662,6 +1766,15 @@ try {
         echo json_encode(['ok'=>false,'error'=>'apply_failed','detail'=>$e->getMessage()]);
         break;
       }
+
+      $actualExpires = $purchaseAt->modify('+'.$days.' days');
+      try {
+        $active = radius_get_active_plan($msisdn);
+        if ($active && !empty($active['expires_at'])) {
+          $parsed = nister_parse_expiry_datetime((string)$active['expires_at'], $tz);
+          if ($parsed instanceof DateTimeImmutable) $actualExpires = $parsed;
+        }
+      } catch (Throwable $e) { /* keep computed expiry */ }
 
       $purchaseErr = null;
       $pid = null;
@@ -1681,7 +1794,7 @@ try {
           if (!empty($has['price_cents']) && $price > 0) $add('price_cents', $price);
           if (!empty($has['status'])) $add('status', 'applied');
           if (!empty($has['activated_at'])) { $fields[]='`activated_at`'; $vals[]='NOW()'; }
-          if (!empty($has['expires_at'])) $add('expires_at', $expires->format('Y-m-d H:i:s'));
+          if (!empty($has['expires_at'])) $add('expires_at', $actualExpires->format('Y-m-d H:i:s'));
 
           if ($fields) {
             $sql = "INSERT INTO purchases (".implode(',', $fields).") VALUES (".implode(',', $vals).")";
@@ -1695,7 +1808,7 @@ try {
         $purchaseErr = $e->getMessage();
       }
 
-      $expiresStr = $expires->format('Y-m-d H:i:s');
+      $expiresStr = $actualExpires->format('Y-m-d H:i:s');
       try {
         $tpl = trim((string)(sms_setting('SMS_BACK_ONLINE_TEXT', '') ?? ''));
         if ($tpl !== '') {

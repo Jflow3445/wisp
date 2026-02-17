@@ -5,7 +5,7 @@ declare(strict_types=1);
   Flow:
   - Validate inputs
   - Create user in radcheck (Cleartext-Password + Expiration)
-  - Set nopaid group + HS_NOPAID address list
+  - Set HS_NOPAID group + HS_NOPAID address list
   - Show registration success page
 */
 
@@ -29,10 +29,10 @@ if (!$u || !isset($u["scheme"], $u["host"]) || !in_array($u["host"], ["wifi.nist
 
 // ---- config ----
 $LOGIN_URL       = 'https://wifi.nister.org/login.html';
-$GROUP_ON_CREATE = 'nopaid';
+$GROUP_ON_CREATE = 'HS_NOPAID';
 $ADDR_LIST       = 'HS_NOPAID';
 $ENFORCE_UNIQUE  = true;
-$DEFAULT_EXP_DAYS = 3650; // keep nopaid accounts from auto-expiring
+$DEFAULT_EXP_DAYS = 3650; // keep unpaid accounts from auto-expiring
 // --------------
 
 function username_variants(string $u): array {

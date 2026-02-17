@@ -78,6 +78,7 @@ sql_exec(){ mysql --defaults-extra-file="$CNF" -e "$1" 2>/dev/null; }
 HS_ACTIVE="${HS_ACTIVE:-HS_ACTIVE}"
 HS_LIMITED="${HS_LIMITED:-HS_LIMITED}"
 HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
+LEGACY_NOPAID="${LEGACY_NOPAID:-nopaid}"
 HS_PRIO="${HS_PRIO:-0}"
 
 sms_setting(){ sql_one "SELECT v FROM app_settings WHERE k='${1}' LIMIT 1;" || true; }
@@ -365,7 +366,7 @@ WHERE username IN (${IN_USERS})
 
 DELETE FROM radusergroup
 WHERE username IN (${IN_USERS})
-  AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}');
+  AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}');
 INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
 COMMIT;"
 }
@@ -436,7 +437,7 @@ kick_sessions(){
   log "KICK_DONE user=$USER ok=$ok fail=$fail"
 }
 is_limited_state(){
-  sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname='${HS_LIMITED}' LIMIT 1;" | grep -q 1 && return 0 || true
+  sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}') LIMIT 1;" | grep -q 1 && return 0 || true
   sql_one "SELECT 1 FROM radreply WHERE username IN (${IN_USERS}) AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords') AND value='0' LIMIT 1;" | grep -q 1
 }
 clear_limited_state(){
@@ -454,7 +455,7 @@ clear_limited_state(){
 
     DELETE FROM radusergroup
       WHERE username IN (${IN_USERS})
-        AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}');
+        AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}');
 
     INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
 
@@ -474,7 +475,7 @@ ensure_hs_active(){
   sql_exec "START TRANSACTION;
     DELETE FROM radusergroup
       WHERE username IN (${IN_USERS})
-        AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}','${HS_ACTIVE}');
+        AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}','${HS_ACTIVE}','${LEGACY_NOPAID}');
     INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
   COMMIT;"
 }

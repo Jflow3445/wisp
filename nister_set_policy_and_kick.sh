@@ -13,6 +13,7 @@ ADMIN_ALERT_URL="${ADMIN_ALERT_URL:-}"
 HS_ACTIVE="${HS_ACTIVE:-HS_ACTIVE}"
 HS_LIMITED="${HS_LIMITED:-HS_LIMITED}"
 HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
+LEGACY_NOPAID="${LEGACY_NOPAID:-nopaid}"
 
 die(){ echo "ERROR: $*" >&2; exit 2; }
 alert(){ 
@@ -161,7 +162,7 @@ WHERE username IN ($IN_LIST)
 -- wipe ONLY HS group memberships (keep PLAN_* and others)
 DELETE FROM radusergroup
 WHERE username IN ($IN_LIST)
-  AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}');
+  AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}');
 
 -- set the one true policy
 INSERT INTO radusergroup (username, groupname, priority)

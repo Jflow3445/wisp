@@ -128,10 +128,10 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
         ->execute([':m'=>$msisdn,':c'=>$plan['code'],':p'=>$price]);
     $pid=(int)$PDO->lastInsertId();
 
-    // Compute expiry (end of day)
+    // Compute anchor timestamp (exact-time rolling expiry is handled in radius_apply_plan)
     $days=(int)($plan['duration_days'] ?? (int)($ENV['VALID_DAYS'] ?? 30));
-    $expires=(new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get())))
-                ->modify('+'.$days.' days')->setTime(23,59,59);
+    $tz = new DateTimeZone(date_default_timezone_get());
+    $purchaseAt = new DateTimeImmutable('now', $tz);
 
     // Include plan code so we can write per-user plan attrs
     $applyPlan = [
@@ -141,7 +141,7 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
       'quota_bytes'  => $plan['quota_bytes']??null,
       'duration_days'=> $days
     ];
-    radius_apply_plan($msisdn, $applyPlan, $expires);
+    radius_apply_plan($msisdn, $applyPlan, $purchaseAt);
 
       // Force online users to re-auth so new Mikrotik-Address-List / limits apply immediately
       if (function_exists('radius_try_disconnect')) {
@@ -168,18 +168,11 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
       }
 
 
-    $actualExpires = $expires;
+    $actualExpires = $purchaseAt->modify('+'.$days.' days');
     try {
       $active = radius_get_active_plan($msisdn);
       if ($active && !empty($active['expires_at'])) {
-        $expRaw = (string)$active['expires_at'];
-        $tz = new DateTimeZone(date_default_timezone_get());
-        $dt = DateTimeImmutable::createFromFormat('d M Y H:i:s', $expRaw, $tz);
-        if (!$dt) $dt = DateTimeImmutable::createFromFormat('M d Y H:i:s', $expRaw, $tz);
-        if (!$dt) $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $expRaw, $tz);
-        if (!$dt) {
-          try { $dt = new DateTimeImmutable($expRaw, $tz); } catch (Throwable $e) { $dt = null; }
-        }
+        $dt = nister_parse_expiry_datetime((string)$active['expires_at'], $tz);
         if ($dt instanceof DateTimeImmutable) $actualExpires = $dt;
       }
     } catch (Throwable $e) { /* keep computed expiry */ }

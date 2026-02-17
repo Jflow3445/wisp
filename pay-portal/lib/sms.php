@@ -37,6 +37,38 @@ function sms_provider_from_base(string $base): string {
   return (strpos($b, 'pilosms') !== false) ? 'pilosms' : 'mnotify';
 }
 
+/**
+ * Send SMS using a configured template key, with a safe default fallback.
+ *
+ * Returns:
+ * - attempted: whether we tried to send
+ * - sent: gateway accepted message
+ * - template_source: "setting" or "default"
+ * - error: null|string
+ */
+function sms_send_templated(string $msisdn, string $settingKey, string $defaultTemplate, array $vars): array {
+  $tplSetting = trim((string)(sms_setting($settingKey, '') ?? ''));
+  $templateSource = ($tplSetting !== '') ? 'setting' : 'default';
+  $tpl = ($tplSetting !== '') ? $tplSetting : $defaultTemplate;
+  $message = trim(sms_template($tpl, $vars));
+  if ($message === '') {
+    return [
+      'attempted' => false,
+      'sent' => false,
+      'template_source' => $templateSource,
+      'error' => 'empty_message',
+    ];
+  }
+
+  $sent = sms_send($msisdn, $message);
+  return [
+    'attempted' => true,
+    'sent' => $sent,
+    'template_source' => $templateSource,
+    'error' => $sent ? null : 'send_failed',
+  ];
+}
+
 function sms_send(string $msisdn, string $message, ?string $senderOverride=null): bool {
   $apiKey = trim((string)(sms_setting('MNOTIFY_API_KEY', '') ?? ''));
   $sender = trim((string)($senderOverride ?? sms_setting('MNOTIFY_SENDER', '') ?? ''));

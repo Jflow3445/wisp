@@ -1292,6 +1292,9 @@ async function loadPending(){
       if(res.ok){
         await loadStats();
         await loadPending();
+        if (res.sms_attempted && !res.sms_sent) {
+          alert(res.sms_warning || 'Decision saved, but SMS could not be delivered.');
+        }
       }else{
         alert(res.error || 'Action failed');
       }
