@@ -263,8 +263,8 @@ admin_require_login();
         <input id="set_topup_min" type="text" placeholder="30.00">
       </div>
       <div class="field">
-        <label for="set_referral_rate">Referral rate (bps)</label>
-        <input id="set_referral_rate" type="text" placeholder="1000">
+        <label for="set_referral_rate">Referral rate (%)</label>
+        <input id="set_referral_rate" type="text" placeholder="10">
       </div>
       <div class="field">
         <label for="set_referral_monthly">Referral monthly cap (GHS)</label>
@@ -775,6 +775,16 @@ function centsToAmount(c){
   if (!isFinite(n) || n <= 0) return '';
   return (n/100).toFixed(2);
 }
+function bpsToPercent(bps){
+  const n = Number(bps);
+  if (!isFinite(n) || n <= 0) return '';
+  return (n / 100).toFixed(2).replace(/\.00$/,'');
+}
+function percentToBps(raw){
+  const n = parseFloat(String(raw || '').replace(/[^\d.]/g,''));
+  if (!isFinite(n) || n <= 0) return '';
+  return String(Math.round(n * 100));
+}
 function esc(v){
   return String(v)
     .replace(/&/g,'&amp;')
@@ -1187,7 +1197,7 @@ async function loadSettings(){
   set('set_topup_number', s.TOPUP_NUMBER || '');
   set('set_topup_text', s.TOPUP_WA_TEXT || '');
   set('set_topup_min', centsToAmount(s.TOPUP_MIN_CENTS || ''));
-  set('set_referral_rate', s.REFERRAL_RATE_BPS || '');
+  set('set_referral_rate', bpsToPercent(s.REFERRAL_RATE_BPS || ''));
   set('set_referral_monthly', centsToAmount(s.REFERRAL_MONTHLY_CAP_CENTS || ''));
   set('set_referral_lifetime', centsToAmount(s.REFERRAL_LIFETIME_CAP_CENTS || ''));
   set('set_referral_window', s.REFERRAL_WINDOW_DAYS || '');
@@ -1218,6 +1228,7 @@ async function loadSettings(){
 
 async function saveSettings(){
   const minTopupRaw = toolValue('set_topup_min');
+  const referralRateRaw = toolValue('set_referral_rate');
   const referralMonthlyRaw = toolValue('set_referral_monthly');
   const referralLifetimeRaw = toolValue('set_referral_lifetime');
   const body = {
@@ -1229,7 +1240,7 @@ async function saveSettings(){
     TOPUP_NUMBER: toolValue('set_topup_number'),
     TOPUP_WA_TEXT: toolValue('set_topup_text'),
     TOPUP_MIN_CENTS: minTopupRaw ? String(parseAmountCents(minTopupRaw)) : '',
-    REFERRAL_RATE_BPS: toolValue('set_referral_rate'),
+    REFERRAL_RATE_BPS: referralRateRaw ? percentToBps(referralRateRaw) : '',
     REFERRAL_MONTHLY_CAP_CENTS: referralMonthlyRaw ? String(parseAmountCents(referralMonthlyRaw)) : '',
     REFERRAL_LIFETIME_CAP_CENTS: referralLifetimeRaw ? String(parseAmountCents(referralLifetimeRaw)) : '',
     REFERRAL_WINDOW_DAYS: toolValue('set_referral_window'),

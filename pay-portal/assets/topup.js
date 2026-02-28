@@ -83,6 +83,7 @@
         if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return; }
         if(!code){ alert('Invalid plan.'); return; }
         if(!confirm('Confirm purchase of '+(p.name||code)+'?')) return;
+        var autoRenewChoice = confirm('Auto-renew this data when near expiry or exhaustion?');
         var old=this.textContent; this.disabled=true; this.textContent='Buying...';
         try{
           var resp = await fetch('purchase.php', {
@@ -98,7 +99,15 @@
             if (j && j.details) msg += ' (' + j.details + ')';
             alert('Purchase failed: ' + msg);
           }
-          else { alert('Purchase successful.'); callRefreshUser(); }
+          else {
+            try{
+              await setAutoRenewPreference(!!autoRenewChoice, code);
+            }catch(e){
+              alert('Purchase ok, but auto-renew update failed: ' + e.message);
+            }
+            alert('Purchase successful.');
+            callRefreshUser();
+          }
         }catch(e){ alert('Network error: '+e.message); }
         finally{ this.disabled=false; this.textContent=old; }
       });
@@ -132,12 +141,26 @@
     if (save) save.addEventListener('click', saveAutoRenew);
     var sel = $('#auto_renew_plan');
     if (sel) sel.addEventListener('change', function(){
-      if (window.__NISTER_ME__) renderAutoRenew(window.__NISTER_ME__);
+      if (window.__NISTER_ME__) updateAutoRenewInfoFromUI(window.__NISTER_ME__);
     });
     var toggle = $('#auto_renew_enabled');
     if (toggle) toggle.addEventListener('change', function(){
-      if (window.__NISTER_ME__) renderAutoRenew(window.__NISTER_ME__);
+      if (window.__NISTER_ME__) updateAutoRenewInfoFromUI(window.__NISTER_ME__);
     });
+  }
+
+  async function setAutoRenewPreference(enabled, planCode){
+    if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return null; }
+    var r = await fetch('auto_renew.php', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({ enabled: enabled ? 1 : 0, plan_code: planCode || '' })
+    });
+    if (r.status === 401) { window.location.href = '/login.php'; return null; }
+    var j = await r.json().catch(function(){ return {ok:false,error:'invalid json'}; });
+    if (!r.ok || !j.ok) throw new Error((j && (j.message || j.error)) || ('HTTP '+r.status));
+    return j;
   }
 
   async function saveAutoRenew(){
@@ -152,15 +175,10 @@
     var old = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
     try{
-      var r = await fetch('auto_renew.php', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        credentials:'same-origin',
-        body: JSON.stringify({ enabled: enabled ? 1 : 0, plan_code: planCode })
-      });
-      if (r.status === 401) { window.location.href = '/login.php'; return; }
-      var j = await r.json().catch(function(){ return {ok:false,error:'invalid json'}; });
-      if (!r.ok || !j.ok) throw new Error((j && (j.message || j.error)) || ('HTTP '+r.status));
+      var info = $('#auto_renew_info');
+      if (info) info.textContent = 'Saving auto-renew...';
+      await setAutoRenewPreference(enabled, planCode);
+      if (info) info.textContent = 'Auto-renew saved.';
       callRefreshUser();
     }catch(e){
       alert('Auto-renew update failed: ' + e.message);
@@ -205,11 +223,21 @@
       if (desired) planSel.value = desired;
     }
 
+    updateAutoRenewInfoFromUI(j);
+  }
+
+  function updateAutoRenewInfoFromUI(j){
+    var enabledEl = $('#auto_renew_enabled');
+    var planSel = $('#auto_renew_plan');
+    var badge = $('#auto_renew_badge');
+    var info = $('#auto_renew_info');
+    if (!window.NISTER_LOGGED_IN) return;
+    var enabled = !!(enabledEl && enabledEl.checked);
+    if (badge) { badge.textContent = enabled ? 'On' : 'Off'; badge.className = enabled ? 'pill' : 'pill soft'; }
     var selected = planSel ? planByCode(planSel.value) : null;
     var price = selected ? (selected.price_cents || 0) : 0;
-    var bal = j.balance_cents || 0;
+    var bal = (j && j.balance_cents) ? j.balance_cents : 0;
     var canAfford = price > 0 && bal >= price;
-
     if (info) {
       if (!enabled) info.textContent = 'Auto-renew is off.';
       else if (!selected) info.textContent = 'Choose a plan to auto-renew.';

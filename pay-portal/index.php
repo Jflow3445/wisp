@@ -377,6 +377,6 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
     window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
     window.NISTER_MIN_TOPUP_CENTS = <?= (int)$minTopupCents ?>;
   </script>
-  <script src="assets/topup.js?v=12"></script>
+  <script src="assets/topup.js?v=13"></script>
 </body>
 </html>
