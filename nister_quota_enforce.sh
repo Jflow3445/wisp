@@ -170,6 +170,13 @@ if [[ -z "${USER:-}" ]]; then
       log "ERR user=$u sweep_child_failed rc=$rc cmd=$SELF_PATH"
     fi
   done
+  SMS_DEBOUNCE_HOURS="$(sms_setting SMS_DEBOUNCE_HOURS)"; [[ -z "${SMS_DEBOUNCE_HOURS:-}" ]] && SMS_DEBOUNCE_HOURS=24
+  [[ "${SMS_DEBOUNCE_HOURS:-}" =~ ^[0-9]+$ ]] || SMS_DEBOUNCE_HOURS=24
+  INACTIVE_MIN_DEBOUNCE_HOURS=$((30*24))
+  INACTIVE_DEBOUNCE_HOURS="$INACTIVE_MIN_DEBOUNCE_HOURS"
+  if (( SMS_DEBOUNCE_HOURS > INACTIVE_DEBOUNCE_HOURS )); then
+    INACTIVE_DEBOUNCE_HOURS="$SMS_DEBOUNCE_HOURS"
+  fi
   SMS_INACTIVE_DAYS="$(sms_setting SMS_INACTIVE_DAYS)"; [[ -z "${SMS_INACTIVE_DAYS:-}" ]] && SMS_INACTIVE_DAYS=0
   SMS_INACTIVE_TEXT="$(sms_setting SMS_INACTIVE_TEXT)"
   if [[ -n "${SMS_INACTIVE_TEXT:-}" && "${SMS_INACTIVE_DAYS:-0}" =~ ^[0-9]+$ && "$SMS_INACTIVE_DAYS" -gt 0 ]]; then
@@ -177,12 +184,20 @@ if [[ -z "${USER:-}" ]]; then
       SELECT u.username
       FROM radcheck u
       LEFT JOIN (
-        SELECT username, MAX(COALESCE(acctstoptime, acctstarttime)) AS last_seen
+        SELECT username, MAX(COALESCE(acctupdatetime, acctstoptime, acctstarttime)) AS last_seen
         FROM radacct
         GROUP BY username
       ) a ON a.username = u.username
       WHERE u.attribute='Cleartext-Password'
-        AND (a.last_seen IS NULL OR a.last_seen < (NOW() - INTERVAL ${SMS_INACTIVE_DAYS} DAY))
+        AND a.last_seen IS NOT NULL
+        AND a.last_seen < (NOW() - INTERVAL ${SMS_INACTIVE_DAYS} DAY)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM radacct ra_open
+          WHERE ra_open.username = u.username
+            AND ra_open.acctstoptime IS NULL
+        )
+      ORDER BY a.last_seen ASC, u.username ASC
       LIMIT 200
     " | awk 'NF')
     declare -A _seen_inactive
@@ -192,12 +207,12 @@ if [[ -z "${USER:-}" ]]; then
       [[ -n "${_seen_inactive[$TO]:-}" ]] && continue
       _seen_inactive["$TO"]=1
       STAMP="$STATE_DIR/${TO}.sms_inactive"
-      if sms_should_send "$STAMP" "$NOW_EPOCH" "${SMS_DEBOUNCE_HOURS:-24}"; then
+      if sms_should_send "$STAMP" "$NOW_EPOCH" "$INACTIVE_DEBOUNCE_HOURS"; then
         MSG="$(sms_template "$SMS_INACTIVE_TEXT" NAME "" MSISDN "$TO")"
         if [[ -n "$MSG" ]]; then
           sms_send "$TO" "$MSG"
           echo "$NOW_EPOCH" >"$STAMP"
-          log "SMS_INACTIVE user=$TO"
+          log "SMS_INACTIVE user=$TO cooldown_hours=$INACTIVE_DEBOUNCE_HOURS"
         fi
       fi
     done

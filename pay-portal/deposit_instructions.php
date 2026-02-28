@@ -23,6 +23,8 @@ $network = (string)$get('TOPUP_NETWORK', 'MTN Ghana');
 $name    = (string)$get('TOPUP_NAME', 'GRASAG-UHAS');
 $number  = (string)$get('TOPUP_NUMBER', '0530488905');
 $waText  = (string)$get('TOPUP_WA_TEXT', 'Hi, I need assistance with Nister Wifi');
+$minCents = (int)$get('TOPUP_MIN_CENTS', 3000);
+if ($minCents <= 0) $minCents = 3000;
 
 /**
  * Build WhatsApp deep link:
@@ -48,6 +50,7 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
   <p style="margin:0 0 10px">
     After payment, enter the <b>sender phone</b>, <b>amount</b>, and the <b>Transaction ID</b> from your MoMo/SMS receipt.
   </p>
+  <p style="margin:0 0 10px"><b>Minimum top up:</b> GHS <?=h(number_format($minCents / 100, 2, '.', ''))?></p>
 
   <div style="margin-top:10px">
     <a href="<?=$waHref?>" target="_blank" rel="noopener"

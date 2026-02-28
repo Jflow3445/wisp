@@ -15,6 +15,8 @@ $get = static function(string $k, $def=null) use ($s, $ENV) {
 $waSupport = preg_replace('/\D+/', '', (string)$get('WHATSAPP_SUPPORT','233598544768'));
 $waHref = $waSupport !== '' ? ('https://wa.me/'.$waSupport) : 'https://wa.me/233598544768';
 $topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
+$minTopupCents = (int)$get('TOPUP_MIN_CENTS', 3000);
+if ($minTopupCents <= 0) $minTopupCents = 3000;
 $loggedIn = user_logged_in();
 $userMsisdn = $loggedIn ? user_msisdn_display() : '';
 ?>
@@ -258,6 +260,41 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
             <?php endif; ?>
           </div>
         </div>
+        <div class="card" id="referral_card">
+          <div class="card-head">
+            <h3>Referral rewards</h3>
+            <span class="pill">Earn</span>
+          </div>
+          <?php if (!$loggedIn): ?>
+            <div class="callout" style="margin-bottom:12px">
+              <div class="callout-title">Login required</div>
+              <div class="sub">Log in to view your referral code and rewards.</div>
+              <div style="margin-top:8px"><a class="btn outline" href="/login.php">Login</a></div>
+            </div>
+          <?php endif; ?>
+          <div class="field">
+            <div class="label">Your referral code</div>
+            <div id="ref_code" class="value"><?= $loggedIn ? 'N/A' : 'Login to view' ?></div>
+            <div class="sub" id="ref_hint">Share this code with friends to earn bonus credit.</div>
+          </div>
+          <div id="ref_actions" style="margin:8px 0 12px<?= $loggedIn ? '' : ';display:none' ?>">
+            <button class="btn outline" id="ref_copy_btn" type="button">Copy code</button>
+          </div>
+          <div class="stats" id="ref_stats"<?= $loggedIn ? '' : ' style="display:none"' ?>>
+            <div>
+              <div class="label">Pending bonus</div>
+              <div id="ref_pending" class="stat">GHS 0.00</div>
+            </div>
+            <div>
+              <div class="label">Released (month)</div>
+              <div id="ref_released_month" class="stat">GHS 0.00</div>
+            </div>
+            <div>
+              <div class="label">Released (lifetime)</div>
+              <div id="ref_released_lifetime" class="stat">GHS 0.00</div>
+            </div>
+          </div>
+        </div>
         <div class="card steps">
           <h3>Simple flow</h3>
           <ol>
@@ -279,6 +316,27 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
         </div>
         <div class="pill soft">Wallet checkout</div>
       </div>
+      <div class="card highlight" id="auto_renew_card" style="margin-bottom:16px">
+        <div class="card-head">
+        <h3>Auto-renew</h3>
+          <span class="pill soft" id="auto_renew_badge">Off</span>
+        </div>
+        <p class="muted">Automatically renew when your data is nearly finished or your plan is about to expire, as long as your wallet can cover the plan price.</p>
+        <?php if (!$loggedIn): ?>
+          <div class="callout">
+            <div class="callout-title">Login required</div>
+            <div class="sub">Sign in to enable auto-renew for your account.</div>
+          </div>
+        <?php endif; ?>
+        <div class="manual" id="auto_renew_controls"<?= $loggedIn ? '' : ' style="display:none"' ?>>
+          <label class="sub" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="auto_renew_enabled"> Enable auto-renew
+          </label>
+          <select id="auto_renew_plan" class="input" aria-label="Auto renew plan"></select>
+          <button class="btn outline" id="auto_renew_save" type="button">Save</button>
+        </div>
+        <div class="sub" id="auto_renew_info"></div>
+      </div>
       <div id="plans" class="plans-grid">
         <div class="muted"><?= $loggedIn ? 'Loading plans…' : 'Login to view and buy plans.' ?></div>
       </div>
@@ -293,7 +351,7 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
       </div>
       <div class="card highlight">
         <h3>Need to pay by MoMo?</h3>
-        <p>Use the Top up wallet button after sending payment. We will review and credit your wallet.</p>
+        <p>Use the Top up wallet button after sending payment. We will review and credit your wallet. Minimum top up is <b>GHS <?=htmlspecialchars(number_format($minTopupCents / 100, 2, '.', ''), ENT_QUOTES, 'UTF-8')?></b>.</p>
         <div class="callout">
           <div class="callout-title">Manual top up checklist</div>
           <ul>
@@ -317,7 +375,8 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
   <script>
     window.NISTER_LOGGED_IN = <?= $loggedIn ? 'true' : 'false' ?>;
     window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
+    window.NISTER_MIN_TOPUP_CENTS = <?= (int)$minTopupCents ?>;
   </script>
-  <script src="assets/topup.js?v=10"></script>
+  <script src="assets/topup.js?v=12"></script>
 </body>
 </html>

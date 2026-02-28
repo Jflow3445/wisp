@@ -5,6 +5,21 @@
   var show = function(el){ if(el) el.style.display=''; };
   var hide = function(el){ if(el) el.style.display='none'; };
   var money = function(c){ return 'GHS ' + (Number(c||0)/100).toFixed(2); };
+  var MIN_TOPUP_CENTS = (typeof window !== 'undefined' && window.NISTER_MIN_TOPUP_CENTS !== undefined)
+    ? Number(window.NISTER_MIN_TOPUP_CENTS)
+    : 3000;
+  if (!isFinite(MIN_TOPUP_CENTS) || MIN_TOPUP_CENTS <= 0) MIN_TOPUP_CENTS = 3000;
+  var PLAN_CACHE = [];
+
+  function planByCode(code){
+    if (!code) return null;
+    var lc = String(code).toLowerCase();
+    for (var i=0; i<PLAN_CACHE.length; i++){
+      var p = PLAN_CACHE[i];
+      if (p && String(p.code||'').toLowerCase() === lc) return p;
+    }
+    return null;
+  }
 
   // ---------- API ----------
   async function fetchMe(){
@@ -23,7 +38,13 @@
     });
     if (r.status === 401) { window.location.href = '/login.php'; return {ok:false,error:'unauthorized'}; }
     var j = await r.json().catch(function(){ return {ok:false,error:'invalid json'}; });
-    if(!r.ok || !j.ok) throw new Error(j.error || ('HTTP '+r.status));
+    if(!r.ok || !j.ok){
+      var msg = (j && (j.message || j.error)) || ('HTTP '+r.status);
+      var err = new Error(msg);
+      err.code = j && j.error;
+      err.data = j;
+      throw err;
+    }
     return j;
   }
 
@@ -42,6 +63,7 @@
   function renderPlans(msisdn, plans){
     var root = $('#plans'); if(!root) return;
     root.innerHTML = '';
+    PLAN_CACHE = Array.isArray(plans) ? plans.slice() : [];
     if (!window.NISTER_LOGGED_IN) {
       root.appendChild(ce('div',{className:'muted', textContent:'Login to view and buy plans.'}));
       return;
@@ -84,6 +106,117 @@
       root.appendChild(card);
     });
   }
+  function renderReferral(ref){
+    var code = $('#ref_code');
+    if (!code) return;
+    if (!window.NISTER_LOGGED_IN) {
+      code.textContent = 'Login to view';
+      var stats = $('#ref_stats'); if (stats) hide(stats);
+      var actions = $('#ref_actions'); if (actions) hide(actions);
+      return;
+    }
+    var invite = (ref && ref.invite_code) ? ref.invite_code : '';
+    code.textContent = invite || 'N/A';
+    var p = $('#ref_pending'); if (p) p.textContent = money(ref && ref.pending_cents || 0);
+    var m = $('#ref_released_month'); if (m) m.textContent = money(ref && ref.released_cents_month || 0);
+    var l = $('#ref_released_lifetime'); if (l) l.textContent = money(ref && ref.released_cents_lifetime || 0);
+    var stats = $('#ref_stats'); if (stats) show(stats);
+    var actions = $('#ref_actions'); if (actions) show(actions);
+  }
+
+  var autoRenewBound = false;
+  function bindAutoRenew(){
+    if (autoRenewBound) return;
+    autoRenewBound = true;
+    var save = $('#auto_renew_save');
+    if (save) save.addEventListener('click', saveAutoRenew);
+    var sel = $('#auto_renew_plan');
+    if (sel) sel.addEventListener('change', function(){
+      if (window.__NISTER_ME__) renderAutoRenew(window.__NISTER_ME__);
+    });
+    var toggle = $('#auto_renew_enabled');
+    if (toggle) toggle.addEventListener('change', function(){
+      if (window.__NISTER_ME__) renderAutoRenew(window.__NISTER_ME__);
+    });
+  }
+
+  async function saveAutoRenew(){
+    if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return; }
+    var enabledEl = $('#auto_renew_enabled');
+    var planSel = $('#auto_renew_plan');
+    var enabled = !!(enabledEl && enabledEl.checked);
+    var planCode = planSel ? (planSel.value || '') : '';
+    if (enabled && !planCode) { alert('Select a plan to auto-renew.'); return; }
+
+    var btn = $('#auto_renew_save');
+    var old = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+    try{
+      var r = await fetch('auto_renew.php', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        credentials:'same-origin',
+        body: JSON.stringify({ enabled: enabled ? 1 : 0, plan_code: planCode })
+      });
+      if (r.status === 401) { window.location.href = '/login.php'; return; }
+      var j = await r.json().catch(function(){ return {ok:false,error:'invalid json'}; });
+      if (!r.ok || !j.ok) throw new Error((j && (j.message || j.error)) || ('HTTP '+r.status));
+      callRefreshUser();
+    }catch(e){
+      alert('Auto-renew update failed: ' + e.message);
+    }finally{
+      if (btn) { btn.disabled = false; btn.textContent = old || 'Save'; }
+    }
+  }
+
+  function renderAutoRenew(j){
+    var card = $('#auto_renew_card'); if (!card) return;
+    var controls = $('#auto_renew_controls');
+    var enabledEl = $('#auto_renew_enabled');
+    var planSel = $('#auto_renew_plan');
+    var badge = $('#auto_renew_badge');
+    var info = $('#auto_renew_info');
+    if (!window.NISTER_LOGGED_IN) {
+      if (controls) hide(controls);
+      if (info) info.textContent = 'Login to enable auto-renew.';
+      if (badge) { badge.textContent = 'Off'; badge.className = 'pill soft'; }
+      return;
+    }
+    if (controls) show(controls);
+
+    var ar = j.auto_renew || {};
+    var enabled = !!ar.enabled;
+    if (enabledEl) enabledEl.checked = enabled;
+    if (badge) { badge.textContent = enabled ? 'On' : 'Off'; badge.className = enabled ? 'pill' : 'pill soft'; }
+
+    if (planSel) {
+      var current = planSel.value;
+      planSel.innerHTML = '';
+      if (PLAN_CACHE.length === 0 && Array.isArray(j.plans)) PLAN_CACHE = j.plans.slice();
+      if (PLAN_CACHE.length === 0) {
+        planSel.appendChild(ce('option',{value:'', textContent:'No plans available'}));
+      } else {
+        PLAN_CACHE.forEach(function(p){
+          var label = (p.name || p.code || 'Plan') + ' - ' + money(p.price_cents || 0);
+          planSel.appendChild(ce('option',{value: p.code || '', textContent: label}));
+        });
+      }
+      var desired = ar.plan_code || (j.active && j.active.plan_code) || current || '';
+      if (desired) planSel.value = desired;
+    }
+
+    var selected = planSel ? planByCode(planSel.value) : null;
+    var price = selected ? (selected.price_cents || 0) : 0;
+    var bal = j.balance_cents || 0;
+    var canAfford = price > 0 && bal >= price;
+
+    if (info) {
+      if (!enabled) info.textContent = 'Auto-renew is off.';
+      else if (!selected) info.textContent = 'Choose a plan to auto-renew.';
+      else if (canAfford) info.textContent = 'Wallet can cover ' + (selected.name || selected.code || 'this plan') + '.';
+      else info.textContent = 'Top up to cover ' + (selected.name || selected.code || 'this plan') + ' (' + money(price) + ').';
+    }
+  }
   function renderLedger(ledger){
     var root = $('#recent'); if(!root) return;
     root.innerHTML = '';
@@ -104,6 +237,7 @@
   window.renderPlans = renderPlans;
   window._renderLedger = renderLedger;
   function renderAll(msisdn, j){
+    window.__NISTER_ME__ = j || null;
     var who = $('#who') || $('#msisdn_label');
     if (who) who.textContent = (window.NISTER_MSISDN||msisdn||'').trim();
 
@@ -113,6 +247,8 @@
     renderActive(j.active);
     renderPlans(msisdn, j.plans||[]);
     renderLedger(j.ledger||[]);
+    renderReferral(j.referral||{});
+    renderAutoRenew(j);
   }
 
   async function callRefreshUser(){
@@ -168,6 +304,7 @@
       + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_momo"   placeholder="MoMo number used (MTN only)"></div>'
       + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_txid"   placeholder="Transaction ID / Reference"></div>'
       + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_amount" placeholder="Amount (GHS) e.g. 20"></div>'
+      + '<div class="muted" style="margin:-6px 0 10px">Minimum top up: ' + money(MIN_TOPUP_CENTS) + '</div>'
       + '<div class="nister-actions"><button class="nister-btn nister-ghost" id="n_cancel">Close</button><button class="nister-btn nister-primary" id="n_submit">Submit Top-Up</button></div>';
 
     var instr = $('#n_instr');
@@ -205,6 +342,7 @@
 
       var amount_cents = Math.round(parseFloat(amtStr)*100);
       if(!(amount_cents>0)){ if(err){ err.textContent='Amount must be a number > 0.'; err.style.display='block'; } return; }
+      if(amount_cents < MIN_TOPUP_CENTS){ if(err){ err.textContent='Minimum top up is ' + money(MIN_TOPUP_CENTS) + '.'; err.style.display='block'; } return; }
 
       var payload = {
         payer_name: momo || msisdn,
@@ -221,7 +359,11 @@
         if(ok){ ok.textContent = 'Submitted. Request ID: '+ (res.request_id||res.ref||'-'); ok.style.display='block'; }
         setTimeout(closeModal, 1000);
       }catch(e){
-        if(err){ err.textContent = 'Submit failed: '+e.message; err.style.display='block'; }
+        var msg = e.message || 'Submit failed.';
+        if (e.code === 'min_amount' && e.data && e.data.min_ghs) {
+          msg = 'Minimum top up is GHS ' + Number(e.data.min_ghs).toFixed(2) + '.';
+        }
+        if(err){ err.textContent = 'Submit failed: '+msg; err.style.display='block'; }
       }finally{
         btn.disabled=false; btn.textContent=old;
       }
@@ -238,5 +380,19 @@
     if (window.NISTER_LOGGED_IN) callRefreshUser();
 
     ensureTopupUI();
+    bindAutoRenew();
+
+    var copyBtn = $('#ref_copy_btn');
+    if (copyBtn) copyBtn.addEventListener('click', function(){
+      var code = ($('#ref_code') && $('#ref_code').textContent || '').trim();
+      if (!code || code === 'N/A' || code === 'Login to view') return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(function(){
+          alert('Referral code copied.');
+        }).catch(function(){ alert('Copy failed.'); });
+      } else {
+        alert('Referral code: ' + code);
+      }
+    });
   });
 })();

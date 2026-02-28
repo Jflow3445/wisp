@@ -26,4 +26,5 @@ echo json_encode([
   'topup_name' => (string)$get('TOPUP_NAME','GRASAG-UHAS'),
   'topup_number' => (string)$get('TOPUP_NUMBER','0530488905'),
   'topup_wa_text' => (string)$get('TOPUP_WA_TEXT','Hi, I need assistance with Nister Wifi'),
+  'topup_min_cents' => (int)$get('TOPUP_MIN_CENTS', 3000),
 ]);

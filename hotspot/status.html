@@ -130,6 +130,9 @@ function fmtBytes(n){
   while(n>=1024 && i<u.length-1){ n/=1024; i++; }
   return (i<=1 ? n.toFixed(0) : n.toFixed(2)) + ' ' + u[i];
 }
+function fmtMoney(c){
+  return 'GHS ' + (Number(c||0)/100).toFixed(2);
+}
 function fmtDate(s){
   if(!s) return 'N/A';
   var d=new Date(s);
@@ -344,6 +347,13 @@ function populateFromServer(j){
     h('debug3').textContent = 'server diag: ' + JSON.stringify(j.diag);
   }
 
+  var ref = j.referral || {};
+  var code = (ref.invite_code || '').trim();
+  h('ref_code').textContent = code ? code : 'N/A';
+  h('ref_pending').textContent = fmtMoney(ref.pending_cents || 0);
+  h('ref_released_month').textContent = fmtMoney(ref.released_cents_month || 0);
+  h('ref_released_lifetime').textContent = fmtMoney(ref.released_cents_lifetime || 0);
+
   var user = j.username || ('$(username)');
   if (user.indexOf('$(') !== -1) user = '';
   h('btnBuy').href='pay.html?username=' + encodeURIComponent(user);
@@ -479,6 +489,21 @@ document.addEventListener('DOMContentLoaded', function(){
       else browse.href = 'https://nister.org';
     }
   }
+
+  var copyBtn = document.getElementById('ref_copy_btn');
+  if (copyBtn){
+    copyBtn.addEventListener('click', function(){
+      var code = (document.getElementById('ref_code') && document.getElementById('ref_code').textContent || '').trim();
+      if (!code || code === 'N/A') return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(function(){
+          alert('Referral code copied.');
+        }).catch(function(){ alert('Copy failed.'); });
+      } else {
+        alert('Referral code: ' + code);
+      }
+    });
+  }
 });
 </script>
 </head>
@@ -524,6 +549,18 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="muted" id="left" style="text-align:right;margin-top:4px"></div>
       <div class="grid" style="margin-top:8px"><b>Policy</b><span id="alist">N/A</span></div>
       <div class="grid"><b>Rate</b><span id="rate">N/A</span></div>
+    </div>
+
+    <div class="section-title">Referrals</div>
+    <div class="kv">
+      <div class="grid"><b>Referral code</b><span id="ref_code">N/A</span></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn btn-ghost" id="ref_copy_btn" type="button">Copy referral code</button>
+      </div>
+      <div class="grid"><b>Pending bonus</b><span id="ref_pending">GHS 0.00</span></div>
+      <div class="grid"><b>Released (this month)</b><span id="ref_released_month">GHS 0.00</span></div>
+      <div class="grid"><b>Released (lifetime)</b><span id="ref_released_lifetime">GHS 0.00</span></div>
+      <div class="small">Share your referral code to earn bonus credit.</div>
     </div>
 
     <div class="row" style="margin-top:16px">

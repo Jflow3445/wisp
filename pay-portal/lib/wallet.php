@@ -99,8 +99,10 @@ function wallet_balance(string $msisdn): int {
   return (int)$st->fetchColumn();
 }
 
-function wallet_credit(string $msisdn, int $cents, ?string $ref=null, ?string $notes=null): void {
+function wallet_credit_typed(string $msisdn, int $cents, ?string $ref=null, ?string $notes=null, string $type='deposit'): void {
   if ($cents<=0) throw new RuntimeException('credit must be positive');
+  $type = strtolower(trim($type));
+  if (!preg_match('/^[a-z_]{2,32}$/', $type)) $type = 'deposit';
   global $PDO;
   wallet_require_tables();
   if ($ref) {
@@ -111,17 +113,21 @@ function wallet_credit(string $msisdn, int $cents, ?string $ref=null, ?string $n
   $PDO->beginTransaction();
   try {
     if ($ref) {
-      $PDO->prepare("INSERT INTO ledger(msisdn,type,amount_cents,ref,notes) VALUES(:m,'deposit',:a,:r,:n)")
-          ->execute([':m'=>$msisdn,':a'=>$cents,':r'=>$ref,':n'=>$notes]);
+      $PDO->prepare("INSERT INTO ledger(msisdn,type,amount_cents,ref,notes) VALUES(:m,:t,:a,:r,:n)")
+          ->execute([':m'=>$msisdn,':t'=>$type,':a'=>$cents,':r'=>$ref,':n'=>$notes]);
     } else {
-      $PDO->prepare("INSERT INTO ledger(msisdn,type,amount_cents,notes) VALUES(:m,'deposit',:a,:n)")
-          ->execute([':m'=>$msisdn,':a'=>$cents,':n'=>$notes]);
+      $PDO->prepare("INSERT INTO ledger(msisdn,type,amount_cents,notes) VALUES(:m,:t,:a,:n)")
+          ->execute([':m'=>$msisdn,':t'=>$type,':a'=>$cents,':n'=>$notes]);
     }
     $PDO->prepare("INSERT INTO accounts(msisdn,balance_cents) VALUES(:m,:a)
                    ON DUPLICATE KEY UPDATE balance_cents=balance_cents+VALUES(balance_cents)")
         ->execute([':m'=>$msisdn,':a'=>$cents]);
     $PDO->commit();
   } catch (Throwable $e) { $PDO->rollBack(); if (str_contains($e->getMessage(),'uniq_ref')) return; throw $e; }
+}
+
+function wallet_credit(string $msisdn, int $cents, ?string $ref=null, ?string $notes=null): void {
+  wallet_credit_typed($msisdn, $cents, $ref, $notes, 'deposit');
 }
 
 function wallet_try_debit(string $msisdn, int $cents, string $ref, ?string $notes=null): bool {

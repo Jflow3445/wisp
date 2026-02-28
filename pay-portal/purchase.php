@@ -54,6 +54,7 @@ require_once __DIR__.'/lib/plans_radius.php';
 require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/settings.php';
 require_once __DIR__.'/lib/sms.php';
+require_once __DIR__.'/lib/referrals.php';
 
 try {
   $ENV = user_boot();
@@ -180,6 +181,18 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
     $expiresStr = $actualExpires->format('Y-m-d H:i:s');
     $PDO->prepare("UPDATE purchases SET status='applied', activated_at=NOW(), expires_at=:e WHERE id=:id")
         ->execute([':e'=>$expiresStr, ':id'=>$pid]);
+
+    try {
+      referrals_create_reward_for_purchase((int)$pid, $msisdn, (int)$price, $purchaseAt);
+    } catch (Throwable $e) {
+      error_log("[purchase.php referral] purchase_id={$pid} msisdn={$msisdn} error=".$e->getMessage());
+    }
+
+    try {
+      referrals_release_pending_for_referrer($msisdn, 200);
+    } catch (Throwable $e) {
+      error_log("[purchase.php referral_release] msisdn={$msisdn} error=".$e->getMessage());
+    }
 
     try {
       $tpl = trim((string)(sms_setting('SMS_PURCHASE_CONFIRM_TEXT', '') ?? ''));

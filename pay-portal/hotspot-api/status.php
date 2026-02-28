@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/../lib/common.php';
 require_once __DIR__.'/../lib/radius.php';
+require_once __DIR__.'/../lib/referrals.php';
 
 $ENV = app_boot();
 header('Content-Type: application/json; charset=utf-8');
@@ -72,9 +73,16 @@ try {
   }
 
   $state = $status['paid'] ? 'PAID' : 'NOPAID';
+  $referral = [
+    'invite_code'=>null,
+    'pending_cents'=>0,
+    'released_cents_month'=>0,
+    'released_cents_lifetime'=>0,
+  ];
+  try { $referral = referrals_user_summary($msisdn); } catch (Throwable $e) { /* keep defaults */ }
   $out = [
     'ok' => true,
-    'version' => '2026-02-03a',
+    'version' => '2026-02-28a',
     'username' => $raw,
     'state' => $state,
     'can_browse' => (bool)($status['can_browse'] ?? false),
@@ -86,6 +94,7 @@ try {
     'used_bytes' => $status['used_bytes'] ?? null,
     'period_start_str' => $periodUtc,
     'expiry_str' => $expStrUtc,
+    'referral' => $referral,
   ];
 
   if ($diag) {

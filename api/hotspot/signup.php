@@ -13,12 +13,17 @@ require_once __DIR__ . '/_db.php';
 if (is_readable(__DIR__ . '/../../pay-portal/lib/settings.php')) {
   require_once __DIR__ . '/../../pay-portal/lib/settings.php';
 }
+if (is_readable(__DIR__ . '/../../pay-portal/lib/referrals.php')) {
+  require_once __DIR__ . '/../../pay-portal/lib/referrals.php';
+}
 
 // --- Input normalization ---
 $name     = isset($_POST['name']) ? trim((string)$_POST['name']) : '';
 $username = preg_replace('/\s+/', '', (string)($_POST['username'] ?? ''));
 $password = (string)($_POST['password'] ?? '');
 $dst      = (string)($_POST['dst'] ?? '');
+$otpToken = trim((string)($_POST['otp_token'] ?? ''));
+$referralCode = trim((string)($_POST['referral_code'] ?? ''));
 
 $defaultLogin = "https://wifi.nister.org/login";
 $linkLoginOnly = (string)($_POST["link_login_only"] ?? $defaultLogin);
@@ -179,6 +184,30 @@ if (strlen($name) > 80) {
 if (strlen($password) < 6) {
   fail('weak_password', $username, $dst, $name);
 }
+if ($otpToken === '') {
+  fail('otp_required', $username, $dst, $name);
+}
+if (!function_exists('referrals_signup_token_valid') || !referrals_signup_token_valid($username, $otpToken)) {
+  fail('otp_invalid_or_expired', $username, $dst, $name);
+}
+
+$ignoreSelfReferral = false;
+$resolvedReferrer = null;
+if ($referralCode !== '') {
+  if (!function_exists('referrals_resolve_referrer_msisdn')) {
+    fail('server_error', $username, $dst, $name);
+  }
+  $resolvedReferrer = referrals_resolve_referrer_msisdn($referralCode);
+  if ($resolvedReferrer === null) {
+    fail('invalid_referral_code', $username, $dst, $name);
+  }
+  if (function_exists('referrals_canon_msisdn')) {
+    $canonUser = referrals_canon_msisdn($username);
+    if ($canonUser !== '' && $resolvedReferrer === $canonUser) {
+      $ignoreSelfReferral = true;
+    }
+  }
+}
 
 header('Cache-Control: no-store');
 
@@ -242,6 +271,29 @@ try {
   if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }
   error_log('Signup error for '.$username.': '.$e->getMessage());
   fail('server_error', $username, $dst, $name);
+}
+
+if (function_exists('referrals_ensure_profile')) {
+  try {
+    referrals_ensure_profile($username);
+  } catch (Throwable $e) {
+    error_log('Signup referral profile error for '.$username.': '.$e->getMessage());
+  }
+}
+
+if (!function_exists('referrals_consume_signup_token') || !referrals_consume_signup_token($username, $otpToken)) {
+  error_log('Signup OTP consume failed for '.$username);
+}
+
+if ($referralCode !== '' && !$ignoreSelfReferral && function_exists('referrals_bind_referral')) {
+  try {
+    $bind = referrals_bind_referral($username, $referralCode);
+    if (!($bind['ok'] ?? false)) {
+      error_log('Signup referral bind failed for '.$username.': '.json_encode($bind, JSON_UNESCAPED_SLASHES));
+    }
+  } catch (Throwable $e) {
+    error_log('Signup referral bind error for '.$username.': '.$e->getMessage());
+  }
 }
 
 try {

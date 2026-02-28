@@ -10,6 +10,7 @@ require_once __DIR__.'/../lib/alerts.php';
 require_once __DIR__.'/../lib/health.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 require_once __DIR__.'/../lib/sms.php';
+require_once __DIR__.'/../lib/referrals.php';
 
 $ENV = admin_boot();
 header('Content-Type: application/json; charset=utf-8');
@@ -61,6 +62,7 @@ function settings_allowed_keys(): array {
     'TOPUP_NAME',
     'TOPUP_NUMBER',
     'TOPUP_WA_TEXT',
+    'TOPUP_MIN_CENTS',
     'MNOTIFY_BASE',
     'MNOTIFY_API_KEY',
     'MNOTIFY_SENDER',
@@ -78,10 +80,23 @@ function settings_allowed_keys(): array {
     'SMS_PAYMENT_FAILED_TEXT',
     'SMS_RENEW_REMINDER_TEXT',
     'SMS_RENEW_REMINDER_HOURS',
+    'SMS_SIGNUP_OTP_TEXT',
     'SMS_PASSWORD_RESET_TEXT',
     'SMS_BACK_ONLINE_TEXT',
     'SMS_INACTIVE_TEXT',
     'SMS_INACTIVE_DAYS',
+    'REFERRAL_RATE_BPS',
+    'REFERRAL_MONTHLY_CAP_CENTS',
+    'REFERRAL_LIFETIME_CAP_CENTS',
+    'REFERRAL_WINDOW_DAYS',
+    'REFERRAL_PENDING_HOLD_DAYS',
+    'OTP_CODE_LENGTH',
+    'OTP_TTL_SECONDS',
+    'OTP_MAX_ATTEMPTS',
+    'OTP_RESEND_COOLDOWN_SECONDS',
+    'OTP_SESSION_TTL_SECONDS',
+    'OTP_MAX_SENDS_PER_MSISDN_HOUR',
+    'OTP_MAX_SENDS_PER_IP_HOUR',
   ];
 }
 
@@ -99,7 +114,13 @@ function normalize_setting_value(string $k, ?string $v): string {
   if ($k === 'MNOTIFY_SENDER') {
     if (strlen($v) > 11) $v = substr($v, 0, 11);
   }
-  if (in_array($k, ['SMS_QUOTA_WARN_PCT','SMS_QUOTA_WARN_MB','SMS_EXPIRY_WARN_HOURS','SMS_DEBOUNCE_HOURS','SMS_RENEW_REMINDER_HOURS','SMS_INACTIVE_DAYS'], true)) {
+  if (in_array($k, [
+    'SMS_QUOTA_WARN_PCT','SMS_QUOTA_WARN_MB','SMS_EXPIRY_WARN_HOURS','SMS_DEBOUNCE_HOURS','SMS_RENEW_REMINDER_HOURS','SMS_INACTIVE_DAYS',
+    'TOPUP_MIN_CENTS',
+    'REFERRAL_RATE_BPS','REFERRAL_MONTHLY_CAP_CENTS','REFERRAL_LIFETIME_CAP_CENTS','REFERRAL_WINDOW_DAYS','REFERRAL_PENDING_HOLD_DAYS',
+    'OTP_CODE_LENGTH','OTP_TTL_SECONDS','OTP_MAX_ATTEMPTS','OTP_RESEND_COOLDOWN_SECONDS','OTP_SESSION_TTL_SECONDS',
+    'OTP_MAX_SENDS_PER_MSISDN_HOUR','OTP_MAX_SENDS_PER_IP_HOUR',
+  ], true)) {
     $v = preg_replace('/[^\d.]/', '', $v);
   }
   return $v;
@@ -736,6 +757,15 @@ try {
 
       $pay_series = [];
       $pur_series = [];
+      $referral = [
+        'pending_cents'=>0,
+        'released_cents'=>0,
+        'expired_cents'=>0,
+        'pending_cnt'=>0,
+        'released_cnt'=>0,
+        'expired_cnt'=>0,
+        'skipped_cnt'=>0,
+      ];
       if (table_exists($PDO, 'payments')) {
         $payAmountExpr = column_exists($PDO, 'payments', 'amount_cents') ? 'amount_cents' : 'amount*100';
         $pay_series = $PDO->query("
@@ -757,6 +787,20 @@ try {
           ORDER BY d DESC
           LIMIT 14
         ")->fetchAll() ?: [];
+      }
+
+      try {
+        $referral = referrals_admin_stats();
+      } catch (Throwable $e) {
+        $referral = [
+          'pending_cents'=>0,
+          'released_cents'=>0,
+          'expired_cents'=>0,
+          'pending_cnt'=>0,
+          'released_cnt'=>0,
+          'expired_cnt'=>0,
+          'skipped_cnt'=>0,
+        ];
       }
 
       $active_sessions = null;
@@ -794,6 +838,7 @@ try {
           'top_plans'    => $top_plans,
           'series' => $pur_series,
         ],
+        'referrals' => $referral,
         'active_users' => (int)($ap['active_users'] ?? 0),
         'active_sessions' => $active_sessions,
       ]);

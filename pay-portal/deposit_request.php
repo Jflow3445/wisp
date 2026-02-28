@@ -9,6 +9,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate');
 
 require __DIR__ . '/lib/user_auth.php';
 require __DIR__ . '/config.php'; // must define $PDO
+require_once __DIR__ . '/lib/settings.php';
 require_once __DIR__ . '/lib/sms.php';
 
 // ---- helpers ----
@@ -65,6 +66,8 @@ if (isset($in['amount']) && $in['amount'] !== '') {
   if ($c > 0) $amount = number_format($c/100, 2, '.', '');
 }
 $amount_cents = ($amount !== null) ? (int)round((float)$amount * 100) : 0;
+$minTopupCents = (int)(settings_get('TOPUP_MIN_CENTS', '3000') ?? 3000);
+if ($minTopupCents <= 0) $minTopupCents = 3000;
 
 // Basic validation
 $errors = [];
@@ -75,6 +78,16 @@ if ($amount !== null && !preg_match('/^\d+(\.\d{1,2})?$/', (string)$amount)) $er
 if ($errors) {
   http_response_code(422);
   echo json_encode(['ok'=>false,'error'=>'missing_or_invalid','fields'=>$errors], JSON_UNESCAPED_SLASHES);
+  exit;
+}
+if ($amount_cents < $minTopupCents) {
+  http_response_code(422);
+  echo json_encode([
+    'ok'=>false,
+    'error'=>'min_amount',
+    'min_cents'=>$minTopupCents,
+    'min_ghs'=>number_format($minTopupCents / 100, 2, '.', ''),
+  ], JSON_UNESCAPED_SLASHES);
   exit;
 }
 

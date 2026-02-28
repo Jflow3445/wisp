@@ -10,6 +10,8 @@ try {
   require_once __DIR__.'/lib/plans_radius.php';
   require_once __DIR__.'/lib/radius.php';
   require_once __DIR__.'/lib/user_auth.php';
+  require_once __DIR__.'/lib/referrals.php';
+  require_once __DIR__.'/lib/auto_renew.php';
 
   user_boot();
   user_require_login(true);
@@ -53,6 +55,42 @@ try {
     }
   }
 
+  $referral = [
+    'invite_code'=>null,
+    'pending_cents'=>0,
+    'released_cents_month'=>0,
+    'released_cents_lifetime'=>0,
+  ];
+  try { $referral = referrals_user_summary($msisdn); } catch (Throwable $e) { /* keep defaults */ }
+
+  $autoRenew = [
+    'enabled'=>false,
+    'plan_code'=>null,
+    'plan_name'=>null,
+    'price_cents'=>null,
+    'updated_at'=>null,
+    'last_renew_at'=>null,
+    'last_attempt_at'=>null,
+    'last_error'=>null,
+  ];
+  try {
+    $auto = auto_renew_get($msisdn);
+    $planInfo = null;
+    if (!empty($auto['plan_code'])) {
+      $planInfo = radius_find_plan((string)$auto['plan_code']);
+    }
+    $autoRenew = [
+      'enabled'=>(bool)($auto['enabled'] ?? false),
+      'plan_code'=>$auto['plan_code'] ?? null,
+      'plan_name'=>$planInfo['name'] ?? ($planInfo['display_name'] ?? null),
+      'price_cents'=>$planInfo['price_cents'] ?? null,
+      'updated_at'=>$auto['updated_at'] ?? null,
+      'last_renew_at'=>$auto['last_renew_at'] ?? null,
+      'last_attempt_at'=>$auto['last_attempt_at'] ?? null,
+      'last_error'=>$auto['last_error'] ?? null,
+    ];
+  } catch (Throwable $e) { /* keep defaults */ }
+
   json_out([
     'ok'=>true,
     'msisdn'=>msisdn_display($msisdn), "msisdn_canonical"=>$msisdn,
@@ -61,6 +99,8 @@ try {
     'wallet_ok'=>$walletOk,
     'wallet_error'=>$walletErr,
     'active'=>$active,
+    'referral'=>$referral,
+    'auto_renew'=>$autoRenew,
     'plans'=>$plans,
     'ledger'=>$ledger
   ]);

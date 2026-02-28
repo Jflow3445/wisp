@@ -259,6 +259,30 @@ admin_require_login();
         <input id="set_topup_text" type="text" placeholder="Hi, I need assistance with Nister Wifi">
       </div>
       <div class="field">
+        <label for="set_topup_min">Minimum top up (GHS)</label>
+        <input id="set_topup_min" type="text" placeholder="30.00">
+      </div>
+      <div class="field">
+        <label for="set_referral_rate">Referral rate (bps)</label>
+        <input id="set_referral_rate" type="text" placeholder="1000">
+      </div>
+      <div class="field">
+        <label for="set_referral_monthly">Referral monthly cap (GHS)</label>
+        <input id="set_referral_monthly" type="text" placeholder="60.00">
+      </div>
+      <div class="field">
+        <label for="set_referral_lifetime">Referral lifetime cap (GHS)</label>
+        <input id="set_referral_lifetime" type="text" placeholder="300.00">
+      </div>
+      <div class="field">
+        <label for="set_referral_window">Referral window (days)</label>
+        <input id="set_referral_window" type="text" placeholder="365">
+      </div>
+      <div class="field">
+        <label for="set_referral_hold">Referral hold (days)</label>
+        <input id="set_referral_hold" type="text" placeholder="60">
+      </div>
+      <div class="field">
         <label for="set_sms_base">SMS API base</label>
         <input id="set_sms_base" type="text" placeholder="https://api.pilosms.com/v1">
       </div>
@@ -746,6 +770,11 @@ function initMenu(){
 }
 
 function centsToGHS(c){ return 'GHS ' + (c/100).toFixed(2); }
+function centsToAmount(c){
+  const n = Number(c);
+  if (!isFinite(n) || n <= 0) return '';
+  return (n/100).toFixed(2);
+}
 function esc(v){
   return String(v)
     .replace(/&/g,'&amp;')
@@ -1157,6 +1186,12 @@ async function loadSettings(){
   set('set_topup_name', s.TOPUP_NAME || '');
   set('set_topup_number', s.TOPUP_NUMBER || '');
   set('set_topup_text', s.TOPUP_WA_TEXT || '');
+  set('set_topup_min', centsToAmount(s.TOPUP_MIN_CENTS || ''));
+  set('set_referral_rate', s.REFERRAL_RATE_BPS || '');
+  set('set_referral_monthly', centsToAmount(s.REFERRAL_MONTHLY_CAP_CENTS || ''));
+  set('set_referral_lifetime', centsToAmount(s.REFERRAL_LIFETIME_CAP_CENTS || ''));
+  set('set_referral_window', s.REFERRAL_WINDOW_DAYS || '');
+  set('set_referral_hold', s.REFERRAL_PENDING_HOLD_DAYS || '');
   set('set_sms_base', s.MNOTIFY_BASE || '');
   set('set_sms_key', s.MNOTIFY_API_KEY || '');
   set('set_sms_sender', s.MNOTIFY_SENDER || '');
@@ -1182,6 +1217,9 @@ async function loadSettings(){
 }
 
 async function saveSettings(){
+  const minTopupRaw = toolValue('set_topup_min');
+  const referralMonthlyRaw = toolValue('set_referral_monthly');
+  const referralLifetimeRaw = toolValue('set_referral_lifetime');
   const body = {
     HOTSPOT_API_BASE: toolValue('set_api_base'),
     PAY_BASE: toolValue('set_pay_base'),
@@ -1190,6 +1228,12 @@ async function saveSettings(){
     TOPUP_NAME: toolValue('set_topup_name'),
     TOPUP_NUMBER: toolValue('set_topup_number'),
     TOPUP_WA_TEXT: toolValue('set_topup_text'),
+    TOPUP_MIN_CENTS: minTopupRaw ? String(parseAmountCents(minTopupRaw)) : '',
+    REFERRAL_RATE_BPS: toolValue('set_referral_rate'),
+    REFERRAL_MONTHLY_CAP_CENTS: referralMonthlyRaw ? String(parseAmountCents(referralMonthlyRaw)) : '',
+    REFERRAL_LIFETIME_CAP_CENTS: referralLifetimeRaw ? String(parseAmountCents(referralLifetimeRaw)) : '',
+    REFERRAL_WINDOW_DAYS: toolValue('set_referral_window'),
+    REFERRAL_PENDING_HOLD_DAYS: toolValue('set_referral_hold'),
     MNOTIFY_BASE: toolValue('set_sms_base'),
     MNOTIFY_API_KEY: toolValue('set_sms_key'),
     MNOTIFY_SENDER: toolValue('set_sms_sender'),
