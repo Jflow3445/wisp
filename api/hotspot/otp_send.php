@@ -1,8 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__.'/../../pay-portal/lib/referrals.php';
-require_once __DIR__.'/../../pay-portal/lib/sms.php';
+require_once __DIR__.'/_paylib.php';
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Headers: Content-Type');
@@ -15,6 +14,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
 }
 
 header('Content-Type: application/json; charset=utf-8');
+
+try {
+  hotspot_require_paylib('referrals.php');
+  hotspot_require_paylib('sms.php');
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo json_encode(['ok'=>false, 'error'=>'server_misconfigured'], JSON_UNESCAPED_SLASHES);
+  exit;
+}
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
   http_response_code(405);

@@ -10,11 +10,12 @@ declare(strict_types=1);
 */
 
 require_once __DIR__ . '/_db.php';
-if (is_readable(__DIR__ . '/../../pay-portal/lib/settings.php')) {
-  require_once __DIR__ . '/../../pay-portal/lib/settings.php';
-}
-if (is_readable(__DIR__ . '/../../pay-portal/lib/referrals.php')) {
-  require_once __DIR__ . '/../../pay-portal/lib/referrals.php';
+require_once __DIR__ . '/_paylib.php';
+try {
+  hotspot_include_paylib('settings.php');
+  hotspot_require_paylib('referrals.php');
+} catch (Throwable $e) {
+  error_log('Signup bootstrap error: ' . $e->getMessage());
 }
 
 function portal_base_from_link(string $link, string $fallback): string {
@@ -195,7 +196,10 @@ if (strlen($password) < 6) {
 if ($otpToken === '') {
   fail('otp_required', $username, $dst, $name);
 }
-if (!function_exists('referrals_signup_token_valid') || !referrals_signup_token_valid($username, $otpToken)) {
+if (!function_exists('referrals_signup_token_valid')) {
+  fail('server_error', $username, $dst, $name);
+}
+if (!referrals_signup_token_valid($username, $otpToken)) {
   fail('otp_invalid_or_expired', $username, $dst, $name);
 }
 
