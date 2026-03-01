@@ -5,13 +5,29 @@ require_once __DIR__.'/../lib/radius.php';
 require_once __DIR__.'/../lib/referrals.php';
 
 $ENV = app_boot();
-header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Access-Control-Allow-Origin: *');
+
+$cbRaw = (string)($_GET['callback'] ?? '');
+$callback = '';
+if ($cbRaw !== '' && preg_match('/^[A-Za-z_$][0-9A-Za-z_$]{0,63}$/', $cbRaw)) {
+  $callback = $cbRaw;
+}
+
+if ($callback !== '') {
+  header('Content-Type: application/javascript; charset=utf-8');
+} else {
+  header('Content-Type: application/json; charset=utf-8');
+}
 
 function json_out_simple(array $data, int $code=200): void {
+  global $callback;
   http_response_code($code);
-  echo json_encode($data, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+  $json = json_encode($data, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+  if ($callback !== '') {
+    echo $callback . '(' . $json . ');';
+  } else {
+    echo $json;
+  }
   exit;
 }
 

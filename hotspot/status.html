@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <title>NISTER Wi-Fi | Account Status</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="stylesheet" href="common.css">
 
 <style>
@@ -168,6 +171,55 @@ function pickApiUrl(username){
   var t = Date.now();
   var extra = qs('diag') ? '&diag=1' : '';
   return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t + extra;
+}
+
+function buildApiUrl(base, username){
+  if (!base) return '';
+  base = String(base).replace(/\/+$/,'');
+  if (!/\/status\.php$/i.test(base) && base.indexOf('/hotspot-api/status.php') === -1) {
+    base = base + '/hotspot-api/status.php';
+  }
+  if(!/\.php($|\?)/.test(base)) base += '/status.php';
+  var t = Date.now();
+  var extra = qs('diag') ? '&diag=1' : '';
+  return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t + extra;
+}
+
+function apiCandidates(username){
+  var cfgApi = (window.NISTER_CFG && window.NISTER_CFG.api_base) ? window.NISTER_CFG.api_base : '';
+  var pageProto = (location.protocol === 'https:') ? 'https:' : 'http:';
+  var raw = [
+    qs('api'),
+    cfgApi,
+    pageProto + '//api.nister.org',
+    'https://api.nister.org'
+  ];
+  if (location.protocol !== 'https:') raw.push('http://api.nister.org');
+  var out = [];
+  raw.forEach(function(b){
+    var u = buildApiUrl(b, username);
+    if (location.protocol === 'https:' && /^http:\/\//i.test(u)) return;
+    if (u && out.indexOf(u) === -1) out.push(u);
+  });
+  return out;
+}
+
+function pickPayLoginUrl(username, mac, ip){
+  var base = (window.NISTER_CFG && window.NISTER_CFG.pay_base) ? String(window.NISTER_CFG.pay_base) : 'https://pay.nister.org';
+  base = base.trim();
+  try {
+    var u = new URL(base);
+    if (/\/checkout\/?$/i.test(u.pathname || '')) u.pathname = '';
+    base = u.origin + (u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/+$/,'') : '');
+  } catch(e){
+    base = base.replace(/\/checkout\/?$/i,'').replace(/\/+$/,'');
+  }
+  return base + '/login.php?' + new URLSearchParams({
+    username: username || '',
+    mac: mac || '',
+    ip: ip || '',
+    autologin: '1'
+  }).toString();
 }
 
 var state = {
@@ -375,9 +427,11 @@ function populateFromServer(j){
 
   var user = j.username || ('$(username)');
   if (user.indexOf('$(') !== -1) user = '';
-  h('btnBuy').href='pay.html?username=' + encodeURIComponent(user);
   var mac = qs('mac') || '$(mac)';
   if (mac.indexOf('$(') !== -1) mac = '';
+  var ip = qs('ip') || '$(ip)';
+  if (ip.indexOf('$(') !== -1) ip = '';
+  h('btnBuy').href = pickPayLoginUrl(user, mac, ip);
   var changeUrl = 'change-password.html?username=' + encodeURIComponent(user);
   if (mac) changeUrl += '&mac=' + encodeURIComponent(mac);
   h('btnChange').href = changeUrl;
@@ -401,19 +455,6 @@ function setUnknownUI(){
   h('debug').textContent = 'build v2025-11-15d';
 }
 
-function loadViaJsonp(username){
-  window._nister_cb = function(j){
-    try{ populateFromServer(j); }
-    catch(e){ try{state.lastErr='JSONP parse error';}catch(_){ } setUnknownUI(); }
-  };
-  var s = document.createElement('script');
-  var url = pickApiUrl(username) + '&callback=_nister_cb';
-  state.lastUrl = url;
-  s.src = url; s.async = true;
-  s.onerror = function(){ try{state.lastErr='JSONP load error';}catch(_){ } setUnknownUI(); };
-  document.head.appendChild(s);
-}
-
 function loadViaXHR(url){
   return new Promise(function(resolve,reject){
     try{
@@ -434,6 +475,26 @@ function loadViaXHR(url){
   });
 }
 
+function loadViaJsonp(url){
+  return new Promise(function(resolve,reject){
+    var cb = '_nister_cb_' + String(Date.now()) + '_' + String(Math.floor(Math.random()*100000));
+    window[cb] = function(j){
+      try{
+        delete window[cb];
+      }catch(_){}
+      resolve(j);
+    };
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = url + (url.indexOf('?') > -1 ? '&' : '?') + 'callback=' + encodeURIComponent(cb);
+    s.onerror = function(){
+      try{ delete window[cb]; }catch(_){}
+      reject(new Error('jsonp error'));
+    };
+    document.head.appendChild(s);
+  });
+}
+
 function loadRadiusStatus(){
   h('title').textContent='Checking account...';
   h('statusNote').style.display='none';
@@ -449,34 +510,47 @@ function loadRadiusStatus(){
     return;
   }
 
-  var url = pickApiUrl(user);
-  state.lastUrl = url;
+  var urls = apiCandidates(user);
+  var tryOne = function(idx){
+    if (idx >= urls.length){
+      setUnknownUI();
+      return;
+    }
+    var url = urls[idx];
+    state.lastUrl = url;
 
-  var doJsonp = function(){
-    try{ loadViaJsonp(user); }
-    catch(e){ try{ state.lastErr = 'jsonp init error'; }catch(_){ } setUnknownUI(); }
-  };
+    var next = function(err){
+      try{
+        var msg = (err && (err.message || err.name)) || 'api failed';
+        state.lastErr = msg + ' @ ' + url;
+        var d2 = h('debug2');
+        if (d2) d2.textContent = 'api fail: ' + state.lastErr;
+      }catch(_){}
+      tryOne(idx + 1);
+    };
 
-  if (state.fetchSupported){
-    fetchWithTimeout(url, {}, 6000)
-      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-      .then(function(j){ if(!j || j.ok!==true) throw new Error('badjson'); populateFromServer(j); })
-      .catch(function(err){
-        try{ state.lastErr = (err && (err.name||err.message)) || 'fetch failed'; }catch(_){}
-        loadViaXHR(url).then(function(j){
-          if(!j || j.ok!==true) throw new Error('badjson');
-          populateFromServer(j);
-        }).catch(function(err2){
-          try{ state.lastErr = (err2 && (err2.message||'xhr failed')) || 'xhr failed'; }catch(_){}
-          doJsonp();
-        });
-      });
-  } else {
-    loadViaXHR(url).then(function(j){
+    var handleJson = function(j){
       if(!j || j.ok!==true) throw new Error('badjson');
       populateFromServer(j);
-    }).catch(function(_){ doJsonp(); });
-  }
+    };
+
+    if (state.fetchSupported){
+      fetchWithTimeout(url, {}, 6000)
+        .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+        .then(handleJson)
+        .catch(function(){
+          loadViaXHR(url).then(handleJson).catch(function(){
+            loadViaJsonp(url).then(handleJson).catch(next);
+          });
+        });
+    } else {
+      loadViaXHR(url).then(handleJson).catch(function(){
+        loadViaJsonp(url).then(handleJson).catch(next);
+      });
+    }
+  };
+
+  tryOne(0);
 }
 
 var _poll;
