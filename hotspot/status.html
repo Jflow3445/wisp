@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <title>NISTER Wi-Fi | Account Status</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests; form-action https:">
 <link rel="stylesheet" href="common.css">
 
 <style>
@@ -353,6 +352,26 @@ function populateFromServer(j){
   h('ref_pending').textContent = fmtMoney(ref.pending_cents || 0);
   h('ref_released_month').textContent = fmtMoney(ref.released_cents_month || 0);
   h('ref_released_lifetime').textContent = fmtMoney(ref.released_cents_lifetime || 0);
+  var ratePct = Number(ref.rate_pct || 0);
+  var rateStr = ratePct ? (ratePct % 1 ? ratePct.toFixed(2) : ratePct.toFixed(0)) + '%' : 'N/A';
+  h('ref_rate').textContent = rateStr === 'N/A' ? 'N/A' : (rateStr + ' of purchase value');
+  h('ref_total').textContent = String(ref.links_total || 0);
+  h('ref_active').textContent = String(ref.links_active || 0);
+  h('ref_rewards').textContent = (ref.rewards_released_cnt || 0) + ' released / ' + (ref.rewards_pending_cnt || 0) + ' pending';
+  h('ref_last').textContent = ref.last_released_at ? fmtDate(ref.last_released_at) : 'N/A';
+  var hint = h('ref_hint');
+  if (hint) {
+    if (ratePct) {
+      var caps = [];
+      if (ref.monthly_cap_cents) caps.push(fmtMoney(ref.monthly_cap_cents) + ' / month');
+      if (ref.lifetime_cap_cents) caps.push(fmtMoney(ref.lifetime_cap_cents) + ' lifetime');
+      var capText = caps.length ? (' Caps: ' + caps.join(', ') + '.') : '';
+      var holdText = ref.hold_days ? (' Rewards release after ' + ref.hold_days + ' days.') : '';
+      hint.textContent = 'Share your code to earn ' + rateStr + ' on each referral purchase.' + capText + holdText;
+    } else {
+      hint.textContent = 'Share your referral code to earn bonus credit.';
+    }
+  }
 
   var user = j.username || ('$(username)');
   if (user.indexOf('$(') !== -1) user = '';
@@ -469,12 +488,13 @@ document.addEventListener('DOMContentLoaded', function(){
   var lf = document.getElementById('logoutForm');
   if(lf){
     var raw = '$(link-logout)';
-    try {
-      var u = new URL(raw);
-      u.protocol = 'https:';
-      lf.action = u.toString();
-    } catch(e){
-      lf.action = (raw||'').replace(/^http:\/\//, 'https://');
+    if (raw && raw.indexOf('$(') === -1){
+      try {
+        var u = new URL(raw);
+        lf.action = u.toString();
+      } catch(e){
+        lf.action = raw;
+      }
     }
   }
 
@@ -557,10 +577,15 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="row" style="margin-top:8px">
         <button class="btn btn-ghost" id="ref_copy_btn" type="button">Copy referral code</button>
       </div>
+      <div class="grid"><b>Referral rate</b><span id="ref_rate">N/A</span></div>
       <div class="grid"><b>Pending bonus</b><span id="ref_pending">GHS 0.00</span></div>
       <div class="grid"><b>Released (this month)</b><span id="ref_released_month">GHS 0.00</span></div>
       <div class="grid"><b>Released (lifetime)</b><span id="ref_released_lifetime">GHS 0.00</span></div>
-      <div class="small">Share your referral code to earn bonus credit.</div>
+      <div class="grid"><b>Total referrals</b><span id="ref_total">0</span></div>
+      <div class="grid"><b>Active referrals</b><span id="ref_active">0</span></div>
+      <div class="grid"><b>Rewards (released / pending)</b><span id="ref_rewards">0 released / 0 pending</span></div>
+      <div class="grid"><b>Last reward</b><span id="ref_last">N/A</span></div>
+      <div class="small" id="ref_hint">Share your referral code to earn bonus credit.</div>
     </div>
 
     <div class="row" style="margin-top:16px">
@@ -571,7 +596,7 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
 
     <div class="row" style="margin-top:10px">
-      <a class="btn btn-ghost" id="btnBuy" href="https://pay.nister.org/login.php?username=$(username)&mac=$(mac)&ip=$(ip)&autologin=1" target="_top">Buy or renew data</a>
+      <a class="btn btn-ghost" id="btnBuy" href="pay.html" target="_top">Buy or renew data</a>
       <a class="btn btn-ghost" id="btnChange" href="change-password.html?username=$(username)&mac=$(mac)">Change password</a>
       <a class="btn btn-ghost" href="#" onclick="loadRadiusStatus();return false;">Refresh</a>
     </div>

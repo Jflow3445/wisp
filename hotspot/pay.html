@@ -6,11 +6,24 @@
 <link rel="stylesheet" href="common.css">
 <script>
 const DEFAULT_PAY_BASE = 'https://pay.nister.org';
+function normalizePayBase(base){
+  if (!base) return DEFAULT_PAY_BASE;
+  base = String(base).trim();
+  try {
+    var u = new URL(base);
+    if (/\/checkout\/?$/i.test(u.pathname || '')) {
+      u.pathname = '';
+    }
+    return u.origin + (u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/+$/,'') : '');
+  } catch(e) {
+    return base.replace(/\/checkout\/?$/i,'').replace(/\/+$/,'');
+  }
+}
 function payBase(){
   if (window.NISTER_CFG && window.NISTER_CFG.pay_base) {
-    return String(window.NISTER_CFG.pay_base).replace(/\/+$/,'');
+    return normalizePayBase(window.NISTER_CFG.pay_base);
   }
-  return DEFAULT_PAY_BASE;
+  return normalizePayBase(DEFAULT_PAY_BASE);
 }
 function go(){
   const qs = new URLSearchParams(location.search);

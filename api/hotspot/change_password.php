@@ -5,7 +5,20 @@ error_reporting(E_ERROR | E_PARSE);
 
 require_once __DIR__ . '/_db.php';
 
-$LOGIN_URL = 'https://wifi.nister.org/login.html';
+function portal_base_from_link(string $link, string $fallback): string {
+  $u = parse_url($link);
+  if (!$u || empty($u['scheme']) || empty($u['host'])) return $fallback;
+  $host = strtolower((string)$u['host']);
+  if (!in_array($host, ['wifi.nister.org', '192.168.88.1'], true)) return $fallback;
+  $base = $u['scheme'] . '://' . $u['host'];
+  if (!empty($u['port'])) $base .= ':' . $u['port'];
+  return $base;
+}
+
+$defaultLogin = 'http://wifi.nister.org/login';
+$linkLoginOnly = (string)($_REQUEST['link_login_only'] ?? $defaultLogin);
+$PORTAL_BASE = portal_base_from_link($linkLoginOnly, 'http://wifi.nister.org');
+$LOGIN_URL = $PORTAL_BASE . '/login.html';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 function username_variants(string $u): array {
@@ -18,7 +31,8 @@ function username_variants(string $u): array {
 
 function fail(string $msg, string $user = ''): void {
   http_response_code(400);
-  $back = 'https://wifi.nister.org/change-password.html';
+  global $PORTAL_BASE;
+  $back = $PORTAL_BASE . '/change-password.html';
   if ($user !== '') { $back .= '?username=' . rawurlencode($user); }
   echo "<!doctype html><meta charset='utf-8'><title>Password update failed</title>
   <style>

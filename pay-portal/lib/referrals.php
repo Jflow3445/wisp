@@ -762,6 +762,20 @@ function referrals_user_summary(string $rawMsisdn): array {
       'pending_cents'=>0,
       'released_cents_month'=>0,
       'released_cents_lifetime'=>0,
+      'links_total'=>0,
+      'links_active'=>0,
+      'rewards_pending_cnt'=>0,
+      'rewards_released_cnt'=>0,
+      'rewards_expired_cnt'=>0,
+      'rewards_skipped_cnt'=>0,
+      'last_reward_at'=>null,
+      'last_released_at'=>null,
+      'rate_bps'=>0,
+      'rate_pct'=>0,
+      'monthly_cap_cents'=>0,
+      'lifetime_cap_cents'=>0,
+      'window_days'=>0,
+      'hold_days'=>0,
     ];
   }
   $profile = referrals_ensure_profile($msisdn);
@@ -792,11 +806,79 @@ function referrals_user_summary(string $rawMsisdn): array {
   $lifeSt->execute([':m'=>$msisdn]);
   $lifeCents = (int)$lifeSt->fetchColumn();
 
+  $linkTotal = 0;
+  $linkActive = 0;
+  try {
+    $lt = $PDO->prepare("SELECT COUNT(*) FROM referral_links WHERE referrer_msisdn=:m");
+    $lt->execute([':m'=>$msisdn]);
+    $linkTotal = (int)$lt->fetchColumn();
+    $la = $PDO->prepare(
+      "SELECT COUNT(*) FROM referral_links
+       WHERE referrer_msisdn=:m AND status='active' AND ends_at>=NOW()"
+    );
+    $la->execute([':m'=>$msisdn]);
+    $linkActive = (int)$la->fetchColumn();
+  } catch (Throwable $e) { /* keep defaults */ }
+
+  $rewardCounts = [
+    'pending'=>0,
+    'released'=>0,
+    'expired'=>0,
+    'skipped'=>0,
+  ];
+  try {
+    $rc = $PDO->prepare(
+      "SELECT state, COUNT(*) AS c
+       FROM referral_rewards
+       WHERE referrer_msisdn=:m
+       GROUP BY state"
+    );
+    $rc->execute([':m'=>$msisdn]);
+    foreach ($rc->fetchAll() as $row) {
+      $state = (string)($row['state'] ?? '');
+      if ($state !== '' && array_key_exists($state, $rewardCounts)) {
+        $rewardCounts[$state] = (int)($row['c'] ?? 0);
+      }
+    }
+  } catch (Throwable $e) { /* keep defaults */ }
+
+  $lastRewardAt = null;
+  $lastReleasedAt = null;
+  try {
+    $lr = $PDO->prepare("SELECT MAX(created_at) FROM referral_rewards WHERE referrer_msisdn=:m");
+    $lr->execute([':m'=>$msisdn]);
+    $lastRewardAt = $lr->fetchColumn() ?: null;
+    $lrel = $PDO->prepare("SELECT MAX(released_at) FROM referral_rewards WHERE referrer_msisdn=:m AND released_at IS NOT NULL");
+    $lrel->execute([':m'=>$msisdn]);
+    $lastReleasedAt = $lrel->fetchColumn() ?: null;
+  } catch (Throwable $e) { /* keep defaults */ }
+
+  $rateBps = referrals_cfg_int('REFERRAL_RATE_BPS', 1000, 1, 10000);
+  $monthlyCap = referrals_cfg_int('REFERRAL_MONTHLY_CAP_CENTS', 6000, 0, 1000000000);
+  $lifetimeCap = referrals_cfg_int('REFERRAL_LIFETIME_CAP_CENTS', 30000, 0, 1000000000);
+  $windowDays = referrals_cfg_int('REFERRAL_WINDOW_DAYS', 365, 1, 3660);
+  $holdDays = referrals_cfg_int('REFERRAL_PENDING_HOLD_DAYS', 60, 1, 3650);
+  $ratePct = round($rateBps / 100, 2);
+
   return [
     'invite_code'=>$profile['invite_code'] ?? null,
     'pending_cents'=>$pendingCents,
     'released_cents_month'=>$monthCents,
     'released_cents_lifetime'=>$lifeCents,
+    'links_total'=>$linkTotal,
+    'links_active'=>$linkActive,
+    'rewards_pending_cnt'=>$rewardCounts['pending'],
+    'rewards_released_cnt'=>$rewardCounts['released'],
+    'rewards_expired_cnt'=>$rewardCounts['expired'],
+    'rewards_skipped_cnt'=>$rewardCounts['skipped'],
+    'last_reward_at'=>$lastRewardAt,
+    'last_released_at'=>$lastReleasedAt,
+    'rate_bps'=>$rateBps,
+    'rate_pct'=>$ratePct,
+    'monthly_cap_cents'=>$monthlyCap,
+    'lifetime_cap_cents'=>$lifetimeCap,
+    'window_days'=>$windowDays,
+    'hold_days'=>$holdDays,
   ];
 }
 

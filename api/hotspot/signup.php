@@ -17,6 +17,16 @@ if (is_readable(__DIR__ . '/../../pay-portal/lib/referrals.php')) {
   require_once __DIR__ . '/../../pay-portal/lib/referrals.php';
 }
 
+function portal_base_from_link(string $link, string $fallback): string {
+  $u = parse_url($link);
+  if (!$u || empty($u['scheme']) || empty($u['host'])) return $fallback;
+  $host = strtolower((string)$u['host']);
+  if (!in_array($host, ['wifi.nister.org', '192.168.88.1'], true)) return $fallback;
+  $base = $u['scheme'] . '://' . $u['host'];
+  if (!empty($u['port'])) $base .= ':' . $u['port'];
+  return $base;
+}
+
 // --- Input normalization ---
 $name     = isset($_POST['name']) ? trim((string)$_POST['name']) : '';
 $username = preg_replace('/\s+/', '', (string)($_POST['username'] ?? ''));
@@ -25,15 +35,12 @@ $dst      = (string)($_POST['dst'] ?? '');
 $otpToken = trim((string)($_POST['otp_token'] ?? ''));
 $referralCode = trim((string)($_POST['referral_code'] ?? ''));
 
-$defaultLogin = "https://wifi.nister.org/login";
-$linkLoginOnly = (string)($_POST["link_login_only"] ?? $defaultLogin);
-$u = parse_url($linkLoginOnly);
-if (!$u || !isset($u["scheme"], $u["host"]) || !in_array($u["host"], ["wifi.nister.org", "192.168.88.1"], true)) {
-  $linkLoginOnly = $defaultLogin;
-}
+$defaultLogin = 'http://wifi.nister.org/login';
+$linkLoginOnly = (string)($_REQUEST['link_login_only'] ?? $defaultLogin);
+$PORTAL_BASE = portal_base_from_link($linkLoginOnly, 'http://wifi.nister.org');
 
 // ---- config ----
-$LOGIN_URL       = 'https://wifi.nister.org/login.html';
+$LOGIN_URL       = $PORTAL_BASE . '/login.html';
 $GROUP_ON_CREATE = 'HS_NOPAID';
 $ADDR_LIST       = 'HS_NOPAID';
 $ENFORCE_UNIQUE  = true;
@@ -49,7 +56,8 @@ function username_variants(string $u): array {
 }
 
 function fail(string $code, string $username = '', string $dst = '', string $name = ''): void {
-  $back = 'https://wifi.nister.org/signup.html';
+  global $PORTAL_BASE;
+  $back = $PORTAL_BASE . '/signup.html';
   $params = ['err' => $code];
   if ($username !== '') { $params['username'] = $username; }
   if ($name !== '')     { $params['name'] = $name; }

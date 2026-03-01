@@ -296,7 +296,7 @@ admin_require_login();
       </div>
       <div class="field">
         <label for="set_sms_login_url">SMS login URL</label>
-        <input id="set_sms_login_url" type="text" placeholder="https://wifi.nister.org/login.html">
+        <input id="set_sms_login_url" type="text" placeholder="http://wifi.nister.org/login.html">
       </div>
       <div class="field">
         <label for="set_sms_welcome">SMS welcome template</label>
