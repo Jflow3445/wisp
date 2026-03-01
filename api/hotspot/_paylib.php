@@ -30,6 +30,14 @@ function hotspot_require_paylib(string $file): void {
     $path = $dir . '/' . $file;
     if (is_readable($path)) {
       require_once $path;
+      // If pay libs were loaded from inside this helper (function scope),
+      // promote commonly expected globals to true global scope.
+      if ((!isset($GLOBALS['PDO']) || $GLOBALS['PDO'] === null) && isset($PDO)) {
+        $GLOBALS['PDO'] = $PDO;
+      }
+      if ((!isset($GLOBALS['ENV']) || $GLOBALS['ENV'] === null) && isset($ENV)) {
+        $GLOBALS['ENV'] = $ENV;
+      }
       return;
     }
   }
@@ -42,6 +50,12 @@ function hotspot_include_paylib(string $file): bool {
     $path = $dir . '/' . $file;
     if (is_readable($path)) {
       require_once $path;
+      if ((!isset($GLOBALS['PDO']) || $GLOBALS['PDO'] === null) && isset($PDO)) {
+        $GLOBALS['PDO'] = $PDO;
+      }
+      if ((!isset($GLOBALS['ENV']) || $GLOBALS['ENV'] === null) && isset($ENV)) {
+        $GLOBALS['ENV'] = $ENV;
+      }
       return true;
     }
   }
