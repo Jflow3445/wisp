@@ -1311,6 +1311,265 @@ try {
       break;
     }
 
+    case 'user_reset_login': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      $pass = trim((string)from_any([$in],'password',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+
+      $generated = false;
+      if ($pass === '') {
+        // 8-digit temporary password for quick account recovery.
+        $pass = (string)random_int(10000000, 99999999);
+        $generated = true;
+      }
+      if (strlen($pass) < 4) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'password_too_short']); break; }
+
+      try {
+        $r = rdb_pdo();
+        $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
+        if (!$targets) $targets = [$msisdn];
+        $ph = implode(",", array_fill(0, count($targets), "?"));
+
+        // Detect existing account footprint (not only Cleartext-Password).
+        $exists = 0;
+        foreach (['radcheck','radreply','radusergroup'] as $tbl) {
+          if (!table_exists($r, $tbl)) continue;
+          $st = $r->prepare("SELECT COUNT(*) FROM {$tbl} WHERE username IN ($ph)");
+          $st->execute($targets);
+          $exists += (int)$st->fetchColumn();
+        }
+        if ($exists <= 0) {
+          http_response_code(404);
+          echo json_encode(['ok'=>false,'error'=>'user_not_found']);
+          break;
+        }
+
+        $started = false;
+        if (!$r->inTransaction()) { $r->beginTransaction(); $started = true; }
+        try {
+          $passAttrs = [
+            'Cleartext-Password','Password','Crypt-Password',
+            'MD5-Password','SHA-Password','SSHA-Password','SMD5-Password',
+            'NT-Password','LM-Password'
+          ];
+          $ph2 = implode(",", array_fill(0, count($passAttrs), "?"));
+          $del = $r->prepare("DELETE FROM radcheck WHERE username IN ($ph) AND attribute IN ($ph2)");
+          $del->execute(array_merge($targets, $passAttrs));
+
+          $upsert = $r->prepare(
+            "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
+             ON DUPLICATE KEY UPDATE value = VALUES(value), op=':='"
+          );
+          foreach ($targets as $u) {
+            $upsert->execute([$u, $pass]);
+          }
+
+          // If one variant already has an HS_* group, mirror it to the others.
+          $grp = null;
+          if (table_exists($r, 'radusergroup')) {
+            $st = $r->prepare("SELECT groupname FROM radusergroup WHERE username IN ($ph) AND groupname LIKE 'HS\\_%' ORDER BY priority ASC LIMIT 1");
+            $st->execute($targets);
+            $grp = (string)($st->fetchColumn() ?: '');
+            if ($grp !== '') {
+              $ins = $r->prepare(
+                "INSERT INTO radusergroup (username, groupname, priority)
+                 SELECT :u, :g, 0 FROM DUAL
+                 WHERE NOT EXISTS (
+                   SELECT 1 FROM radusergroup WHERE username=:u AND groupname=:g
+                 )"
+              );
+              foreach ($targets as $u) {
+                $ins->execute([':u'=>$u, ':g'=>$grp]);
+              }
+            }
+          }
+
+          if ($started && $r->inTransaction()) $r->commit();
+        } catch (Throwable $e) {
+          if ($started && $r->inTransaction()) $r->rollBack();
+          throw $e;
+        }
+
+        try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
+
+        echo json_encode([
+          'ok'=>true,
+          'msisdn'=>$msisdn,
+          'targets'=>$targets,
+          'generated_password'=>$generated,
+          'password'=>$pass,
+        ]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'user_reset_login_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_delete': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      try {
+        $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
+        if (!$targets) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'invalid_msisdn']);
+          break;
+        }
+
+        // Best-effort disconnect before removing auth records.
+        try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
+
+        $r = rdb_pdo();
+        $ph = implode(",", array_fill(0, count($targets), "?"));
+        $deleted = [];
+
+        foreach (['radcheck','radreply','radusergroup','radpostauth'] as $tbl) {
+          if (!table_exists($r, $tbl)) continue;
+          $st = $r->prepare("DELETE FROM {$tbl} WHERE username IN ($ph)");
+          $st->execute($targets);
+          $deleted[$tbl] = (int)$st->rowCount();
+        }
+
+        // Remove open accounting sessions only; keep closed session history for audit.
+        if (table_exists($r, 'radacct')) {
+          $st = $r->prepare("DELETE FROM radacct WHERE username IN ($ph) AND acctstoptime IS NULL");
+          $st->execute($targets);
+          $deleted['radacct_open'] = (int)$st->rowCount();
+        }
+
+        $portalDeleted = [];
+        try {
+          $ids = array_values(array_unique(array_filter([$msisdn, msisdn_local($msisdn)])));
+          if ($ids) {
+            $ph2 = implode(",", array_fill(0, count($ids), "?"));
+            if (table_exists($PDO, 'signup_otp_challenges')) {
+              $st = $PDO->prepare("DELETE FROM signup_otp_challenges WHERE msisdn IN ($ph2)");
+              $st->execute($ids);
+              $portalDeleted['signup_otp_challenges'] = (int)$st->rowCount();
+            }
+            if (table_exists($PDO, 'signup_otp_sessions')) {
+              $st = $PDO->prepare("DELETE FROM signup_otp_sessions WHERE msisdn IN ($ph2)");
+              $st->execute($ids);
+              $portalDeleted['signup_otp_sessions'] = (int)$st->rowCount();
+            }
+          }
+        } catch (Throwable $e) {
+          // Do not fail account deletion if OTP cleanup fails.
+        }
+
+        echo json_encode([
+          'ok'=>true,
+          'targets'=>$targets,
+          'deleted'=>$deleted,
+          'portal_deleted'=>$portalDeleted,
+        ]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'user_delete_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'user_purge': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      $confirm = strtoupper(trim((string)from_any([$in], 'confirm', from_any([$in], 'confirm_text', ''))));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      if ($confirm !== 'PURGE') {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'confirm_required','detail'=>'Set confirm=PURGE to proceed']);
+        break;
+      }
+      try {
+        $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
+        $ids = array_values(array_unique(array_filter([$msisdn, msisdn_local($msisdn)])));
+        if (!$targets) $targets = [$msisdn];
+        if (!$ids) $ids = [$msisdn];
+
+        // Best-effort disconnect before deleting everything.
+        try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
+
+        $r = rdb_pdo();
+        $startedR = false;
+        $startedP = false;
+        if (!$r->inTransaction()) { $r->beginTransaction(); $startedR = true; }
+        if (!$PDO->inTransaction()) { $PDO->beginTransaction(); $startedP = true; }
+
+        $deleted = [
+          'radius' => [],
+          'portal' => [],
+        ];
+
+        // Radius/full auth purge.
+        $phU = implode(",", array_fill(0, count($targets), "?"));
+        foreach (['radcheck','radreply','radusergroup','radpostauth','radacct','radippool'] as $tbl) {
+          if (!table_exists($r, $tbl)) continue;
+          $st = $r->prepare("DELETE FROM {$tbl} WHERE username IN ($phU)");
+          $st->execute($targets);
+          $deleted['radius'][$tbl] = (int)$st->rowCount();
+        }
+
+        // Pay portal purge (wallet, purchases, referrals, otp, payments, automation, alerts).
+        $phM = implode(",", array_fill(0, count($ids), "?"));
+
+        if (table_exists($PDO, 'referral_rewards')) {
+          $st = $PDO->prepare("DELETE FROM referral_rewards WHERE referrer_msisdn IN ($phM) OR referred_msisdn IN ($phM)");
+          $st->execute(array_merge($ids, $ids));
+          $deleted['portal']['referral_rewards'] = (int)$st->rowCount();
+        }
+        if (table_exists($PDO, 'referral_links')) {
+          $st = $PDO->prepare("DELETE FROM referral_links WHERE referrer_msisdn IN ($phM) OR referred_msisdn IN ($phM)");
+          $st->execute(array_merge($ids, $ids));
+          $deleted['portal']['referral_links'] = (int)$st->rowCount();
+        }
+        if (table_exists($PDO, 'referral_profiles')) {
+          $st = $PDO->prepare("DELETE FROM referral_profiles WHERE msisdn IN ($phM)");
+          $st->execute($ids);
+          $deleted['portal']['referral_profiles'] = (int)$st->rowCount();
+        }
+
+        foreach ([
+          'signup_otp_sessions',
+          'signup_otp_challenges',
+          'auto_renew_settings',
+          'payments',
+          'purchases',
+          'ledger',
+          'accounts',
+        ] as $tbl) {
+          if (!table_exists($PDO, $tbl)) continue;
+          $st = $PDO->prepare("DELETE FROM {$tbl} WHERE msisdn IN ($phM)");
+          $st->execute($ids);
+          $deleted['portal'][$tbl] = (int)$st->rowCount();
+        }
+
+        $alertKeys = array_values(array_unique(array_filter(array_merge($targets, $ids))));
+        if ($alertKeys && table_exists($PDO, 'admin_alerts')) {
+          $phA = implode(",", array_fill(0, count($alertKeys), "?"));
+          $st = $PDO->prepare("DELETE FROM admin_alerts WHERE username IN ($phA)");
+          $st->execute($alertKeys);
+          $deleted['portal']['admin_alerts'] = (int)$st->rowCount();
+        }
+
+        if ($startedR && $r->inTransaction()) $r->commit();
+        if ($startedP && $PDO->inTransaction()) $PDO->commit();
+
+        echo json_encode([
+          'ok'=>true,
+          'msisdn'=>$msisdn,
+          'targets'=>$targets,
+          'portal_ids'=>$ids,
+          'deleted'=>$deleted,
+        ]);
+      } catch (Throwable $e) {
+        try { if (isset($r) && $r instanceof PDO && $r->inTransaction()) $r->rollBack(); } catch (Throwable $x) {}
+        try { if ($PDO->inTransaction()) $PDO->rollBack(); } catch (Throwable $x) {}
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'user_purge_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
     case 'user_force_expire': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }

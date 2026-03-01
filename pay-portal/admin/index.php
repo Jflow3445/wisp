@@ -589,7 +589,7 @@ admin_require_login();
   <div class="card" data-section="users">
     <div class="section-head">
       <h2>User Tools</h2>
-      <div class="muted">Lookup users, credit wallets, apply plans, or disconnect sessions.</div>
+      <div class="muted">Lookup users, apply actions, delete access records, or fully purge user data.</div>
     </div>
     <div class="split">
       <div>
@@ -653,11 +653,14 @@ admin_require_login();
         </div>
         <div class="tool-actions">
           <button class="btn" id="tool_lookup" type="button">Lookup</button>
+          <button class="btn" id="tool_reset_login" type="button">Reset Login</button>
           <button class="btn approve" id="tool_credit" type="button">Credit Wallet</button>
           <button class="btn" id="tool_apply" type="button">Apply Plan</button>
           <button class="btn decline" id="tool_disconnect" type="button">Disconnect</button>
           <button class="btn decline" id="tool_force_kick_ip" type="button">Force Kick by IP</button>
           <button class="btn approve" id="tool_set_password" type="button">Set Password</button>
+          <button class="btn decline" id="tool_delete_user" type="button">Delete User (Access)</button>
+          <button class="btn decline" id="tool_purge_user" type="button">Full Purge User</button>
         </div>
         <div class="tool-actions">
           <button class="btn" id="tool_set_expiry" type="button">Set Expiry</button>
@@ -1068,6 +1071,8 @@ function renderUserStates(rows){
       <button class="btn small" data-act="nopaid" data-u="${safe(r.username)}">NoPay</button>
       <button class="btn small approve" data-act="expire" data-u="${safe(r.username)}">Expire</button>
       <button class="btn small approve" data-act="exhaust" data-u="${safe(r.username)}">Exhaust</button>
+      <button class="btn small decline" data-act="delete" data-u="${safe(r.username)}">Delete</button>
+      <button class="btn small decline" data-act="purge" data-u="${safe(r.username)}">Purge</button>
     </td>
   </tr>`).join('');
 
@@ -1081,6 +1086,36 @@ function renderUserStates(rows){
       if (act === 'nopaid') await api('user_set_group', { msisdn: u, group: 'HS_NOPAID' });
       if (act === 'expire') await api('user_force_expire', { msisdn: u });
       if (act === 'exhaust') await api('user_force_exhaust', { msisdn: u });
+      if (act === 'delete') {
+        if (!confirm(`Delete user ${u}? This removes hotspot login/policy records.`)) return;
+        const j = await api('user_delete', { msisdn: u });
+        if (!j.ok) {
+          setToolStatus(j.error || 'Delete failed.', 'error');
+          return;
+        }
+        if (toolValue('tool_msisdn') === u) {
+          renderUserSnapshot({ balance_cents: null, status: null, active_plan: null, ledger: [] });
+        }
+        setToolStatus(`Deleted ${u}.`, 'success');
+      }
+      if (act === 'purge') {
+        const typed = window.prompt(`FULL PURGE for ${u} is permanent.\nType PURGE to continue.`);
+        if (typed === null) return;
+        if (String(typed).trim().toUpperCase() !== 'PURGE') {
+          setToolStatus('Purge cancelled. Confirmation mismatch.', 'error');
+          return;
+        }
+        const j = await api('user_purge', { msisdn: u, confirm: 'PURGE' });
+        if (!j.ok) {
+          setToolStatus(j.error || 'Purge failed.', 'error');
+          return;
+        }
+        if (toolValue('tool_msisdn') === u) {
+          renderUserSnapshot({ balance_cents: null, status: null, active_plan: null, ledger: [] });
+        }
+        await loadStats();
+        setToolStatus(`Purged ${u}.`, 'success');
+      }
       await loadUserStates();
     });
   });
@@ -1763,6 +1798,84 @@ async function setPassword(){
   setToolStatus('Password updated.', 'success');
 }
 
+async function resetLogin(){
+  const msisdn = toolValue('tool_msisdn');
+  const password = toolValue('tool_new_password');
+  const confirm = toolValue('tool_new_password2');
+  if (!msisdn){
+    setToolStatus('MSISDN is required.', 'error');
+    return;
+  }
+  if (password && confirm && confirm !== password){
+    setToolStatus('Passwords do not match.', 'error');
+    return;
+  }
+  if (!confirm(`Reset login for ${msisdn}? This will rewrite hotspot password attributes.`)) return;
+  setToolStatus('Repairing login...');
+  const body = { msisdn };
+  if (password) body.password = password;
+  const j = await api('user_reset_login', body);
+  if (!j.ok){
+    setToolStatus(j.error || 'Login reset failed.', 'error');
+    return;
+  }
+  const finalPass = j.password || password || '';
+  if (finalPass) {
+    const p1 = document.getElementById('tool_new_password');
+    const p2 = document.getElementById('tool_new_password2');
+    if (p1) p1.value = finalPass;
+    if (p2) p2.value = finalPass;
+  }
+  await lookupUser();
+  if (j.generated_password && j.password) {
+    setToolStatus(`Login reset complete. Temporary password: ${j.password}`, 'success');
+  } else {
+    setToolStatus('Login reset complete.', 'success');
+  }
+}
+
+async function deleteUser(){
+  const msisdn = toolValue('tool_msisdn');
+  if (!msisdn){
+    setToolStatus('MSISDN is required.', 'error');
+    return;
+  }
+  if (!confirm(`Delete user ${msisdn}? This removes hotspot login/policy records.`)) return;
+  setToolStatus('Deleting user...');
+  const j = await api('user_delete', { msisdn });
+  if (!j.ok){
+    setToolStatus(j.error || 'Delete failed.', 'error');
+    return;
+  }
+  await loadUserStates();
+  renderUserSnapshot({ balance_cents: null, status: null, active_plan: null, ledger: [] });
+  setToolStatus('User deleted.', 'success');
+}
+
+async function purgeUser(){
+  const msisdn = toolValue('tool_msisdn');
+  if (!msisdn){
+    setToolStatus('MSISDN is required.', 'error');
+    return;
+  }
+  const typed = window.prompt(`FULL PURGE for ${msisdn} is permanent.\nType PURGE to continue.`);
+  if (typed === null) return;
+  if (String(typed).trim().toUpperCase() !== 'PURGE'){
+    setToolStatus('Purge cancelled. Confirmation mismatch.', 'error');
+    return;
+  }
+  setToolStatus('Purging user records...');
+  const j = await api('user_purge', { msisdn, confirm: 'PURGE' });
+  if (!j.ok){
+    setToolStatus(j.error || 'Purge failed.', 'error');
+    return;
+  }
+  await loadStats();
+  await loadUserStates();
+  renderUserSnapshot({ balance_cents: null, status: null, active_plan: null, ledger: [] });
+  setToolStatus('User fully purged.', 'success');
+}
+
 async function sendSms(){
   const audience = toolValue('sms_audience') || 'list';
   const group = toolValue('sms_group');
@@ -1822,6 +1935,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (btn) btn.addEventListener('click', refreshAll);
   const lookupBtn = document.getElementById('tool_lookup');
   if (lookupBtn) lookupBtn.addEventListener('click', lookupUser);
+  const resetLoginBtn = document.getElementById('tool_reset_login');
+  if (resetLoginBtn) resetLoginBtn.addEventListener('click', resetLogin);
   const creditBtn = document.getElementById('tool_credit');
   if (creditBtn) creditBtn.addEventListener('click', creditWallet);
   const applyBtn = document.getElementById('tool_apply');
@@ -1848,6 +1963,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (resetBtn) resetBtn.addEventListener('click', resetNoPaid);
   const setPassBtn = document.getElementById('tool_set_password');
   if (setPassBtn) setPassBtn.addEventListener('click', setPassword);
+  const delUserBtn = document.getElementById('tool_delete_user');
+  if (delUserBtn) delUserBtn.addEventListener('click', deleteUser);
+  const purgeBtn = document.getElementById('tool_purge_user');
+  if (purgeBtn) purgeBtn.addEventListener('click', purgeUser);
 
   const stateSearch = document.getElementById('state_search');
   if (stateSearch) stateSearch.addEventListener('input', loadUserStates);

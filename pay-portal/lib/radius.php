@@ -468,9 +468,13 @@ function radius_user_status(string $msisdn): array {
   $usedBytes = 0;
   $exhausted = false;
   if ($quotaBytes !== null) {
-    $windowStart = ($expiry instanceof DateTimeImmutable)
-      ? $expiry->modify('-'.$durDays.' days')
-      : $now->modify('-'.$durDays.' days');
+    // Prefer explicit window anchor written at plan/top-up apply time.
+    $windowStart = nister_fetch_window_start($r, $targets, $tz);
+    if (!($windowStart instanceof DateTimeImmutable)) {
+      $windowStart = ($expiry instanceof DateTimeImmutable)
+        ? $expiry->modify('-'.$durDays.' days')
+        : $now->modify('-'.$durDays.' days');
+    }
     $usedBytes = nister_sum_used_bytes($r, $targets, $windowStart, $now);
     $exhausted = ($usedBytes >= $quotaBytes);
   }

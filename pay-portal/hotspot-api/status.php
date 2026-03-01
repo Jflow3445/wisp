@@ -98,7 +98,7 @@ try {
   try { $referral = referrals_user_summary($msisdn); } catch (Throwable $e) { /* keep defaults */ }
   $out = [
     'ok' => true,
-    'version' => '2026-02-28a',
+    'version' => '2026-03-01b',
     'username' => $raw,
     'state' => $state,
     'can_browse' => (bool)($status['can_browse'] ?? false),
