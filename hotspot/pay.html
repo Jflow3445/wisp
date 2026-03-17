@@ -33,8 +33,16 @@ function go(){
   const username = qs.get('username') || '$(username)';
   const mac = '$(mac)';
   const ip = '$(ip)';
+  const loggedIn = '$(logged-in)';
+  const canAutologin = (
+    loggedIn &&
+    loggedIn.indexOf('$(') === -1 &&
+    String(loggedIn).toLowerCase() === 'yes'
+  );
   const base = payBase();
-  const url = base.replace(/\/+$/,'') + '/login.php?' + new URLSearchParams({username, mac, ip, autologin: '1'}).toString();
+  const params = {username, mac, ip};
+  if (canAutologin) params.autologin = '1';
+  const url = base.replace(/\/+$/,'') + '/login.php?' + new URLSearchParams(params).toString();
   location.href = url;
 }
 </script>

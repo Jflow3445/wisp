@@ -181,8 +181,8 @@ function sessionUsedBytes(){
 function effectiveUsedBytes(apiUsed){
   var u = Number(apiUsed || 0);
   if (!isFinite(u) || u < 0) u = 0;
-  var s = sessionUsedBytes();
-  return (s > u) ? s : u;
+  // Single source of truth: rely on backend computed usage only.
+  return u;
 }
 function fetchWithTimeout(url, opts, ms){
   var ctrl=new AbortController();

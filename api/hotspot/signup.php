@@ -261,6 +261,9 @@ try {
     "INSERT INTO radusergroup (username, groupname, priority) VALUES (?, ?, 1)
      ON DUPLICATE KEY UPDATE priority = VALUES(priority)"
   );
+  $legacyNoPaidDelete = $pdo->prepare(
+    "DELETE FROM radusergroup WHERE username = ? AND groupname = 'nopaid'"
+  );
 
   foreach ($targets as $u) {
     $passUpsert->execute([$u, $password]);
@@ -269,6 +272,8 @@ try {
     if ($GROUP_ON_CREATE !== '') {
       $groupUpsert->execute([$u, $GROUP_ON_CREATE]);
     }
+    // Hard-stop legacy duplicate group assignment for new signups.
+    $legacyNoPaidDelete->execute([$u]);
   }
 
   $pdo->commit();

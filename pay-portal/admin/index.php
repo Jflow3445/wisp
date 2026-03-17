@@ -80,9 +80,25 @@ admin_require_login();
   .field textarea:focus{outline:2px solid rgba(15,118,110,.2);border-color:var(--accent)}
   .tool-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .meta{font-size:.9rem;color:var(--muted);margin-top:8px;display:grid;gap:4px}
-  .note{font-size:.85rem;color:var(--muted);margin-top:10px}
-  .note.error{color:#b91c1c}
-  .note.success{color:#14532d}
+  .note{
+    font-size:.85rem;
+    color:var(--muted);
+    margin-top:10px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#fff;
+    padding:8px 10px;
+  }
+  .note.error{
+    color:#7f1d1d;
+    border-color:#fecaca;
+    background:#fef2f2;
+  }
+  .note.success{
+    color:#14532d;
+    border-color:#bbf7d0;
+    background:#f0fdf4;
+  }
   .check{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted)}
   .check input{width:16px;height:16px}
   .row-inactive{opacity:.65}
@@ -151,6 +167,7 @@ admin_require_login();
           <button class="btn" data-section="settings" type="button" onclick="setSection('settings')">Settings</button>
           <button class="btn" data-section="alerts" type="button" onclick="setSection('alerts')">Alerts</button>
           <button class="btn" data-section="users" type="button" onclick="setSection('users')">Users</button>
+          <button class="btn" data-section="forensics" type="button" onclick="setSection('forensics')">Forensics</button>
           <button class="btn" data-section="all" type="button" onclick="setSection('all')">All</button>
         </div>
       </div>
@@ -186,6 +203,7 @@ admin_require_login();
       <div class="kpi">
         <div class="label">Active sessions</div>
         <div class="value" id="active_sessions">n/a</div>
+        <div class="muted" id="active_sessions_meta">source: -</div>
       </div>
     </div>
     <div class="section-head" style="margin-top:14px">
@@ -690,6 +708,51 @@ admin_require_login();
       </div>
     </div>
   </div>
+  <div class="card" data-section="forensics">
+    <div class="section-head">
+      <h2>Traffic Forensics Export</h2>
+      <div class="muted">Export destination IP evidence for legal investigations (all users or per user).</div>
+    </div>
+    <div class="grid tight">
+      <div class="kpi compact">
+        <div class="label">Collector</div>
+        <div class="value" id="flow_collector_state">-</div>
+        <div class="muted" id="flow_collector_meta">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Latest capture file</div>
+        <div class="value" id="flow_latest_file">-</div>
+        <div class="muted" id="flow_latest_file_meta">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Files in last 60m</div>
+        <div class="value" id="flow_files_60m">-</div>
+        <div class="muted" id="flow_files_60m_meta">-</div>
+      </div>
+    </div>
+    <div class="form-grid" style="margin-top:10px">
+      <div class="field">
+        <label for="flow_from">From (UTC)</label>
+        <input id="flow_from" type="datetime-local">
+      </div>
+      <div class="field">
+        <label for="flow_to">To (UTC)</label>
+        <input id="flow_to" type="datetime-local">
+      </div>
+      <div class="field">
+        <label for="flow_msisdn">MSISDN (per-user export)</label>
+        <input id="flow_msisdn" type="text" placeholder="2335xxxxxxx or 05xxxxxxx">
+      </div>
+    </div>
+    <div class="tool-actions">
+      <button class="btn approve" id="flow_export_all" type="button">Export Forensic CSV (All)</button>
+      <button class="btn approve" id="flow_export_user" type="button">Export Forensic CSV (Per User)</button>
+      <button class="btn" id="flow_export_raw" type="button">Export Raw NetFlow CSV</button>
+      <button class="btn" id="flow_refresh" type="button">Refresh Collector Status</button>
+    </div>
+    <div class="note" id="flow_status_note">Set a window, then export. Use per-user export for direct attribution.</div>
+    <div class="hint">Per-user export maps NetFlow records to RADIUS sessions by client IP and timestamp.</div>
+  </div>
   <div class="card" data-section="users">
     <div class="section-head">
       <h2>SMS Broadcast</h2>
@@ -855,6 +918,46 @@ function fmtMpbs(v){
   return `${n.toFixed(2)} Mbps`;
 }
 
+function setFlowStatusNote(msg, state){
+  const el = document.getElementById('flow_status_note');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error','success');
+  if (state === 'error') el.classList.add('error');
+  if (state === 'success') el.classList.add('success');
+}
+
+function toDatetimeLocalValue(d){
+  const pad = (n)=>String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
+function flowWindowValue(id){
+  const raw = toolValue(id);
+  if (!raw) return '';
+  const v = raw.replace('T', ' ');
+  return v.length === 16 ? `${v}:00` : v;
+}
+
+function flowMsisdnCanonical(raw){
+  const digits = String(raw || '').replace(/\D+/g, '');
+  if (!digits) return '';
+  if (/^233\d{9}$/.test(digits)) return digits;
+  if (/^0\d{9}$/.test(digits)) return `233${digits.slice(1)}`;
+  return '';
+}
+
+function initFlowWindowDefaults(){
+  const fromEl = document.getElementById('flow_from');
+  const toEl = document.getElementById('flow_to');
+  if (!fromEl || !toEl) return;
+  if (fromEl.value && toEl.value) return;
+  const now = new Date();
+  const from = new Date(now.getTime() - (60 * 60 * 1000));
+  fromEl.value = toDatetimeLocalValue(from);
+  toEl.value = toDatetimeLocalValue(now);
+}
+
 let adminPlansByCode = {};
 let alertsAutoRetryRunning = false;
 
@@ -875,6 +978,14 @@ async function loadStats(){
   document.getElementById('wallet_purchases').textContent = centsToGHS(j.wallet?.purchases_cents||0);
   document.getElementById('active_users').textContent = j.active_users ?? 0;
   document.getElementById('active_sessions').textContent = (j.active_sessions === null || j.active_sessions === undefined) ? 'n/a' : j.active_sessions;
+  const asm = document.getElementById('active_sessions_meta');
+  if (asm) {
+    const mode = String(j.active_sessions_mode || '');
+    if (mode === 'open_session_recent_15m') asm.textContent = 'source: open accounting sessions (recent 15m)';
+    else if (mode === 'open_session') asm.textContent = 'source: open accounting sessions';
+    else if (mode === 'recent_activity_15m') asm.textContent = 'source: recent accounting activity (15m)';
+    else asm.textContent = 'source: unavailable';
+  }
   document.getElementById('pay_pending_cnt').textContent = j.payments?.pending_cnt ?? 0;
   document.getElementById('pay_pending_sum').textContent = centsToGHS(j.payments?.pending_cents||0);
   document.getElementById('pay_approved_cnt').textContent = j.payments?.approved_cnt ?? 0;
@@ -896,7 +1007,26 @@ function renderHealth(j){
   const updated = latest && latest.ts ? latest.ts : '-';
   const overall = latest ? healthFlag(latest.overall_ok) : '-';
   const radius = latest ? healthFlag(latest.radius_ok) : '-';
-  const coaRate = (j.coa_rate !== null && j.coa_rate !== undefined) ? `${j.coa_rate}%` : '-';
+  const coaStats = (j && typeof j.coa_stats === 'object' && j.coa_stats) ? j.coa_stats : null;
+  let coaRate = '-';
+  let coaMeta = latest ? fmtMs(latest.coa_ms) : '-';
+  if (coaStats && Number.isFinite(Number(coaStats.total))) {
+    const total = Number(coaStats.total);
+    const ok = Number(coaStats.ok || 0);
+    if (total > 0) {
+      const rate = (coaStats.rate !== null && coaStats.rate !== undefined)
+        ? Number(coaStats.rate)
+        : ((j.coa_rate !== null && j.coa_rate !== undefined) ? Number(j.coa_rate) : NaN);
+      coaRate = Number.isFinite(rate) ? `${rate.toFixed(1)}%` : '-';
+      coaMeta = `${ok}/${total} checks` + (latest && latest.coa_ms !== null && latest.coa_ms !== undefined ? ` | ${fmtMs(latest.coa_ms)}` : '');
+    } else {
+      coaRate = 'No samples';
+      const w = Number(coaStats.window || 0);
+      coaMeta = w > 0 ? `last ${w} checks` : 'no CoA samples yet';
+    }
+  } else if (j.coa_rate !== null && j.coa_rate !== undefined) {
+    coaRate = `${j.coa_rate}%`;
+  }
   const tunnel = latest ? healthFlag(latest.tunnel_ok) : '-';
   const routeDev = latest && latest.route_dev ? `via ${latest.route_dev}` : '-';
   const latency = latest ? fmtMs(latest.ping_ms) : '-';
@@ -914,7 +1044,7 @@ function renderHealth(j){
   const cEl = document.getElementById('health_coa_rate');
   if (cEl) cEl.textContent = coaRate;
   const cMs = document.getElementById('health_coa_ms');
-  if (cMs) cMs.textContent = latest ? fmtMs(latest.coa_ms) : '-';
+  if (cMs) cMs.textContent = coaMeta;
   const tEl = document.getElementById('health_tunnel');
   if (tEl) tEl.textContent = tunnel;
   const rtEl = document.getElementById('health_route');
@@ -954,6 +1084,80 @@ async function loadHealth(){
     return;
   }
   renderHealth(j);
+}
+
+async function loadFlowStatus(){
+  const j = await api('flow_status');
+  const stateEl = document.getElementById('flow_collector_state');
+  const metaEl = document.getElementById('flow_collector_meta');
+  const latestEl = document.getElementById('flow_latest_file');
+  const latestMetaEl = document.getElementById('flow_latest_file_meta');
+  const filesEl = document.getElementById('flow_files_60m');
+  const filesMetaEl = document.getElementById('flow_files_60m_meta');
+  if (!stateEl || !metaEl || !latestEl || !latestMetaEl || !filesEl || !filesMetaEl) return;
+
+  if (!j.ok || !j.flow){
+    stateEl.textContent = 'Unavailable';
+    metaEl.textContent = 'Flow status probe failed';
+    latestEl.textContent = '-';
+    latestMetaEl.textContent = '-';
+    filesEl.textContent = '-';
+    filesMetaEl.textContent = '-';
+    setFlowStatusNote('Could not load flow collector status.', 'error');
+    return;
+  }
+
+  const f = j.flow;
+  const running = !!f.collector_running;
+  const receiving = !!f.receiving_recent;
+  stateEl.textContent = running ? (receiving ? 'Receiving' : 'No live flow') : 'Stopped';
+  metaEl.textContent = f.netflow_dir ? `dir: ${f.netflow_dir}` : '-';
+
+  latestEl.textContent = f.latest_file || '-';
+  const latestBits = [];
+  if (f.latest_file_size !== null && f.latest_file_size !== undefined) latestBits.push(`${f.latest_file_size} bytes`);
+  if (f.latest_file_mtime_utc) latestBits.push(f.latest_file_mtime_utc + ' UTC');
+  if (f.latest_file_sample_flows !== null && f.latest_file_sample_flows !== undefined) latestBits.push(`sample flows: ${f.latest_file_sample_flows}`);
+  latestMetaEl.textContent = latestBits.join(' | ') || '-';
+
+  filesEl.textContent = String(f.files_last_60m ?? 0);
+  filesMetaEl.textContent = `non-empty: ${f.nonempty_files_last_60m ?? 0}`;
+
+  if (!running) {
+    setFlowStatusNote('Collector is not running. Start nfcapd service before exporting.', 'error');
+  } else if (!receiving) {
+    setFlowStatusNote('Collector is running but receiving no live flows. MikroTik Traffic-Flow export is likely off/misconfigured.', 'error');
+  } else {
+    setFlowStatusNote('Collector is receiving traffic flows. Exports are ready.', 'success');
+  }
+}
+
+function exportTraffic(mode, requireUser){
+  const from = flowWindowValue('flow_from');
+  const to = flowWindowValue('flow_to');
+  if (!from || !to){
+    setFlowStatusNote('From and To are required.', 'error');
+    return;
+  }
+  const params = new URLSearchParams();
+  params.set('mode', mode);
+  params.set('from', from);
+  params.set('to', to);
+
+  const rawMsisdn = toolValue('flow_msisdn');
+  const canon = flowMsisdnCanonical(rawMsisdn);
+  if (requireUser) {
+    if (!canon) {
+      setFlowStatusNote('Valid MSISDN is required for per-user export.', 'error');
+      return;
+    }
+    params.set('msisdn', canon);
+  } else if (canon) {
+    params.set('msisdn', canon);
+  }
+
+  setFlowStatusNote('Starting export download...', 'success');
+  window.location.href = `/admin/traffic_export.php?${params.toString()}`;
 }
 
 function rowHTML(p){
@@ -1090,7 +1294,8 @@ function renderUserStates(rows){
         if (!confirm(`Delete user ${u}? This removes hotspot login/policy records.`)) return;
         const j = await api('user_delete', { msisdn: u });
         if (!j.ok) {
-          setToolStatus(j.error || 'Delete failed.', 'error');
+          const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Delete failed.');
+          setToolStatus(msg, 'error');
           return;
         }
         if (toolValue('tool_msisdn') === u) {
@@ -1107,7 +1312,8 @@ function renderUserStates(rows){
         }
         const j = await api('user_purge', { msisdn: u, confirm: 'PURGE' });
         if (!j.ok) {
-          setToolStatus(j.error || 'Purge failed.', 'error');
+          const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Purge failed.');
+          setToolStatus(msg, 'error');
           return;
         }
         if (toolValue('tool_msisdn') === u) {
@@ -1431,6 +1637,63 @@ function toolValue(id){
   return el ? el.value.trim() : '';
 }
 
+function digitsOnly(v){
+  return String(v || '').replace(/\D+/g, '');
+}
+
+function msisdnVariants(v){
+  const d = digitsOnly(v);
+  if (!d) return [];
+  if (/^233\d{9}$/.test(d)) return [d, '0' + d.slice(3)];
+  if (/^0\d{9}$/.test(d)) return [d, '233' + d.slice(1)];
+  return [d];
+}
+
+function pickUserStateRow(rows, msisdn){
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  const vars = msisdnVariants(msisdn);
+  const set = new Set(vars);
+  const exact = rows.find(r => set.has(digitsOnly(r && r.username)));
+  if (exact) return exact;
+  const tail = vars.map(v => v.slice(-9));
+  const fuzzy = rows.find(r => {
+    const u = digitsOnly(r && r.username);
+    if (!u) return false;
+    return tail.some(t => u.endsWith(t));
+  });
+  if (fuzzy) return fuzzy;
+  return rows[0];
+}
+
+function mergeLookupState(lookup, row){
+  if (!lookup || !row) return lookup;
+  const out = Object.assign({}, lookup);
+  const st = Object.assign({}, out.status || {});
+
+  if (row.expires) st.expires_at = row.expires;
+  if (row.quota_bytes !== undefined && row.quota_bytes !== null && row.quota_bytes !== '') {
+    const q = Number(row.quota_bytes);
+    if (isFinite(q)) st.quota_bytes = q;
+  }
+  if (row.used_bytes !== undefined && row.used_bytes !== null && row.used_bytes !== '') {
+    const u = Number(row.used_bytes);
+    if (isFinite(u)) st.used_bytes = u;
+  }
+  if (row.expired_flag !== undefined) st.expired = !!Number(row.expired_flag);
+  if (row.exhausted_flag !== undefined) st.exhausted = !!Number(row.exhausted_flag);
+  if (typeof st.paid === 'boolean') {
+    st.can_browse = st.paid && !st.expired && !st.exhausted && !st.policy_limited;
+  }
+  if (row.groupname && !st.group) st.group = row.groupname;
+  if (row.rate_limit && (!out.active_plan || !out.active_plan.rate_limit)) {
+    out.active_plan = Object.assign({}, out.active_plan || {}, { rate_limit: row.rate_limit });
+  }
+
+  out.status = st;
+  out.user_state = row;
+  return out;
+}
+
 function setToolStatus(msg, state){
   const el = document.getElementById('tool_status');
   if (!el) return;
@@ -1551,7 +1814,17 @@ async function lookupUser(){
     setToolStatus(j.error || 'Lookup failed.', 'error');
     return;
   }
-  renderUserSnapshot(j);
+  let merged = j;
+  if (j.user_state) {
+    merged = mergeLookupState(j, j.user_state);
+  } else {
+    const s = await api('user_state_list', { limit: 50, search: msisdn });
+    if (s && s.ok) {
+      const row = pickUserStateRow(s.users || [], msisdn);
+      if (row) merged = mergeLookupState(j, row);
+    }
+  }
+  renderUserSnapshot(merged);
   setToolStatus(`Loaded ${j.msisdn || msisdn}.`, 'success');
 }
 
@@ -1801,22 +2074,25 @@ async function setPassword(){
 async function resetLogin(){
   const msisdn = toolValue('tool_msisdn');
   const password = toolValue('tool_new_password');
-  const confirm = toolValue('tool_new_password2');
+  const confirmPass = toolValue('tool_new_password2');
   if (!msisdn){
     setToolStatus('MSISDN is required.', 'error');
+    window.alert('Reset Login failed: MSISDN is required.');
     return;
   }
-  if (password && confirm && confirm !== password){
+  if (password && confirmPass && confirmPass !== password){
     setToolStatus('Passwords do not match.', 'error');
+    window.alert('Reset Login failed: passwords do not match.');
     return;
   }
-  if (!confirm(`Reset login for ${msisdn}? This will rewrite hotspot password attributes.`)) return;
+  if (!window.confirm(`Reset login for ${msisdn}? This will rewrite hotspot password attributes.`)) return;
   setToolStatus('Repairing login...');
   const body = { msisdn };
   if (password) body.password = password;
   const j = await api('user_reset_login', body);
   if (!j.ok){
     setToolStatus(j.error || 'Login reset failed.', 'error');
+    window.alert(`Reset Login failed for ${msisdn}: ${j.error || 'unknown error'}`);
     return;
   }
   const finalPass = j.password || password || '';
@@ -1827,11 +2103,15 @@ async function resetLogin(){
     if (p2) p2.value = finalPass;
   }
   await lookupUser();
+  let doneMsg = '';
   if (j.generated_password && j.password) {
-    setToolStatus(`Login reset complete. Temporary password: ${j.password}`, 'success');
+    doneMsg = `Login reset complete for ${msisdn}. Temporary password: ${j.password}`;
+    setToolStatus(doneMsg, 'success');
   } else {
-    setToolStatus('Login reset complete.', 'success');
+    doneMsg = `Login reset complete for ${msisdn}.`;
+    setToolStatus(doneMsg, 'success');
   }
+  window.alert(doneMsg);
 }
 
 async function deleteUser(){
@@ -1844,7 +2124,8 @@ async function deleteUser(){
   setToolStatus('Deleting user...');
   const j = await api('user_delete', { msisdn });
   if (!j.ok){
-    setToolStatus(j.error || 'Delete failed.', 'error');
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Delete failed.');
+    setToolStatus(msg, 'error');
     return;
   }
   await loadUserStates();
@@ -1867,7 +2148,8 @@ async function purgeUser(){
   setToolStatus('Purging user records...');
   const j = await api('user_purge', { msisdn, confirm: 'PURGE' });
   if (!j.ok){
-    setToolStatus(j.error || 'Purge failed.', 'error');
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Purge failed.');
+    setToolStatus(msg, 'error');
     return;
   }
   await loadStats();
@@ -1920,6 +2202,7 @@ async function refreshAll(){
   await loadWho();
   await loadStats();
   await loadHealth();
+  await loadFlowStatus();
   await loadPending();
   await loadPlans();
   await loadSettings();
@@ -1930,9 +2213,18 @@ async function refreshAll(){
 
 document.addEventListener('DOMContentLoaded', ()=>{
   initMenu();
+  initFlowWindowDefaults();
   refreshAll();
   const btn = document.getElementById('refresh_btn');
   if (btn) btn.addEventListener('click', refreshAll);
+  const flowRefreshBtn = document.getElementById('flow_refresh');
+  if (flowRefreshBtn) flowRefreshBtn.addEventListener('click', loadFlowStatus);
+  const flowAllBtn = document.getElementById('flow_export_all');
+  if (flowAllBtn) flowAllBtn.addEventListener('click', ()=>exportTraffic('mapped', false));
+  const flowUserBtn = document.getElementById('flow_export_user');
+  if (flowUserBtn) flowUserBtn.addEventListener('click', ()=>exportTraffic('mapped', true));
+  const flowRawBtn = document.getElementById('flow_export_raw');
+  if (flowRawBtn) flowRawBtn.addEventListener('click', ()=>exportTraffic('raw', false));
   const lookupBtn = document.getElementById('tool_lookup');
   if (lookupBtn) lookupBtn.addEventListener('click', lookupUser);
   const resetLoginBtn = document.getElementById('tool_reset_login');

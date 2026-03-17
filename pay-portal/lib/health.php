@@ -111,7 +111,7 @@ function health_events(PDO $pdo, int $limit=30): array {
   return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
-function health_coa_success_rate(PDO $pdo, int $window=120): ?float {
+function health_coa_success_stats(PDO $pdo, int $window=120): array {
   health_bootstrap($pdo);
   $st = $pdo->prepare("SELECT
       SUM(CASE WHEN coa_ok=1 THEN 1 ELSE 0 END) AS ok_cnt,
@@ -122,10 +122,23 @@ function health_coa_success_rate(PDO $pdo, int $window=120): ?float {
   $st->bindValue(':lim', $window, PDO::PARAM_INT);
   $st->execute();
   $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
-  $tot = (int)($row['tot_cnt'] ?? 0);
-  if ($tot <= 0) return null;
   $ok = (int)($row['ok_cnt'] ?? 0);
-  return round(($ok / $tot) * 100, 1);
+  $tot = (int)($row['tot_cnt'] ?? 0);
+  $rate = null;
+  if ($tot > 0) {
+    $rate = round(($ok / $tot) * 100, 1);
+  }
+  return [
+    'ok' => $ok,
+    'total' => $tot,
+    'rate' => $rate,
+    'window' => $window,
+  ];
+}
+
+function health_coa_success_rate(PDO $pdo, int $window=120): ?float {
+  $stats = health_coa_success_stats($pdo, $window);
+  return (is_array($stats) && array_key_exists('rate', $stats)) ? $stats['rate'] : null;
 }
 
 function health_uptime_ratio(PDO $pdo, int $hours=24): ?float {

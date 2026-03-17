@@ -13,7 +13,7 @@ if (!user_logged_in() && isset($_GET['autologin']) && $_GET['autologin'] !== '0'
   $ip = (string)($_GET['ip'] ?? '');
   $mac = (string)($_GET['mac'] ?? '');
   if ($u !== '' && $ip !== '' && user_do_autologin($u, $ip, $mac)) {
-    header('Location: /index.php');
+    header('Location: /portal.php');
     exit;
   } else {
     $err = 'Please login to continue.';
@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($msisdn === '' || $pass === '') {
     $err = 'Please enter your number and password.';
   } elseif (user_do_login($msisdn, $pass)) {
-    header('Location: /index.php');
+    header('Location: /portal.php');
     exit;
   } else {
     $err = 'Login failed. Check your number and password.';
@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <button class="btn" type="submit">Login</button>
     </form>
     <div class="links">
-      <a href="/index.php">Back to pay portal</a>
+      <a href="/portal.php">Back to pay portal</a>
     </div>
   </div>
 </body>

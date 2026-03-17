@@ -44,6 +44,47 @@ function near_exhaustion(int $quotaBytes, int $usedBytes, int $warnPct, int $war
   return ($remainPct <= $warnPct) || ($remainMb <= $warnMb);
 }
 
+function parse_dt(?string $raw, DateTimeZone $tz): ?DateTimeImmutable {
+  $v = trim((string)$raw);
+  if ($v === '') return null;
+  try {
+    return new DateTimeImmutable($v, $tz);
+  } catch (Throwable $e) {
+    return null;
+  }
+}
+
+function auto_renew_lock_name(string $msisdn): string {
+  return 'auto_renew:'.substr(sha1($msisdn), 0, 40);
+}
+
+function auto_renew_try_lock(PDO $pdo, string $msisdn, int $timeoutSec=0): bool {
+  $timeoutSec = max(0, min(30, $timeoutSec));
+  try {
+    $st = $pdo->prepare("SELECT GET_LOCK(:k, :t)");
+    $st->execute([':k'=>auto_renew_lock_name($msisdn), ':t'=>$timeoutSec]);
+    return ((int)($st->fetchColumn() ?: 0)) === 1;
+  } catch (Throwable $e) {
+    // If named locks are unavailable, continue without lock.
+    return true;
+  }
+}
+
+function auto_renew_release_lock(PDO $pdo, string $msisdn): void {
+  try {
+    $st = $pdo->prepare("SELECT RELEASE_LOCK(:k)");
+    $st->execute([':k'=>auto_renew_lock_name($msisdn)]);
+  } catch (Throwable $e) { /* ignore */ }
+}
+
+function auto_renew_min_gap_seconds(array $plan, array $thresholds): int {
+  $days = (int)($plan['duration_days'] ?? 30);
+  if ($days <= 0) $days = 30;
+  $durationSecs = max(3600, $days * 86400);
+  $leadSecs = max(3600, (int)($thresholds['expiry_hours'] ?? 24) * 3600);
+  return max(3600, min($durationSecs, $leadSecs));
+}
+
 function recent_purchase_exists(PDO $pdo, string $msisdn, string $planCode, int $minutes): bool {
   if (!table_exists($pdo, 'purchases')) return false;
   $mins = max(1, min(1440, $minutes));
@@ -93,15 +134,37 @@ function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $pur
 
     $days = (int)($plan['duration_days'] ?? 30);
     if ($days <= 0) $days = 30;
+    $renewAddr = trim((string)($plan['address_list'] ?? 'HS_ACTIVE'));
+    $renewAddrUp = strtoupper($renewAddr);
+    if ($renewAddr === '' || in_array($renewAddrUp, ['HS_LIMITED','HS_NOPAID','NOPAID'], true)) {
+      $renewAddr = 'HS_ACTIVE';
+    }
     $applyPlan = [
       'code' => $code,
-      'address_list' => $plan['address_list'] ?? 'HS_ACTIVE',
+      'address_list' => $renewAddr,
       'rate_limit' => $plan['rate_limit'] ?? null,
       'quota_bytes' => $plan['quota_bytes'] ?? null,
       'duration_days' => $days,
+      'strict_quota' => true,
     ];
 
     radius_apply_plan($msisdn, $applyPlan, $purchaseAt);
+
+    // Ensure renewal immediately restores browse policy, even if user was previously limited.
+    try {
+      $r = rdb_pdo();
+      foreach (nister_username_variants($msisdn) as $u) {
+        if ($u === '') continue;
+        $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid')")
+          ->execute([':u'=>$u]);
+        $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
+                     SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
+                     WHERE NOT EXISTS (
+                       SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'
+                     )")->execute([':u'=>$u]);
+        radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $renewAddr);
+      }
+    } catch (Throwable $e) { /* ignore */ }
 
     if (function_exists('radius_try_disconnect')) {
       try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
@@ -200,93 +263,117 @@ foreach ($rows as $row) {
     continue;
   }
 
-  $lastAttempt = null;
-  if (!empty($row['last_attempt_at'])) {
-    try { $lastAttempt = new DateTimeImmutable((string)$row['last_attempt_at'], $tz); } catch (Throwable $e) { $lastAttempt = null; }
-  }
-  if ($lastAttempt instanceof DateTimeImmutable) {
-    $diff = $now->getTimestamp() - $lastAttempt->getTimestamp();
-    if ($diff >= 0 && $diff < ($attemptCooldownMin * 60)) {
+  $lockHeld = false;
+  try {
+    $lockHeld = auto_renew_try_lock($PDO, $msisdn, 0);
+    if (!$lockHeld) {
+      $summary['skipped']++;
+      $details[] = ['msisdn'=>$msisdn,'skipped'=>'lock_busy'];
+      continue;
+    }
+
+    $lastAttempt = parse_dt((string)($row['last_attempt_at'] ?? ''), $tz);
+    if ($lastAttempt instanceof DateTimeImmutable) {
+      $diff = $now->getTimestamp() - $lastAttempt->getTimestamp();
+      if ($diff >= 0 && $diff < ($attemptCooldownMin * 60)) {
+        $summary['skipped']++;
+        continue;
+      }
+    }
+
+    $lastRenew = parse_dt((string)($row['last_renew_at'] ?? ''), $tz);
+
+    $planCode = trim((string)($row['plan_code'] ?? ''));
+    $activePlan = null;
+    try { $activePlan = radius_get_active_plan($msisdn); } catch (Throwable $e) { $activePlan = null; }
+    if ($planCode === '' && $activePlan) $planCode = (string)($activePlan['plan_code'] ?? '');
+    if ($planCode === '') {
+      auto_renew_mark_attempt($msisdn, 'plan_missing');
+      $summary['errors']++;
+      continue;
+    }
+
+    $plan = radius_find_plan($planCode);
+    if (!$plan) {
+      auto_renew_mark_attempt($msisdn, 'plan_invalid');
+      $summary['errors']++;
+      continue;
+    }
+
+    $status = [];
+    try { $status = radius_user_status($msisdn); } catch (Throwable $e) { $status = []; }
+
+    $expiryDt = null;
+    if ($activePlan && !empty($activePlan['expires_at'])) {
+      $expiryDt = nister_parse_expiry_datetime((string)$activePlan['expires_at'], $tz);
+    }
+    $nearExpiry = false;
+    if ($expiryDt instanceof DateTimeImmutable) {
+      $secsLeft = $expiryDt->getTimestamp() - $now->getTimestamp();
+      if ($secsLeft <= ($thresholds['expiry_hours'] * 3600)) $nearExpiry = true;
+    }
+
+    $quota = (int)($status['quota_bytes'] ?? 0);
+    $used  = (int)($status['used_bytes'] ?? 0);
+    $nearExhaust = near_exhaustion($quota, $used, $thresholds['remain_pct'], $thresholds['remain_mb']);
+
+    $expired = (bool)($status['expired'] ?? false);
+    $exhausted = (bool)($status['exhausted'] ?? false);
+
+    $shouldRenew = $nearExpiry || $nearExhaust || $expired || $exhausted;
+    if (!$shouldRenew) {
       $summary['skipped']++;
       continue;
     }
+
+    // Avoid duplicate top-ups when a user is already in the near-expiry window.
+    if (!$expired && !$exhausted && $lastRenew instanceof DateTimeImmutable) {
+      $minGap = auto_renew_min_gap_seconds($plan, $thresholds);
+      $since = $now->getTimestamp() - $lastRenew->getTimestamp();
+      if ($since >= 0 && $since < $minGap) {
+        $summary['skipped']++;
+        $details[] = ['msisdn'=>$msisdn,'skipped'=>'recent_renew'];
+        continue;
+      }
+    }
+
+    $price = (int)($plan['price_cents'] ?? 0);
+    if ($price <= 0) {
+      auto_renew_mark_attempt($msisdn, 'invalid_price');
+      $summary['errors']++;
+      continue;
+    }
+
+    try {
+      $bal = wallet_balance($msisdn);
+    } catch (Throwable $e) {
+      auto_renew_mark_attempt($msisdn, 'wallet_unavailable');
+      $summary['errors']++;
+      continue;
+    }
+
+    if ($bal < $price) {
+      auto_renew_mark_attempt($msisdn, 'insufficient_funds');
+      $summary['errors']++;
+      continue;
+    }
+
+    $res = auto_renew_purchase($msisdn, $plan, $now);
+    if (!($res['ok'] ?? false)) {
+      auto_renew_mark_attempt($msisdn, (string)($res['error'] ?? 'renew_failed'));
+      $summary['errors']++;
+      $details[] = ['msisdn'=>$msisdn,'error'=>$res['error'] ?? 'renew_failed'];
+      continue;
+    }
+
+    auto_renew_mark_success($msisdn);
+    $summary['renewed']++;
+    $details[] = ['msisdn'=>$msisdn,'purchase_id'=>$res['purchase_id'] ?? null];
+  } finally {
+    if ($lockHeld) {
+      try { auto_renew_release_lock($PDO, $msisdn); } catch (Throwable $e) { /* ignore */ }
+    }
   }
-
-  $planCode = trim((string)($row['plan_code'] ?? ''));
-  $activePlan = null;
-  try { $activePlan = radius_get_active_plan($msisdn); } catch (Throwable $e) { $activePlan = null; }
-  if ($planCode === '' && $activePlan) $planCode = (string)($activePlan['plan_code'] ?? '');
-  if ($planCode === '') {
-    auto_renew_mark_attempt($msisdn, 'plan_missing');
-    $summary['errors']++;
-    continue;
-  }
-
-  $plan = radius_find_plan($planCode);
-  if (!$plan) {
-    auto_renew_mark_attempt($msisdn, 'plan_invalid');
-    $summary['errors']++;
-    continue;
-  }
-
-  $status = [];
-  try { $status = radius_user_status($msisdn); } catch (Throwable $e) { $status = []; }
-
-  $expiryDt = null;
-  if ($activePlan && !empty($activePlan['expires_at'])) {
-    $expiryDt = nister_parse_expiry_datetime((string)$activePlan['expires_at'], $tz);
-  }
-  $nearExpiry = false;
-  if ($expiryDt instanceof DateTimeImmutable) {
-    $secsLeft = $expiryDt->getTimestamp() - $now->getTimestamp();
-    if ($secsLeft <= ($thresholds['expiry_hours'] * 3600)) $nearExpiry = true;
-  }
-
-  $quota = (int)($status['quota_bytes'] ?? 0);
-  $used  = (int)($status['used_bytes'] ?? 0);
-  $nearExhaust = near_exhaustion($quota, $used, $thresholds['remain_pct'], $thresholds['remain_mb']);
-
-  $expired = (bool)($status['expired'] ?? false);
-  $exhausted = (bool)($status['exhausted'] ?? false);
-
-  $shouldRenew = $nearExpiry || $nearExhaust || $expired || $exhausted;
-  if (!$shouldRenew) {
-    $summary['skipped']++;
-    continue;
-  }
-
-  $price = (int)($plan['price_cents'] ?? 0);
-  if ($price <= 0) {
-    auto_renew_mark_attempt($msisdn, 'invalid_price');
-    $summary['errors']++;
-    continue;
-  }
-
-  try {
-    $bal = wallet_balance($msisdn);
-  } catch (Throwable $e) {
-    auto_renew_mark_attempt($msisdn, 'wallet_unavailable');
-    $summary['errors']++;
-    continue;
-  }
-
-  if ($bal < $price) {
-    auto_renew_mark_attempt($msisdn, 'insufficient_funds');
-    $summary['errors']++;
-    continue;
-  }
-
-  $res = auto_renew_purchase($msisdn, $plan, $now);
-  if (!($res['ok'] ?? false)) {
-    auto_renew_mark_attempt($msisdn, (string)($res['error'] ?? 'renew_failed'));
-    $summary['errors']++;
-    $details[] = ['msisdn'=>$msisdn,'error'=>$res['error'] ?? 'renew_failed'];
-    continue;
-  }
-
-  auto_renew_mark_success($msisdn);
-  $summary['renewed']++;
-  $details[] = ['msisdn'=>$msisdn,'purchase_id'=>$res['purchase_id'] ?? null];
 }
 
 $out = [

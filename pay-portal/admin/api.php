@@ -8,6 +8,7 @@ require_once __DIR__.'/../lib/common.php';
 require_once __DIR__.'/../lib/settings.php';
 require_once __DIR__.'/../lib/alerts.php';
 require_once __DIR__.'/../lib/health.php';
+require_once __DIR__.'/../lib/forensics.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 require_once __DIR__.'/../lib/sms.php';
 require_once __DIR__.'/../lib/referrals.php';
@@ -33,6 +34,11 @@ function column_exists(PDO $pdo, string $table, string $col): bool {
   $qc = $pdo->quote($col);
   $st = $pdo->query("SHOW COLUMNS FROM {$table} LIKE {$qc}");
   return (bool)$st->fetchColumn();
+}
+
+function radacct_open_where_clause(): string {
+  // Some deployments store "open" sessions with NULL, others with zero-datetime.
+  return "(acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')";
 }
 
 function parse_amount_cents(array $in): int {
@@ -220,6 +226,76 @@ function parse_quota_bytes(array $in): ?int {
   return null;
 }
 
+function admin_user_canon(string $username): string {
+  $d = preg_replace('/\D+/', '', $username);
+  if ($d === '') return trim($username);
+  if (preg_match('/^0\d{9}$/', $d)) return '233'.substr($d, 1);
+  if (preg_match('/^233\d{9}$/', $d)) return $d;
+  return $d;
+}
+
+function admin_group_rank(string $group): int {
+  $g = strtoupper(trim($group));
+  if ($g === 'HS_ACTIVE') return 3;
+  if ($g === 'HS_LIMITED') return 2;
+  if ($g === 'HS_NOPAID' || $g === 'NOPAID') return 1;
+  return 0;
+}
+
+function admin_dedupe_user_state_rows(array $rows): array {
+  $out = [];
+  foreach ($rows as $row) {
+    if (!is_array($row)) continue;
+    $u = (string)($row['username'] ?? '');
+    $key = admin_user_canon($u);
+    if ($key === '') $key = $u;
+    if ($key === '') continue;
+    if (!isset($out[$key])) {
+      $row['username'] = $key;
+      $out[$key] = $row;
+      continue;
+    }
+
+    $cur = $out[$key];
+    $curRank = admin_group_rank((string)($cur['groupname'] ?? ''));
+    $newRank = admin_group_rank((string)($row['groupname'] ?? ''));
+    $replace = false;
+    if ($newRank > $curRank) {
+      $replace = true;
+    } else {
+      $curWin = strtotime((string)($cur['window_start'] ?? ''));
+      $newWin = strtotime((string)($row['window_start'] ?? ''));
+      if ($newWin !== false && ($curWin === false || $newWin > $curWin)) {
+        $replace = true;
+      }
+    }
+
+    if ($replace) {
+      $row['username'] = $key;
+      $out[$key] = $row;
+      continue;
+    }
+
+    foreach (['expires','quota_bytes','used_bytes','window_start','rate_limit'] as $k) {
+      if ((!isset($out[$key][$k]) || $out[$key][$k] === '' || $out[$key][$k] === null)
+          && isset($row[$k]) && $row[$k] !== '' && $row[$k] !== null) {
+        $out[$key][$k] = $row[$k];
+      }
+    }
+    if (empty($out[$key]['expired_flag']) && !empty($row['expired_flag'])) $out[$key]['expired_flag'] = $row['expired_flag'];
+    if (empty($out[$key]['exhausted_flag']) && !empty($row['exhausted_flag'])) $out[$key]['exhausted_flag'] = $row['exhausted_flag'];
+  }
+
+  $rows = array_values($out);
+  usort($rows, static function(array $a, array $b): int {
+    $ga = admin_group_rank((string)($a['groupname'] ?? ''));
+    $gb = admin_group_rank((string)($b['groupname'] ?? ''));
+    if ($ga !== $gb) return $gb <=> $ga;
+    return strcmp((string)($a['username'] ?? ''), (string)($b['username'] ?? ''));
+  });
+  return $rows;
+}
+
 try {
   switch ($fn) {
 
@@ -308,18 +384,31 @@ try {
       $pdo = health_pdo($ENV);
         $latest = health_latest($pdo);
         $events = health_events($pdo, 30);
-        $coaRate = health_coa_success_rate($pdo, 120);
+        $coaStats = health_coa_success_stats($pdo, 120);
+        $coaRate = $coaStats['rate'] ?? null;
         $uptime24 = health_uptime_ratio($pdo, 24);
         echo json_encode([
           'ok' => true,
           'latest' => $latest,
           'events' => $events,
           'coa_rate' => $coaRate,
+          'coa_stats' => $coaStats,
           'uptime24' => $uptime24,
         ]);
       } catch (Throwable $e) {
         http_response_code(500);
         echo json_encode(['ok'=>false,'error'=>'health_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'flow_status': {
+      try {
+        $status = forensics_collector_status(is_array($ENV) ? $ENV : []);
+        echo json_encode(['ok'=>true, 'flow'=>$status]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'flow_status_failed','detail'=>$e->getMessage()]);
       }
       break;
     }
@@ -670,6 +759,7 @@ try {
       foreach ($params as $k=>$v) $st->bindValue($k, $v);
       $st->execute();
       $rows = $st->fetchAll() ?: [];
+      $rows = admin_dedupe_user_state_rows($rows);
       echo json_encode(['ok'=>true,'users'=>$rows]);
       break;
     }
@@ -746,13 +836,37 @@ try {
       }
 
       $ap = ['active_users'=>0];
-      if (table_exists($PDO, 'purchases')) {
-        $ap = $PDO->query("
-          SELECT COUNT(DISTINCT msisdn) AS active_users
-          FROM purchases
-          WHERE status='applied'
-            AND (expires_at IS NULL OR expires_at >= NOW())
-        ")->fetch() ?: $ap;
+      try {
+        $rActive = rdb_pdo();
+        if (table_exists($rActive, 'radusergroup')) {
+          $ap['active_users'] = (int)($rActive->query("
+            SELECT COUNT(DISTINCT
+              CASE
+                WHEN username REGEXP '^233[0-9]{9}$' THEN username
+                WHEN username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(username,2))
+                ELSE username
+              END
+            ) AS active_users
+            FROM radusergroup
+            WHERE groupname='HS_ACTIVE'
+          ")->fetchColumn() ?: 0);
+        } elseif (table_exists($PDO, 'purchases')) {
+          $ap = $PDO->query("
+            SELECT COUNT(DISTINCT msisdn) AS active_users
+            FROM purchases
+            WHERE status='applied'
+              AND (expires_at IS NULL OR expires_at >= NOW())
+          ")->fetch() ?: $ap;
+        }
+      } catch (Throwable $e) {
+        if (table_exists($PDO, 'purchases')) {
+          $ap = $PDO->query("
+            SELECT COUNT(DISTINCT msisdn) AS active_users
+            FROM purchases
+            WHERE status='applied'
+              AND (expires_at IS NULL OR expires_at >= NOW())
+          ")->fetch() ?: $ap;
+        }
       }
 
       $pay_series = [];
@@ -804,11 +918,45 @@ try {
       }
 
       $active_sessions = null;
+      $active_sessions_mode = null;
       try {
         $r = rdb_pdo();
-        $active_sessions = (int)($r->query("SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NULL")->fetchColumn() ?: 0);
+        if (table_exists($r, 'radacct')) {
+          $openWhere = str_replace('acctstoptime', 'ra.acctstoptime', radacct_open_where_clause());
+          $recentExpr = column_exists($r, 'radacct', 'acctupdatetime')
+            ? 'COALESCE(ra.acctupdatetime, ra.acctstarttime)'
+            : 'ra.acctstarttime';
+          $canonExpr = "CASE
+            WHEN ra.username REGEXP '^233[0-9]{9}$' THEN ra.username
+            WHEN ra.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(ra.username,2))
+            ELSE ra.username
+          END";
+          $peerExpr = "CASE
+            WHEN ra.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(ra.username,4))
+            WHEN ra.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(ra.username,2))
+            ELSE ra.username
+          END";
+          $sessionKeyExpr = "CONCAT({$canonExpr}, '|', COALESCE(NULLIF(ra.callingstationid,''), NULLIF(ra.acctsessionid,''), NULLIF(ra.framedipaddress,''), CAST(ra.radacctid AS CHAR)))";
+          $hsActiveFilter = table_exists($r, 'radusergroup')
+            ? "AND EXISTS (
+                 SELECT 1
+                 FROM radusergroup rug
+                 WHERE rug.groupname='HS_ACTIVE'
+                   AND rug.username IN (ra.username, {$peerExpr}, {$canonExpr})
+               )"
+            : "";
+          $active_sessions = (int)($r->query("
+            SELECT COUNT(DISTINCT {$sessionKeyExpr})
+            FROM radacct ra
+            WHERE {$openWhere}
+              AND {$recentExpr} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)
+              {$hsActiveFilter}
+          ")->fetchColumn() ?: 0);
+          $active_sessions_mode = 'open_session_recent_15m';
+        }
       } catch (Throwable $e) {
         $active_sessions = null;
+        $active_sessions_mode = null;
       }
 
       echo json_encode([
@@ -841,6 +989,7 @@ try {
         'referrals' => $referral,
         'active_users' => (int)($ap['active_users'] ?? 0),
         'active_sessions' => $active_sessions,
+        'active_sessions_mode' => $active_sessions_mode,
       ]);
       break;
     }
@@ -1224,10 +1373,48 @@ try {
         $out['status'] = null;
       }
 
+      // Canonical admin truth for usage/expiry/quota (aligns with user_state_list/enforcer model).
+      try {
+        $stateRow = radius_user_state_exact($msisdn);
+        if (is_array($stateRow)) {
+          $out['user_state'] = $stateRow;
+          $status = is_array($out['status']) ? $out['status'] : [];
+          if (!empty($stateRow['expires'])) $status['expires_at'] = (string)$stateRow['expires'];
+          if (array_key_exists('quota_bytes', $stateRow)) $status['quota_bytes'] = $stateRow['quota_bytes'];
+          if (array_key_exists('used_bytes', $stateRow)) $status['used_bytes'] = (int)($stateRow['used_bytes'] ?? 0);
+          $status['expired'] = !empty($stateRow['expired_flag']);
+          $status['exhausted'] = !empty($stateRow['exhausted_flag']);
+          if (!empty($stateRow['groupname'])) $status['group'] = (string)$stateRow['groupname'];
+
+          $g = strtoupper((string)($status['group'] ?? ''));
+          if (in_array($g, ['HS_LIMITED','HS_NOPAID','NOPAID'], true)) {
+            $status['policy_limited'] = true;
+          }
+          $policyLimited = !empty($status['policy_limited']);
+          $paid = array_key_exists('paid', $status)
+            ? (bool)$status['paid']
+            : (!empty($status['group']) || !empty($status['expires_at']) || (($status['quota_bytes'] ?? null) !== null));
+          $status['paid'] = $paid;
+          $status['can_browse'] = $paid && !$status['expired'] && !$status['exhausted'] && !$policyLimited;
+          $out['status'] = $status;
+        }
+      } catch (Throwable $e) {
+        // keep legacy status result
+      }
+
       try {
         $out['active_plan'] = radius_get_active_plan($msisdn);
       } catch (Throwable $e) {
         $out['active_plan'] = null;
+      }
+      if (isset($out['user_state']) && is_array($out['user_state'])) {
+        $rowRate = trim((string)($out['user_state']['rate_limit'] ?? ''));
+        if ($rowRate !== '') {
+          if (!is_array($out['active_plan'])) $out['active_plan'] = [];
+          if (empty($out['active_plan']['rate_limit'])) {
+            $out['active_plan']['rate_limit'] = $rowRate;
+          }
+        }
       }
 
       try {

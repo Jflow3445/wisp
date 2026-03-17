@@ -1,0 +1,19 @@
+[Unit]
+Description=NISTER NetFlow Collector (nfcapd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=NETFLOW_DIR=/var/log/netflow
+Environment=NETFLOW_WEB_GROUP=www-data
+Environment=NETFLOW_PORT=2055
+Environment=NETFLOW_INTERVAL=300
+EnvironmentFile=-/etc/default/nister-netflow
+ExecStartPre=/usr/bin/install -d -o root -g ${NETFLOW_WEB_GROUP} -m 0750 ${NETFLOW_DIR}
+ExecStart=/usr/bin/nfcapd -l ${NETFLOW_DIR} -p ${NETFLOW_PORT} -t ${NETFLOW_INTERVAL}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

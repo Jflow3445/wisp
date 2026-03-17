@@ -43,7 +43,38 @@ $now = new DateTimeImmutable('now', $tz);
 
 try {
   $status = radius_user_status($msisdn);
+  $stateRow = null;
+  try {
+    $stateRow = radius_user_state_exact($msisdn);
+  } catch (Throwable $e) {
+    $stateRow = null;
+  }
+  if (is_array($stateRow)) {
+    if (!empty($stateRow['expires'])) $status['expires_at'] = (string)$stateRow['expires'];
+    if (array_key_exists('quota_bytes', $stateRow)) $status['quota_bytes'] = $stateRow['quota_bytes'];
+    if (array_key_exists('used_bytes', $stateRow)) $status['used_bytes'] = (int)($stateRow['used_bytes'] ?? 0);
+    $status['expired'] = !empty($stateRow['expired_flag']);
+    $status['exhausted'] = !empty($stateRow['exhausted_flag']);
+    if (!empty($stateRow['groupname'])) $status['group'] = (string)$stateRow['groupname'];
+    $g = strtoupper((string)($status['group'] ?? ''));
+    if (in_array($g, ['HS_LIMITED','HS_NOPAID','NOPAID'], true)) {
+      $status['policy_limited'] = true;
+    }
+    $policyLimited = !empty($status['policy_limited']);
+    $paid = array_key_exists('paid', $status)
+      ? (bool)$status['paid']
+      : (!empty($status['group']) || !empty($status['expires_at']) || (($status['quota_bytes'] ?? null) !== null));
+    $status['paid'] = $paid;
+    $status['can_browse'] = $paid && !$status['expired'] && !$status['exhausted'] && !$policyLimited;
+  }
   $plan = radius_get_active_plan($msisdn) ?: [];
+  if (is_array($stateRow)) {
+    $rowRate = trim((string)($stateRow['rate_limit'] ?? ''));
+    if ($rowRate !== '') {
+      if (!is_array($plan)) $plan = [];
+      if (empty($plan['rate_limit'])) $plan['rate_limit'] = $rowRate;
+    }
+  }
 
   $group = $plan['plan_code'] ?? ($status['group'] ?? null);
   $planName = $plan['display_name'] ?? $plan['name'] ?? $group ?? null;
@@ -58,18 +89,9 @@ try {
       ?: new DateTimeImmutable($expiryStr, $tz);
   }
 
-  $periodStart = null;
-  try {
-    $r = rdb_pdo();
-    $targets = nister_username_variants($msisdn);
-    if ($targets) {
-      $ph = implode(",", array_fill(0, count($targets), "?"));
-      $st = $r->prepare("SELECT value FROM radreply WHERE username IN ($ph) AND attribute='Nister-Window-Start' ORDER BY value DESC LIMIT 1");
-      $st->execute($targets);
-      $periodStart = (string)($st->fetchColumn() ?: '');
-    }
-  } catch (Throwable $e) {
-    $periodStart = '';
+  $periodStart = '';
+  if (is_array($stateRow)) {
+    $periodStart = trim((string)($stateRow['window_start'] ?? ''));
   }
 
   if (!$periodStart && $expiryDt instanceof DateTimeImmutable) {
@@ -101,6 +123,10 @@ try {
     'version' => '2026-03-01b',
     'username' => $raw,
     'state' => $state,
+    'paid' => (bool)($status['paid'] ?? false),
+    'expired' => (bool)($status['expired'] ?? false),
+    'exhausted' => (bool)($status['exhausted'] ?? false),
+    'policy_limited' => (bool)($status['policy_limited'] ?? false),
     'can_browse' => (bool)($status['can_browse'] ?? false),
     'plan_name' => $planName,
     'group' => $group,

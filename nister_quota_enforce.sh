@@ -242,17 +242,18 @@ COA_PORT="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1==
 COA_SECRET="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="secret"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
 COA_PORT="${COA_PORT:-3799}"
 
-KICK_RECENT_MINUTES="${KICK_RECENT_MINUTES:-30}"
-[[ "$KICK_RECENT_MINUTES" =~ ^[0-9]+$ ]] || KICK_RECENT_MINUTES=30
+KICK_RECENT_MINUTES="${KICK_RECENT_MINUTES:-0}"
+[[ "$KICK_RECENT_MINUTES" =~ ^[0-9]+$ ]] || KICK_RECENT_MINUTES=0
 KICK_RECENT_SQL=""
 if (( KICK_RECENT_MINUTES > 0 )); then
   # Avoid sending CoA for very old/stale "open" radacct rows (reduces Disconnect-NAK noise).
   KICK_RECENT_SQL="AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${KICK_RECENT_MINUTES} MINUTE)"
 fi
 
-NAS_RAW="${NAS_IPS:-${NAS_IP:-${COA_IP:-}}}"
+NAS_RAW="${NAS_IPS:-${NAS_IP:-}}"
 NAS_RAW="${NAS_RAW// /,}"
 NAS_IPS_LIST=()
+NAS_FILTER_ENABLED=0
 
 is_valid_ipv4(){
   [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
@@ -268,6 +269,7 @@ is_valid_mac(){
 }
 is_allowed_nas(){
   local ip="$1"
+  (( NAS_FILTER_ENABLED == 0 )) && return 0
   for n in "${NAS_IPS_LIST[@]}"; do
     [[ "$n" == "$ip" ]] && return 0
   done
@@ -280,9 +282,12 @@ for ip in "${_tmp[@]}"; do
     NAS_IPS_LIST+=("$ip")
   fi
 done
+if [[ "${#NAS_IPS_LIST[@]}" -gt 0 ]]; then
+  NAS_FILTER_ENABLED=1
+fi
 
 COA_READY=1
-if [[ -z "${COA_SECRET:-}" || "${#NAS_IPS_LIST[@]}" -eq 0 ]]; then
+if [[ -z "${COA_SECRET:-}" ]]; then
   COA_READY=0
   log "WARN user=$USER coa_target_missing skip_coa=yes"
 fi
@@ -336,7 +341,7 @@ get_expiry_str(){
 }
 
 get_window_start(){
-    local ws epoch fallback
+    local ws epoch fallback exp_epoch first_seen
     ws="$(sql_one "SELECT value FROM radreply WHERE username IN (${IN_USERS}) AND attribute='Nister-Window-Start' ORDER BY id DESC LIMIT 1;" || true)"
     if [[ -n "${ws:-}" ]]; then
       epoch="$(date -u -d "$ws" +%s 2>/dev/null || echo 0)"
@@ -345,8 +350,87 @@ get_window_start(){
         return 0
       fi
     fi
-    fallback=$(( NOW_EPOCH - DAYS*86400 )); (( fallback < 0 )) && fallback=0
+    # Stable fallback when no explicit window exists:
+    # anchor to (Expiration - DurationDays) when possible, else sliding now-DAYS.
+    exp_epoch="$(get_expiry_epoch)"
+    if [[ "$exp_epoch" =~ ^[0-9]+$ && "$exp_epoch" -gt 0 ]]; then
+      fallback=$(( exp_epoch - DAYS*86400 ))
+      if (( fallback > NOW_EPOCH )); then
+        fallback=$(( NOW_EPOCH - DAYS*86400 ))
+      fi
+    else
+      # Last-resort anchor: keep usage monotonic for old users missing Expiration
+      # and explicit Nister-Window-Start.
+      first_seen="$(sql_one "SELECT DATE_FORMAT(MIN(acctstarttime),'%Y-%m-%d %H:%i:%s') FROM radacct WHERE username IN (${IN_USERS});" || true)"
+      if [[ -n "${first_seen:-}" && "${first_seen^^}" != "NULL" ]]; then
+        epoch="$(date -u -d "$first_seen" +%s 2>/dev/null || echo 0)"
+        if [[ "$epoch" =~ ^[0-9]+$ && "$epoch" -gt 0 && "$epoch" -le "$NOW_EPOCH" ]]; then
+          echo "$first_seen"
+          return 0
+        fi
+      fi
+      fallback=$(( NOW_EPOCH - DAYS*86400 ))
+    fi
+    (( fallback < 0 )) && fallback=0
     date -u -d "@$fallback" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -u '+%Y-%m-%d %H:%M:%S'
+}
+
+usage_peak_file(){
+  local ukey
+  ukey="$(msisdn_local "$USER")"
+  [[ -z "${ukey:-}" ]] && ukey="$USER"
+  echo "$STATE_DIR/${ukey}.used_peak"
+}
+
+usage_peak_key(){
+  local ws
+  ws="$(sql_one "SELECT value FROM radreply WHERE username IN (${IN_USERS}) AND attribute='Nister-Window-Start' ORDER BY id DESC LIMIT 1;" || true)"
+  ws="${ws//$'\t'/ }"
+  [[ -z "${ws:-}" ]] && ws="na"
+  echo "${PLAN_CODE:-na}|${CAP_BYTES:-0}|${EXP_EPOCH:-0}|${ws}"
+}
+
+monotonic_used(){
+  local raw="$1" key="$2" file="$3" saved_key="" saved_peak=0
+  [[ "$raw" =~ ^[0-9]+$ ]] || raw=0
+  if [[ -r "$file" ]]; then
+    IFS=$'\t' read -r saved_key saved_peak <"$file" || true
+    [[ "${saved_peak:-}" =~ ^[0-9]+$ ]] || saved_peak=0
+    if [[ "$saved_key" == "$key" && "$saved_peak" -gt "$raw" ]]; then
+      raw="$saved_peak"
+    fi
+  fi
+  printf '%s\t%s\n' "$key" "$raw" >"$file"
+  echo "$raw"
+}
+
+send_disconnect(){
+  local u="$1" nas="$2" sid="${3:-}" ip="${4:-}" mac="${5:-}"
+  local sid_safe payload payload_lines out u_coa
+
+  sid_safe="$(echo "${sid:-}" | tr -cd 'A-Za-z0-9._:-')"
+  u_coa="$(msisdn_local "${u}")"
+  [[ -z "${u_coa:-}" ]] && u_coa="$u"
+
+  payload_lines=()
+  payload_lines+=("User-Name = \"${u_coa}\"")
+  [[ -n "$sid_safe" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
+  if is_valid_ipv4 "${ip:-}"; then
+    payload_lines+=("Framed-IP-Address = ${ip}")
+  fi
+  if is_valid_mac "${mac:-}"; then
+    payload_lines+=("Calling-Station-Id = \"${mac^^}\"")
+  fi
+  payload_lines+=("NAS-IP-Address = ${nas}")
+  payload_lines+=("Message-Authenticator = 0x00")
+  payload="$(printf '%s\n' "${payload_lines[@]}")"
+
+  out="$(printf '%s' "$payload" | radclient -x -r 1 -t 3 "${nas}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
+  if echo "$out" | grep -q "Disconnect-ACK"; then
+    return 0
+  fi
+  log "ERR user=$USER coa_disconnect_failed target=${nas}:${COA_PORT} sid=${sid_safe:-na} ip=${ip:-na} mac=${mac:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 300)"
+  return 1
 }
 
 
@@ -391,7 +475,8 @@ kick_sessions(){
     log "WARN user=$USER skip_kick_coa_unavailable"
     return 0
   fi
-  local rows row u ip sid nas mac ok=0 fail=0 payload out sid_safe payload_lines has_match
+  local rows row u ip sid nas mac ok=0 fail=0 has_match attempts=0
+  local -a fallback_nas fallback_users
   mapfile -t rows < <(sql_all "
     SELECT DISTINCT username, framedipaddress, acctsessionid, nasipaddress, callingstationid
     FROM radacct
@@ -414,42 +499,62 @@ kick_sessions(){
     fi
 
     if ! is_valid_ipv4 "${nas:-}"; then
-      log "WARN user=$USER bad_nasip=$nas fallback=${NAS_IPS_LIST[0]}"
-      nas="${NAS_IPS_LIST[0]}"
+      local nas_bad="$nas"
+      if [[ "${#NAS_IPS_LIST[@]}" -gt 0 ]]; then
+        nas="${NAS_IPS_LIST[0]}"
+      elif is_valid_ipv4 "${COA_IP:-}"; then
+        nas="${COA_IP}"
+      else
+        log "WARN user=$USER bad_nasip=${nas_bad:-na} no_fallback_nas skip_coa=yes"
+        continue
+      fi
+      log "WARN user=$USER bad_nasip=${nas_bad:-na} fallback=${nas}"
     elif ! is_allowed_nas "${nas}"; then
       log "WARN user=$USER nas_not_allowed=$nas skip_coa=yes"
       continue
     fi
 
-    payload_lines=()
-    # MikroTik typically tracks hotspot sessions by the "local" MSISDN (0xxxxxxxxx),
-    # while FreeRADIUS accounting may store the canonical form (233xxxxxxxxx).
-    # Send the local form when we can to improve CoA match rates.
-    u_coa="$(msisdn_local "${u}")"
-    [[ -z "${u_coa:-}" ]] && u_coa="$u"
-    payload_lines+=("User-Name = \"${u_coa}\"")
-    [[ -n "$sid_safe" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
-    if is_valid_ipv4 "${ip:-}"; then
-      payload_lines+=("Framed-IP-Address = ${ip}")
-    fi
-    if is_valid_mac "${mac:-}"; then
-      payload_lines+=("Calling-Station-Id = \"${mac^^}\"")
-    fi
-    payload_lines+=("NAS-IP-Address = ${nas}")
-    payload_lines+=("Message-Authenticator = 0x00")
-    payload="$(printf '%s\n' "${payload_lines[@]}")"
-
-    out="$(printf '%s' "$payload" | radclient -x -r 1 -t 3 "${nas}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
-    if echo "$out" | grep -q "Disconnect-ACK"; then
+    (( attempts++ ))
+    if send_disconnect "$u" "$nas" "$sid_safe" "$ip" "$mac"; then
       (( ok++ ))
     else
-      log "ERR user=$USER coa_disconnect_failed target=${nas}:${COA_PORT} sid=${sid_safe:-na} ip=${ip:-na} mac=${mac:-na} out=$(echo "$out" | tr '
-' ' ' | head -c 300)"
       (( fail++ ))
     fi
   done
 
-  log "KICK_DONE user=$USER ok=$ok fail=$fail"
+  if (( attempts == 0 )); then
+    if [[ "${#NAS_IPS_LIST[@]}" -gt 0 ]]; then
+      fallback_nas=("${NAS_IPS_LIST[@]}")
+    elif is_valid_ipv4 "${COA_IP:-}"; then
+      fallback_nas=("${COA_IP}")
+    else
+      log "WARN user=$USER kick_fallback_no_nas skip_coa=yes"
+      log "KICK_DONE user=$USER ok=$ok fail=$fail attempts=$attempts rows=${#rows[@]}"
+      return 0
+    fi
+
+    for u in "${USERS[@]}"; do
+      fallback_users+=("$u")
+      u="$(msisdn_local "$u")"
+      [[ -n "${u:-}" ]] && fallback_users+=("$u")
+    done
+    mapfile -t fallback_users < <(printf '%s\n' "${fallback_users[@]}" | awk 'NF && !seen[$0]++')
+    mapfile -t fallback_nas < <(printf '%s\n' "${fallback_nas[@]}" | awk 'NF && !seen[$0]++')
+
+    for nas in "${fallback_nas[@]}"; do
+      for u in "${fallback_users[@]}"; do
+        (( attempts++ ))
+        if send_disconnect "$u" "$nas"; then
+          (( ok++ ))
+        else
+          (( fail++ ))
+        fi
+      done
+    done
+    log "WARN user=$USER kick_fallback_used nas_count=${#fallback_nas[@]} user_count=${#fallback_users[@]}"
+  fi
+
+  log "KICK_DONE user=$USER ok=$ok fail=$fail attempts=$attempts rows=${#rows[@]}"
 }
 is_limited_state(){
   sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}') LIMIT 1;" | grep -q 1 && return 0 || true
@@ -515,7 +620,7 @@ CAP_BYTES="$(get_user_cap_bytes)"
 
 WINDOW_START="$(get_window_start)"
 
-USED="$(sql_one "
+RAW_USED="$(sql_one "
   SELECT COALESCE(SUM(
     COALESCE(acctinputoctets,0)+COALESCE(acctoutputoctets,0)
     + 4294967296*(COALESCE(acctinputgigawords,0)+COALESCE(acctoutputgigawords,0))
@@ -524,7 +629,12 @@ USED="$(sql_one "
   WHERE username IN (${IN_USERS})
     AND acctstarttime >= '${WINDOW_START}';
 " || echo 0)"
-[[ "$USED" =~ ^[0-9]+$ ]] || USED=0
+[[ "$RAW_USED" =~ ^[0-9]+$ ]] || RAW_USED=0
+
+USED_PEAK_KEY="$(usage_peak_key)"
+USED_PEAK_FILE="$(usage_peak_file)"
+USED="$(monotonic_used "$RAW_USED" "$USED_PEAK_KEY" "$USED_PEAK_FILE")"
+[[ "$USED" =~ ^[0-9]+$ ]] || USED="$RAW_USED"
 
 EXHAUSTED=0
 if (( CAP_BYTES > 0 )); then
@@ -615,14 +725,14 @@ if (( EXPIRED == 1 || EXHAUSTED == 1 )); then
   set_hs_limited
   kick_sessions
   if (( WAS_LIMITED == 0 )); then
-    log "LIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=$EXPIRED exhausted=$EXHAUSTED"
+    log "LIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=$EXPIRED exhausted=$EXHAUSTED"
     alert "LIMIT user=$USER plan=${PLAN_CODE:-na} expired=$EXPIRED exhausted=$EXHAUSTED used=$USED cap=$CAP_BYTES"
   fi
 else
   if is_limited_state; then
     clear_limited_state
     kick_sessions
-    log "UNLIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS"
+    log "UNLIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS"
     SMS_BACK_ONLINE_TEXT="$(sms_setting SMS_BACK_ONLINE_TEXT)"
     if [[ -n "${SMS_BACK_ONLINE_TEXT:-}" ]]; then
       SMS_STAMP="$STATE_DIR/${USER}.sms_back_online"
@@ -642,5 +752,5 @@ else
   if (( EXP_EPOCH > 0 || CAP_BYTES > 0 )); then
     ensure_hs_active
   fi
-  log "OK user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=0 exhausted=0"
+  log "OK user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=0 exhausted=0"
 fi
