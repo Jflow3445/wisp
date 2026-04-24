@@ -69,7 +69,7 @@
       return;
     }
     if(!Array.isArray(plans) || plans.length===0){
-      root.appendChild(ce('div',{className:'muted', textContent:'No plans found.'}));
+      root.appendChild(ce('div',{className:'muted', textContent:'No plans configured for your location.'}));
       return;
     }
     plans.forEach(function(p){
@@ -96,7 +96,6 @@
           var j = await resp.json().catch(function(){ return {ok:false,error:'Invalid JSON'}; });
           if(!resp.ok || !j.ok){
             var msg = (j && (j.error || j.message)) || resp.statusText || 'Error';
-            if (j && j.details) msg += ' (' + j.details + ')';
             alert('Purchase failed: ' + msg);
           }
           else {
@@ -323,6 +322,7 @@
     bd.style.display='none';
     bd.appendChild(md); document.body.appendChild(bd);
 
+    var minExample = (MIN_TOPUP_CENTS / 100).toFixed(2).replace(/\.00$/, '');
     md.innerHTML =
       '<h3 style="margin:0 0 8px">Top up wallet</h3>'
       + '<div class="nister-alert nister-ok" id="n_ok"></div>'
@@ -331,14 +331,21 @@
       + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_msisdn" placeholder="Your number (auto)" autocomplete="tel"></div>'
       + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_momo"   placeholder="MoMo number used (MTN only)"></div>'
       + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_txid"   placeholder="Transaction ID / Reference"></div>'
-      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_amount" placeholder="Amount (GHS) e.g. 20"></div>'
+      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_amount" placeholder="Amount (GHS) e.g. ' + minExample + '"></div>'
       + '<div class="muted" style="margin:-6px 0 10px">Minimum top up: ' + money(MIN_TOPUP_CENTS) + '</div>'
       + '<div class="nister-actions"><button class="nister-btn nister-ghost" id="n_cancel">Close</button><button class="nister-btn nister-primary" id="n_submit">Submit Top-Up</button></div>';
 
     var instr = $('#n_instr');
     if (instr) {
-      fetch('deposit_instructions.php', {cache:'no-store'}).then(function(r){ return r.text(); })
-        .then(function(html){ instr.innerHTML = html; })
+      fetch('deposit_instructions.php', {cache:'no-store'})
+        .then(function(r){
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function(html){
+          if (/^\s*\{/.test(String(html||''))) throw new Error('unexpected_json');
+          instr.innerHTML = html;
+        })
         .catch(function(){ instr.textContent = 'Send MTN MoMo to 0598544768. After payment, submit the details below.'; });
     }
 
@@ -390,6 +397,8 @@
         var msg = e.message || 'Submit failed.';
         if (e.code === 'min_amount' && e.data && e.data.min_ghs) {
           msg = 'Minimum top up is GHS ' + Number(e.data.min_ghs).toFixed(2) + '.';
+        } else if (e.code === 'db_config_missing' || e.code === 'db_connect_failed' || e.code === 'db_error') {
+          msg = 'Payment service is temporarily unavailable. Please try again shortly.';
         }
         if(err){ err.textContent = 'Submit failed: '+msg; err.style.display='block'; }
       }finally{

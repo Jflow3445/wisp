@@ -25,7 +25,7 @@ if (is_readable($envFile)){
   foreach (file($envFile, FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) as $line){
     if ($line===''||$line[0]==='#'||strpos($line,'=')===false) continue;
     [$k,$v]=array_map('trim', explode('=',$line,2)); $v=trim($v,"\"'");
-    if(array_key_exists($k,$ENV)) $ENV[$k]=$v;
+    if($k!=='') $ENV[$k]=$v;
   }
 }
 
@@ -75,13 +75,82 @@ if (!isset($PDO) || !($PDO instanceof PDO)) {
     }
   }
 
-  // Resolve DB params (ENV first, then process env, then safe fallbacks)
-  $db_host = $ENV['DB_HOST'] ?? getenv('DB_HOST') ?: '127.0.0.1';
-  $db_name = $ENV['DB_NAME'] ?? getenv('DB_NAME') ?: 'radius';
-  $db_user = $ENV['DB_USER'] ?? getenv('DB_USER') ?: 'radius';
-  $db_pass = $ENV['DB_PASS'] ?? getenv('DB_PASS') ?: 'BishopFelix@50Dolla'; // from your prior MySQL usage
-  $db_dsn  = $ENV['DB_DSN']  ?? getenv('DB_DSN');
+  $pick = static function (...$values): string {
+    foreach ($values as $value) {
+      if ($value === null || $value === false) continue;
+      $s = trim((string)$value);
+      if ($s !== '') return $s;
+    }
+    return '';
+  };
+
+  // Resolve DB params with broad compatibility:
+  // PAY_DB_* -> DB_* -> MYSQL_* -> RADIUS_* -> /etc/nister/radius_db.php
+  $db_host = $pick(
+    $ENV['PAY_DB_HOST'] ?? null,
+    $ENV['DB_HOST'] ?? null,
+    $ENV['RADIUS_HOST'] ?? null,
+    getenv('PAY_DB_HOST'),
+    getenv('DB_HOST'),
+    getenv('RADIUS_HOST'),
+    $__cfg['host'] ?? null,
+    '127.0.0.1'
+  );
+  $db_name = $pick(
+    $ENV['PAY_DB_NAME'] ?? null,
+    $ENV['DB_NAME'] ?? null,
+    $ENV['RADIUS_DB'] ?? null,
+    getenv('PAY_DB_NAME'),
+    getenv('DB_NAME'),
+    getenv('RADIUS_DB'),
+    $__cfg['db'] ?? null,
+    'radius'
+  );
+  $db_user = $pick(
+    $ENV['PAY_DB_USER'] ?? null,
+    $ENV['DB_USER'] ?? null,
+    $ENV['MYSQL_USER'] ?? null,
+    $ENV['RADIUS_USER'] ?? null,
+    getenv('PAY_DB_USER'),
+    getenv('DB_USER'),
+    getenv('MYSQL_USER'),
+    getenv('RADIUS_USER'),
+    $__cfg['user'] ?? null
+  );
+  $db_pass = $pick(
+    $ENV['PAY_DB_PASS'] ?? null,
+    $ENV['DB_PASS'] ?? null,
+    $ENV['MYSQL_PASSWORD'] ?? null,
+    $ENV['RADIUS_PASS'] ?? null,
+    getenv('PAY_DB_PASS'),
+    getenv('DB_PASS'),
+    getenv('MYSQL_PASSWORD'),
+    getenv('RADIUS_PASS'),
+    $__cfg['pass'] ?? null
+  );
+  $db_dsn  = $pick(
+    $ENV['PAY_DB_DSN'] ?? null,
+    $ENV['DB_DSN'] ?? null,
+    $ENV['MYSQL_DSN'] ?? null,
+    $ENV['RADIUS_DSN'] ?? null,
+    getenv('PAY_DB_DSN'),
+    getenv('DB_DSN'),
+    getenv('MYSQL_DSN'),
+    getenv('RADIUS_DSN'),
+    $__cfg['dsn'] ?? null
+  );
   if (!$db_dsn) $db_dsn = "mysql:host={$db_host};dbname={$db_name};charset=utf8mb4";
+  // Keep resolved credentials available to downstream includes that read $ENV.
+  $ENV['DB_DSN'] = $db_dsn;
+  $ENV['DB_USER'] = $db_user;
+  $ENV['DB_PASS'] = $db_pass;
+
+  if ($db_user === '') {
+    if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
+    http_response_code(500);
+    echo json_encode(['ok'=>false,'error'=>'db_config_missing']);
+    exit;
+  }
 
   try {
     $PDO = new NisterPDO(
@@ -95,7 +164,7 @@ if (!isset($PDO) || !($PDO instanceof PDO)) {
   } catch (Throwable $e) {
     // Surface a clear error, but don't fatal the entire app
     if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['ok'=>false,'error'=>'db_connect_failed','detail'=>$e->getMessage()]);
+    echo json_encode(['ok'=>false,'error'=>'db_connect_failed']);
     exit;
   }
 }
