@@ -39,6 +39,88 @@ function username_variants(string $u): array {
   return [$d];
 }
 
+function hs_cp_rate_limit_path(string $scope, string $key): string {
+  $scope = preg_replace('/[^a-z0-9._-]+/i', '_', strtolower(trim($scope))) ?: 'default';
+  $dir = rtrim(sys_get_temp_dir(), "/\\") . '/nister-rate-limit';
+  if (!is_dir($dir)) @mkdir($dir, 0700, true);
+  return $dir . '/' . $scope . '-' . hash('sha256', $key) . '.json';
+}
+
+function hs_cp_rate_limit_read(string $scope, string $key): array {
+  $path = hs_cp_rate_limit_path($scope, $key);
+  $raw = @file_get_contents($path);
+  $j = is_string($raw) ? json_decode($raw, true) : null;
+  $attempts = [];
+  if (is_array($j) && isset($j['attempts']) && is_array($j['attempts'])) {
+    foreach ($j['attempts'] as $ts) {
+      if (is_int($ts) || ctype_digit((string)$ts)) $attempts[] = (int)$ts;
+    }
+  }
+  $lockUntil = 0;
+  if (is_array($j) && isset($j['lock_until']) && (is_int($j['lock_until']) || ctype_digit((string)$j['lock_until']))) {
+    $lockUntil = (int)$j['lock_until'];
+  }
+  return ['path'=>$path, 'attempts'=>$attempts, 'lock_until'=>max(0, $lockUntil)];
+}
+
+function hs_cp_rate_limit_write(array $state): void {
+  if (!isset($state['path'])) return;
+  $path = (string)$state['path'];
+  $payload = [
+    'attempts' => array_values(array_map('intval', (array)($state['attempts'] ?? []))),
+    'lock_until' => (int)($state['lock_until'] ?? 0),
+  ];
+  @file_put_contents($path, json_encode($payload, JSON_UNESCAPED_SLASHES), LOCK_EX);
+}
+
+function hs_cp_rate_limit_allow(string $scope, string $key, int $maxAttempts = 5, int $windowSec = 600, int $lockoutSec = 900): array {
+  $maxAttempts = max(1, $maxAttempts);
+  $windowSec = max(1, $windowSec);
+  $lockoutSec = max(1, $lockoutSec);
+  $state = hs_cp_rate_limit_read($scope, $key);
+  $now = time();
+  $cutoff = $now - $windowSec;
+  $attempts = array_values(array_filter((array)$state['attempts'], static fn($ts): bool => (int)$ts > $cutoff));
+  $lockUntil = (int)($state['lock_until'] ?? 0);
+  if ($lockUntil <= $now && count($attempts) >= $maxAttempts) {
+    $lockUntil = $now + $lockoutSec;
+  }
+  $state['attempts'] = $attempts;
+  $state['lock_until'] = $lockUntil;
+  hs_cp_rate_limit_write($state);
+  return [
+    'allowed' => $lockUntil <= $now,
+    'retry_after' => ($lockUntil > $now) ? max(1, $lockUntil - $now) : 0,
+  ];
+}
+
+function hs_cp_rate_limit_hit(string $scope, string $key, int $maxAttempts = 5, int $windowSec = 600, int $lockoutSec = 900): array {
+  $maxAttempts = max(1, $maxAttempts);
+  $windowSec = max(1, $windowSec);
+  $lockoutSec = max(1, $lockoutSec);
+  $state = hs_cp_rate_limit_read($scope, $key);
+  $now = time();
+  $cutoff = $now - $windowSec;
+  $attempts = array_values(array_filter((array)$state['attempts'], static fn($ts): bool => (int)$ts > $cutoff));
+  $attempts[] = $now;
+  $lockUntil = (int)($state['lock_until'] ?? 0);
+  if (count($attempts) >= $maxAttempts) {
+    $lockUntil = $now + $lockoutSec;
+  }
+  $state['attempts'] = $attempts;
+  $state['lock_until'] = $lockUntil;
+  hs_cp_rate_limit_write($state);
+  return [
+    'allowed' => $lockUntil <= $now,
+    'retry_after' => ($lockUntil > $now) ? max(1, $lockUntil - $now) : 0,
+  ];
+}
+
+function hs_cp_rate_limit_clear(string $scope, string $key): void {
+  $path = hs_cp_rate_limit_path($scope, $key);
+  if (is_file($path)) @unlink($path);
+}
+
 function fail($msg, $user = '') {
   http_response_code(400);
   $back = 'https://wifi.nister.org/change-password.html';
@@ -66,8 +148,12 @@ function pick(array $src, array $keys): string {
   return '';
 }
 
+$method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+if ($method !== 'POST') {
+  fail('Unsupported request method. Please submit the form again.');
+}
+
 $input = $_POST;
-if (!$input) $input = $_REQUEST;
 
 $user = pick($input, ['username', 'user', 'login', 'user_name', 'msisdn', 'phone', 'account']);
 $current = pick($input, [
@@ -101,8 +187,26 @@ $user = preg_replace('/\s+/', '', $user);
 if ($pass2 !== '' && $pass2 !== $pass) {
   fail('Passwords do not match. Please try again.', $user);
 }
+if (strlen($pass) < 6) {
+  fail('New password must be at least 6 characters.', $user);
+}
+if (strlen($pass) > 128) {
+  fail('New password is too long.', $user);
+}
+if ($pass === $current) {
+  fail('New password must be different from current password.', $user);
+}
 
 header('Cache-Control: no-store');
+
+$clientIp = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+if (!filter_var($clientIp, FILTER_VALIDATE_IP)) $clientIp = 'unknown';
+$userKey = strtolower($user);
+$ipGate = hs_cp_rate_limit_allow('hotspot_change_password_ip', $clientIp, 10, 600, 900);
+$userGate = hs_cp_rate_limit_allow('hotspot_change_password_user', $clientIp . '|' . $userKey, 6, 600, 900);
+if (!($ipGate['allowed'] ?? false) || !($userGate['allowed'] ?? false)) {
+  fail('Too many attempts. Please wait before trying again.', $user);
+}
 
 try {
   $pdo = new PDO($DB_DSN, $DB_USER, $DB_PASS, [
@@ -122,8 +226,11 @@ try {
     $found = true;
     if ((string)$val === $current) { $match = true; break; }
   }
-  if (!$found) fail('Account not found. Please sign up first.', $user);
-  if (!$match) fail('Current password is incorrect.', $user);
+  if (!$found || !$match) {
+    hs_cp_rate_limit_hit('hotspot_change_password_ip', $clientIp, 10, 600, 900);
+    hs_cp_rate_limit_hit('hotspot_change_password_user', $clientIp . '|' . $userKey, 6, 600, 900);
+    fail('Invalid account or current password.', $user);
+  }
 
   $upsert = $pdo->prepare(
     "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
@@ -132,6 +239,8 @@ try {
   foreach ($targets as $u) {
     $upsert->execute([$u, $pass]);
   }
+  hs_cp_rate_limit_clear('hotspot_change_password_ip', $clientIp);
+  hs_cp_rate_limit_clear('hotspot_change_password_user', $clientIp . '|' . $userKey);
 
   http_response_code(200);
   header("Content-Type: text/html; charset=utf-8");
@@ -149,5 +258,6 @@ try {
   <p><a class='btn' href='".h($login)."'>Go to Wi-Fi login</a></p></div>";
   exit;
 } catch (Throwable $e) {
-  fail('Database error: '.$e->getMessage(), $user);
+  error_log('[wifi-portal/hotspot/change_password.php] user=' . $user . ' err=' . $e->getMessage());
+  fail('Could not update password right now. Please try again shortly.', $user);
 }

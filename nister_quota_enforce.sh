@@ -29,13 +29,15 @@ alert(){
 }
 
 # debounce per user (unless forced/limit)
-STAMP="$STATE_DIR/${USER}.stamp"
 NOW_EPOCH="$(date +%s)"
-if [[ -f "$STAMP" && "$MODE" != "--force" && "$MODE" != "--limit" ]]; then
-  LAST="$(cat "$STAMP" 2>/dev/null || echo 0)"
-  (( NOW_EPOCH - LAST < 30 )) && exit 0
+if [[ -n "${USER:-}" ]]; then
+  STAMP="$STATE_DIR/${USER}.stamp"
+  if [[ -f "$STAMP" && "$MODE" != "--force" && "$MODE" != "--limit" ]]; then
+    LAST="$(cat "$STAMP" 2>/dev/null || echo 0)"
+    (( NOW_EPOCH - LAST < 30 )) && exit 0
+  fi
+  echo "$NOW_EPOCH" >"$STAMP"
 fi
-echo "$NOW_EPOCH" >"$STAMP"
 
 need(){ command -v "$1" >/dev/null 2>&1 || { log "ERR user=$USER missing_dep=$1"; exit 0; }; }
 need mysql
@@ -59,7 +61,6 @@ DB_PASS="$(awk -F= '/^[[:space:]]*password[[:space:]]*=/{sub(/^[[:space:]]*/,"",
 CNF="$(mktemp -p "$STATE_DIR" .mysql.XXXXXX)"
 [[ -r /etc/nister/radius_mysql.cnf ]] && cp -f /etc/nister/radius_mysql.cnf "$CNF" || true
 chmod 600 "$CNF"
-chmod 600 "$CNF"
 cat >"$CNF" <<EOF2
 [client]
 host=$DB_HOST
@@ -68,18 +69,50 @@ user=$DB_USER
 password=$DB_PASS
 database=$DB_NAME
 EOF2
-cleanup(){ rm -f "$CNF"; }
+COA_SECRET_FILE_RUNTIME=""
+cleanup(){ rm -f "$CNF" "${COA_SECRET_FILE_RUNTIME:-}"; }
 trap cleanup EXIT
 
 sql_one(){ mysql --defaults-extra-file="$CNF" -N -B -e "$1" 2>/dev/null | head -n 1; }
 sql_all(){ mysql --defaults-extra-file="$CNF" -N -B -e "$1" 2>/dev/null; }
 sql_exec(){ mysql --defaults-extra-file="$CNF" -e "$1" 2>/dev/null; }
+if ! mysql --defaults-extra-file="$CNF" -N -B -e "SELECT 1" >/dev/null 2>&1; then
+  log "ERR user=$USER db_unreachable host=$DB_HOST db=$DB_NAME"
+  alert "quota_enforce_db_unreachable user=$USER host=$DB_HOST db=$DB_NAME"
+  exit 0
+fi
 
 HS_ACTIVE="${HS_ACTIVE:-HS_ACTIVE}"
 HS_LIMITED="${HS_LIMITED:-HS_LIMITED}"
 HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
-LEGACY_NOPAID="${LEGACY_NOPAID:-nopaid}"
 HS_PRIO="${HS_PRIO:-0}"
+
+validate_group_name(){
+  local name="$1" value="$2"
+  [[ "$value" =~ ^[A-Za-z0-9_:-]+$ ]] || { log "ERR user=${USER:-all} invalid_group name=$name"; exit 0; }
+}
+validate_group_name HS_ACTIVE "$HS_ACTIVE"
+validate_group_name HS_LIMITED "$HS_LIMITED"
+validate_group_name HS_NOPAID "$HS_NOPAID"
+
+normalize_legacy_nopaid(){
+  sql_exec "
+START TRANSACTION;
+INSERT INTO radusergroup (username,groupname,priority)
+SELECT n.username, '${HS_NOPAID}', COALESCE(MIN(n.priority),0)
+FROM radusergroup n
+WHERE LOWER(n.groupname)='nopaid'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM radusergroup x
+    WHERE x.username=n.username
+      AND x.groupname='${HS_NOPAID}'
+  )
+GROUP BY n.username;
+DELETE FROM radusergroup WHERE LOWER(groupname)='nopaid';
+COMMIT;" || true
+}
+normalize_legacy_nopaid
 
 sms_setting(){ sql_one "SELECT v FROM app_settings WHERE k='${1}' LIMIT 1;" || true; }
 msisdn_local(){
@@ -92,6 +125,18 @@ msisdn_local(){
   else
     echo "$d"
   fi
+}
+canonical_user_key(){
+  local u="${1:-}"
+  if [[ "$u" =~ ^233[0-9]{9}$ ]]; then
+    echo "0${u:3}"
+    return 0
+  fi
+  if [[ "$u" =~ ^0[0-9]{9}$ ]]; then
+    echo "$u"
+    return 0
+  fi
+  echo "$u"
 }
 sms_template(){
   local tpl="$1"; shift
@@ -151,17 +196,96 @@ sms_should_send(){
   return 1
 }
 
+LOGICAL_OPEN_RECENT_MINUTES="${LOGICAL_OPEN_RECENT_MINUTES:-30}"
+[[ "$LOGICAL_OPEN_RECENT_MINUTES" =~ ^[0-9]+$ ]] || LOGICAL_OPEN_RECENT_MINUTES=30
+POLICY_SWEEP_BATCH="${POLICY_SWEEP_BATCH:-400}"
+[[ "$POLICY_SWEEP_BATCH" =~ ^[0-9]+$ ]] || POLICY_SWEEP_BATCH=400
+(( POLICY_SWEEP_BATCH < 1 )) && POLICY_SWEEP_BATCH=1
+(( POLICY_SWEEP_BATCH > 5000 )) && POLICY_SWEEP_BATCH=5000
+POLICY_SWEEP_CURSOR_FILE="$STATE_DIR/.policy_sweep_cursor"
+RADACCT_LOGICAL_OPEN_SQL="(
+  (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
+  OR (
+    acctstoptime IS NOT NULL
+    AND acctstoptime<>'0000-00-00 00:00:00'
+    AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
+    AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${LOGICAL_OPEN_RECENT_MINUTES} MINUTE)
+  )
+)"
+RADACCT_LOGICAL_OPEN_RAOPEN_SQL="(
+  (ra_open.acctstoptime IS NULL OR ra_open.acctstoptime='0000-00-00 00:00:00')
+  OR (
+    ra_open.acctstoptime IS NOT NULL
+    AND ra_open.acctstoptime<>'0000-00-00 00:00:00'
+    AND COALESCE(ra_open.acctupdatetime, ra_open.acctstarttime) > ra_open.acctstoptime
+    AND COALESCE(ra_open.acctupdatetime, ra_open.acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${LOGICAL_OPEN_RECENT_MINUTES} MINUTE)
+  )
+)"
+
 # SWEEP_NO_USER: if no USER passed, sweep active sessions and recently-limited users
 if [[ -z "${USER:-}" ]]; then
+  POLICY_CURSOR=""
+  POLICY_CURSOR_NEXT=""
+  POLICY_NEED=0
+  declare -a POLICY_HEAD POLICY_WRAP POLICY_USERS
+  POLICY_HEAD=()
+  POLICY_WRAP=()
+  POLICY_USERS=()
+  if [[ -r "$POLICY_SWEEP_CURSOR_FILE" ]]; then
+    POLICY_CURSOR="$(head -n1 "$POLICY_SWEEP_CURSOR_FILE" 2>/dev/null || true)"
+  fi
+  [[ "${POLICY_CURSOR:-}" =~ ^[0-9]{10,12}$ ]] || POLICY_CURSOR=""
+  if [[ -n "${POLICY_CURSOR:-}" ]]; then
+    mapfile -t POLICY_HEAD < <(sql_all "
+      SELECT DISTINCT username
+      FROM radusergroup
+      WHERE groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}')
+        AND username > '${POLICY_CURSOR}'
+      ORDER BY username
+      LIMIT ${POLICY_SWEEP_BATCH}
+    " | awk 'NF')
+    if (( ${#POLICY_HEAD[@]} > 0 )); then
+      POLICY_CURSOR_NEXT="${POLICY_HEAD[$(( ${#POLICY_HEAD[@]} - 1 ))]}"
+    fi
+  fi
+  POLICY_NEED=$(( POLICY_SWEEP_BATCH - ${#POLICY_HEAD[@]} ))
+  if (( POLICY_NEED > 0 )); then
+    mapfile -t POLICY_WRAP < <(sql_all "
+      SELECT DISTINCT username
+      FROM radusergroup
+      WHERE groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}')
+      ORDER BY username
+      LIMIT ${POLICY_NEED}
+    " | awk 'NF')
+    if [[ -z "${POLICY_CURSOR_NEXT:-}" && ${#POLICY_WRAP[@]} -gt 0 ]]; then
+      POLICY_CURSOR_NEXT="${POLICY_WRAP[$(( ${#POLICY_WRAP[@]} - 1 ))]}"
+    fi
+  fi
+  POLICY_USERS=("${POLICY_HEAD[@]}" "${POLICY_WRAP[@]}")
+  if (( ${#POLICY_USERS[@]} > 0 )); then
+    mapfile -t POLICY_USERS < <(printf '%s\n' "${POLICY_USERS[@]}" | awk 'NF && !seen[$0]++')
+  fi
+  if [[ -n "${POLICY_CURSOR_NEXT:-}" ]]; then
+    printf '%s\n' "$POLICY_CURSOR_NEXT" >"$POLICY_SWEEP_CURSOR_FILE"
+  fi
+
   mapfile -t U < <(sql_all "
-    SELECT DISTINCT username FROM radacct WHERE acctstoptime IS NULL
+    SELECT DISTINCT username FROM radacct WHERE ${RADACCT_LOGICAL_OPEN_SQL}
     UNION
     SELECT rug.username
     FROM radusergroup rug
     JOIN radcheck rc ON rc.username=rug.username AND rc.attribute='Expiration'
     WHERE rug.groupname='${HS_LIMITED}'
       AND STR_TO_DATE(rc.value, '%d %b %Y %H:%i:%s') > NOW()
-  " | awk 'NF')
+  " | { awk 'NF'; if (( ${#POLICY_USERS[@]} > 0 )); then printf '%s\n' "${POLICY_USERS[@]}"; fi; } | awk '!seen[$0]++')
+  if (( ${#U[@]} > 0 )); then
+    U_CAN=()
+    for u in "${U[@]}"; do
+      U_CAN+=("$(canonical_user_key "$u")")
+    done
+    mapfile -t U < <(printf '%s\n' "${U_CAN[@]}" | awk 'NF && !seen[$0]++')
+  fi
+  log "SWEEP users=${#U[@]} policy_batch=${#POLICY_USERS[@]} cursor_prev=${POLICY_CURSOR:-na} cursor_next=${POLICY_CURSOR_NEXT:-na}"
   for u in "${U[@]}"; do
     if "$SELF_PATH" "$u" --force; then
       :
@@ -195,7 +319,7 @@ if [[ -z "${USER:-}" ]]; then
           SELECT 1
           FROM radacct ra_open
           WHERE ra_open.username = u.username
-            AND ra_open.acctstoptime IS NULL
+            AND ${RADACCT_LOGICAL_OPEN_RAOPEN_SQL}
         )
       ORDER BY a.last_seen ASC, u.username ASC
       LIMIT 200
@@ -244,6 +368,8 @@ COA_PORT="${COA_PORT:-3799}"
 
 KICK_RECENT_MINUTES="${KICK_RECENT_MINUTES:-0}"
 [[ "$KICK_RECENT_MINUTES" =~ ^[0-9]+$ ]] || KICK_RECENT_MINUTES=0
+ZERO_CAP_EXHAUST_ACTIVE="${ZERO_CAP_EXHAUST_ACTIVE:-1}"
+[[ "$ZERO_CAP_EXHAUST_ACTIVE" =~ ^[01]$ ]] || ZERO_CAP_EXHAUST_ACTIVE=1
 KICK_RECENT_SQL=""
 if (( KICK_RECENT_MINUTES > 0 )); then
   # Avoid sending CoA for very old/stale "open" radacct rows (reduces Disconnect-NAK noise).
@@ -290,13 +416,17 @@ COA_READY=1
 if [[ -z "${COA_SECRET:-}" ]]; then
   COA_READY=0
   log "WARN user=$USER coa_target_missing skip_coa=yes"
+else
+  COA_SECRET_FILE_RUNTIME="$(mktemp -p "$STATE_DIR" .coa_secret.XXXXXX)"
+  chmod 600 "$COA_SECRET_FILE_RUNTIME"
+  printf '%s' "$COA_SECRET" >"$COA_SECRET_FILE_RUNTIME"
 fi
 
 # ---- Mikrotik hilo helpers ----
 hilo_to_bytes(){ local hi="${1:-0}" lo="${2:-0}"; [[ "$hi" =~ ^[0-9]+$ ]]||hi=0; [[ "$lo" =~ ^[0-9]+$ ]]||lo=0; echo $(( hi*4294967296 + (lo % 4294967296) )); }
 bytes_to_hilo(){ local b="${1:-0}"; [[ "$b" =~ ^[0-9]+$ ]]||b=0; echo "$(( b/4294967296 )) $(( b%4294967296 ))"; }
 get_user_cap_bytes(){
-  local max=0 u hi lo b q
+  local max=0 u hi lo b q promo=0
   for u in "${USERS[@]}"; do
     q="$(sql_one "SELECT value FROM radreply WHERE username='${u}' AND attribute='Nister-Quota-Bytes' ORDER BY id DESC LIMIT 1;" || true)"
     if [[ "${q:-}" =~ ^[0-9]+$ && "$q" -gt 0 ]]; then
@@ -309,6 +439,11 @@ get_user_cap_bytes(){
     [[ "$b" =~ ^[0-9]+$ ]] || b=0
     (( b > max )) && max="$b"
   done
+  promo="$(sql_one "SELECT COALESCE(SUM(grant_bytes),0) FROM nister_data_promos WHERE username IN (${IN_USERS}) AND expires_at > UTC_TIMESTAMP();" || true)"
+  [[ "${promo:-}" =~ ^[0-9]+$ ]] || promo=0
+  if (( promo > 0 )); then
+    max=$(( max + promo ))
+  fi
   echo "$max"
 }
 
@@ -324,7 +459,22 @@ get_days(){
 }
 
 get_expiry_epoch(){
-  local max=0 exp epoch
+  local max=0 exp epoch sql_epoch
+  sql_epoch="$(sql_one "SELECT COALESCE(MAX(UNIX_TIMESTAMP(
+                    COALESCE(
+                      STR_TO_DATE(value,'%d %b %Y %H:%i:%s'),
+                      STR_TO_DATE(value,'%Y-%m-%d %H:%i:%s'),
+                      STR_TO_DATE(REPLACE(REPLACE(value,'T',' '),'Z',''),'%Y-%m-%d %H:%i:%s')
+                    )
+                  )),0)
+                  FROM radcheck
+                  WHERE username IN (${IN_USERS})
+                    AND attribute='Expiration';" || true)"
+  [[ "$sql_epoch" =~ ^[0-9]+$ ]] || sql_epoch=0
+  if (( sql_epoch > 0 )); then
+    echo "$sql_epoch"
+    return 0
+  fi
   while IFS= read -r exp; do
     [[ -n "${exp:-}" ]] || continue
     epoch="$(date -u -d "$exp" +%s 2>/dev/null || echo 0)"
@@ -336,17 +486,41 @@ get_expiry_epoch(){
   echo "$max"
 }
 
+get_promo_expiry_epoch(){
+  local exp epoch
+  exp="$(sql_one "SELECT DATE_FORMAT(MAX(expires_at),'%Y-%m-%d %H:%i:%s')
+                  FROM nister_data_promos
+                  WHERE username IN (${IN_USERS})
+                    AND expires_at > UTC_TIMESTAMP();" || true)"
+  [[ -n "${exp:-}" && "${exp^^}" != "NULL" ]] || { echo 0; return 0; }
+  epoch="$(date -u -d "$exp" +%s 2>/dev/null || echo 0)"
+  [[ "$epoch" =~ ^[0-9]+$ ]] || epoch=0
+  echo "$epoch"
+}
+
 get_expiry_str(){
   sql_one "SELECT value FROM radcheck WHERE username IN (${IN_USERS}) AND attribute='Expiration' ORDER BY STR_TO_DATE(value,'%d %b %Y %H:%i:%s') DESC LIMIT 1;" || true
 }
 
 get_window_start(){
-    local ws epoch fallback exp_epoch first_seen
+    local ws epoch fallback exp_epoch first_seen promo_start
     ws="$(sql_one "SELECT value FROM radreply WHERE username IN (${IN_USERS}) AND attribute='Nister-Window-Start' ORDER BY id DESC LIMIT 1;" || true)"
     if [[ -n "${ws:-}" ]]; then
       epoch="$(date -u -d "$ws" +%s 2>/dev/null || echo 0)"
       if [[ "$epoch" =~ ^[0-9]+$ && "$epoch" -gt 0 && "$epoch" -le "$NOW_EPOCH" ]]; then
         echo "$ws"
+        return 0
+      fi
+    fi
+    # Promo-only users may not have an explicit window start; anchor to latest active promo grant.
+    promo_start="$(sql_one "SELECT DATE_FORMAT(MAX(created_at),'%Y-%m-%d %H:%i:%s')
+                            FROM nister_data_promos
+                            WHERE username IN (${IN_USERS})
+                              AND expires_at > UTC_TIMESTAMP();" || true)"
+    if [[ -n "${promo_start:-}" && "${promo_start^^}" != "NULL" ]]; then
+      epoch="$(date -u -d "$promo_start" +%s 2>/dev/null || echo 0)"
+      if [[ "$epoch" =~ ^[0-9]+$ && "$epoch" -gt 0 && "$epoch" -le "$NOW_EPOCH" ]]; then
+        echo "$promo_start"
         return 0
       fi
     fi
@@ -382,12 +556,59 @@ usage_peak_file(){
   echo "$STATE_DIR/${ukey}.used_peak"
 }
 
+sql_escape(){
+  local s="${1:-}"
+  s="${s//\'/''}"
+  echo "$s"
+}
+
+calc_used_bytes_fair(){
+  local ws="$1" ws_esc
+  ws_esc="$(sql_escape "$ws")"
+  sql_one "
+    SELECT COALESCE(SUM(
+      CASE
+        WHEN q.sess_bytes <= 0 THEN 0
+        WHEN q.sess_end <= q.sess_start THEN 0
+        WHEN q.sess_start >= '${ws_esc}' THEN q.sess_bytes
+        ELSE FLOOR(
+          CAST(q.sess_bytes AS DECIMAL(30,6))
+          * CAST(GREATEST(
+              0,
+              TIMESTAMPDIFF(
+                SECOND,
+                GREATEST(q.sess_start, '${ws_esc}'),
+                LEAST(q.sess_end, UTC_TIMESTAMP())
+              )
+            ) AS DECIMAL(20,6))
+          / GREATEST(1, TIMESTAMPDIFF(SECOND, q.sess_start, q.sess_end))
+        )
+      END
+    ),0)
+    FROM (
+      SELECT
+        ra.acctstarttime AS sess_start,
+        COALESCE(NULLIF(ra.acctstoptime,'0000-00-00 00:00:00'), ra.acctupdatetime, UTC_TIMESTAMP()) AS sess_end,
+        (
+          COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0)
+          + 4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
+        ) AS sess_bytes
+      FROM radacct ra
+      WHERE ra.username IN (${IN_USERS})
+        AND ra.acctstarttime IS NOT NULL
+        AND ra.acctstarttime < UTC_TIMESTAMP()
+        AND COALESCE(NULLIF(ra.acctstoptime,'0000-00-00 00:00:00'), ra.acctupdatetime, UTC_TIMESTAMP()) > '${ws_esc}'
+    ) q;
+  " || echo 0
+}
+
 usage_peak_key(){
   local ws
+  local usage_model="fair_v2"
   ws="$(sql_one "SELECT value FROM radreply WHERE username IN (${IN_USERS}) AND attribute='Nister-Window-Start' ORDER BY id DESC LIMIT 1;" || true)"
   ws="${ws//$'\t'/ }"
   [[ -z "${ws:-}" ]] && ws="na"
-  echo "${PLAN_CODE:-na}|${CAP_BYTES:-0}|${EXP_EPOCH:-0}|${ws}"
+  echo "${usage_model}|${PLAN_CODE:-na}|${CAP_BYTES:-0}|${EXP_EPOCH:-0}|${ws}"
 }
 
 monotonic_used(){
@@ -425,7 +646,7 @@ send_disconnect(){
   payload_lines+=("Message-Authenticator = 0x00")
   payload="$(printf '%s\n' "${payload_lines[@]}")"
 
-  out="$(printf '%s' "$payload" | radclient -x -r 1 -t 3 "${nas}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
+  out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$COA_SECRET_FILE_RUNTIME" "${nas}:${COA_PORT}" disconnect 2>&1 || true)"
   if echo "$out" | grep -q "Disconnect-ACK"; then
     return 0
   fi
@@ -465,7 +686,7 @@ WHERE username IN (${IN_USERS})
 
 DELETE FROM radusergroup
 WHERE username IN (${IN_USERS})
-  AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}');
+  AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}');
 INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
 COMMIT;"
 }
@@ -481,7 +702,7 @@ kick_sessions(){
     SELECT DISTINCT username, framedipaddress, acctsessionid, nasipaddress, callingstationid
     FROM radacct
     WHERE username IN (${IN_USERS})
-      AND acctstoptime IS NULL
+      AND ${RADACCT_LOGICAL_OPEN_SQL}
       ${KICK_RECENT_SQL}
     ORDER BY acctstarttime DESC
     LIMIT 200
@@ -514,15 +735,20 @@ kick_sessions(){
       continue
     fi
 
-    (( attempts++ ))
+    (( attempts+=1 ))
     if send_disconnect "$u" "$nas" "$sid_safe" "$ip" "$mac"; then
-      (( ok++ ))
+      (( ok+=1 ))
     else
-      (( fail++ ))
+      (( fail+=1 ))
     fi
   done
 
   if (( attempts == 0 )); then
+    if (( ${#rows[@]} == 0 )); then
+      log "KICK_DONE user=$USER ok=$ok fail=$fail attempts=$attempts rows=0 skipped=no_active_session"
+      return 0
+    fi
+
     if [[ "${#NAS_IPS_LIST[@]}" -gt 0 ]]; then
       fallback_nas=("${NAS_IPS_LIST[@]}")
     elif is_valid_ipv4 "${COA_IP:-}"; then
@@ -543,11 +769,11 @@ kick_sessions(){
 
     for nas in "${fallback_nas[@]}"; do
       for u in "${fallback_users[@]}"; do
-        (( attempts++ ))
+        (( attempts+=1 ))
         if send_disconnect "$u" "$nas"; then
-          (( ok++ ))
+          (( ok+=1 ))
         else
-          (( fail++ ))
+          (( fail+=1 ))
         fi
       done
     done
@@ -557,7 +783,7 @@ kick_sessions(){
   log "KICK_DONE user=$USER ok=$ok fail=$fail attempts=$attempts rows=${#rows[@]}"
 }
 is_limited_state(){
-  sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}') LIMIT 1;" | grep -q 1 && return 0 || true
+  sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}') LIMIT 1;" | grep -q 1 && return 0 || true
   sql_one "SELECT 1 FROM radreply WHERE username IN (${IN_USERS}) AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords') AND value='0' LIMIT 1;" | grep -q 1
 }
 clear_limited_state(){
@@ -575,7 +801,7 @@ clear_limited_state(){
 
     DELETE FROM radusergroup
       WHERE username IN (${IN_USERS})
-        AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}','${LEGACY_NOPAID}');
+        AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}');
 
     INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
 
@@ -595,7 +821,7 @@ ensure_hs_active(){
   sql_exec "START TRANSACTION;
     DELETE FROM radusergroup
       WHERE username IN (${IN_USERS})
-        AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}','${HS_ACTIVE}','${LEGACY_NOPAID}');
+        AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}','${HS_ACTIVE}');
     INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
   COMMIT;"
 }
@@ -609,6 +835,12 @@ if is_limited_state; then
 fi
 
 EXP_EPOCH="$(get_expiry_epoch)"
+PROMO_EXP_EPOCH="$(get_promo_expiry_epoch)"
+[[ "$EXP_EPOCH" =~ ^[0-9]+$ ]] || EXP_EPOCH=0
+[[ "$PROMO_EXP_EPOCH" =~ ^[0-9]+$ ]] || PROMO_EXP_EPOCH=0
+if (( PROMO_EXP_EPOCH > EXP_EPOCH )); then
+  EXP_EPOCH="$PROMO_EXP_EPOCH"
+fi
 EXPIRED=0
 if (( EXP_EPOCH > 0 )); then
   (( NOW_EPOCH >= EXP_EPOCH )) && EXPIRED=1
@@ -620,15 +852,7 @@ CAP_BYTES="$(get_user_cap_bytes)"
 
 WINDOW_START="$(get_window_start)"
 
-RAW_USED="$(sql_one "
-  SELECT COALESCE(SUM(
-    COALESCE(acctinputoctets,0)+COALESCE(acctoutputoctets,0)
-    + 4294967296*(COALESCE(acctinputgigawords,0)+COALESCE(acctoutputgigawords,0))
-  ),0)
-  FROM radacct
-  WHERE username IN (${IN_USERS})
-    AND acctstarttime >= '${WINDOW_START}';
-" || echo 0)"
+RAW_USED="$(calc_used_bytes_fair "$WINDOW_START")"
 [[ "$RAW_USED" =~ ^[0-9]+$ ]] || RAW_USED=0
 
 USED_PEAK_KEY="$(usage_peak_key)"
@@ -639,6 +863,12 @@ USED="$(monotonic_used "$RAW_USED" "$USED_PEAK_KEY" "$USED_PEAK_FILE")"
 EXHAUSTED=0
 if (( CAP_BYTES > 0 )); then
   (( USED >= CAP_BYTES )) && EXHAUSTED=1
+elif (( ZERO_CAP_EXHAUST_ACTIVE == 1 )); then
+  # Guardrail: when quota is zero and no positive cap exists, keep HS policy limited
+  # until a real quota/top-up lands. This prevents LIMIT/UNLIMIT flapping.
+  if sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}') LIMIT 1;" | grep -q 1; then
+    EXHAUSTED=1
+  fi
 fi
 
 # force modes

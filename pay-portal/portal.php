@@ -4,6 +4,11 @@ declare(strict_types=1);
 require_once __DIR__.'/lib/user_auth.php';
 user_boot();
 user_require_login();
+$loginHref = '/login.php';
+$siteCode = location_session_get_code();
+if ($siteCode !== null && $siteCode !== '') {
+  $loginHref .= '?location_code='.rawurlencode($siteCode);
+}
 
 $indexPath = __DIR__.'/index.php';
 if (is_file($indexPath)) {
@@ -38,7 +43,7 @@ if (is_file($indexPath)) {
     <p class="muted">Login succeeded, but the portal home page is missing on this server.</p>
     <p class="muted">Use the actions below while the deployment is being corrected.</p>
     <div class="row">
-      <a class="btn primary" href="/login.php">Open login</a>
+      <a class="btn primary" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Open login</a>
       <a class="btn" href="/logout.php">Logout</a>
       <a class="btn" href="/me.php">Account API</a>
     </div>

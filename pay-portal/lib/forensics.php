@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/common.php';
+require_once __DIR__.'/location.php';
 
 final class ForensicsExportLimitReached extends RuntimeException {}
 
@@ -99,7 +100,7 @@ function forensics_list_capture_files(string $dir, DateTimeImmutable $from, Date
 
   $files = [];
   foreach ($entries as $name) {
-    if (!preg_match('/^nfcapd\.(\d{12})$/', $name, $m)) continue;
+    if (!preg_match('/^nfcapd\.(\d{12})(?:\.\d+)?$/', $name, $m)) continue;
     $dt = DateTimeImmutable::createFromFormat('YmdHi', $m[1], new DateTimeZone('UTC'));
     if (!$dt) continue;
     $ts = $dt->getTimestamp();
@@ -134,12 +135,29 @@ function forensics_user_matches_filter(string $username, ?string $filterCanon, ?
   return false;
 }
 
-function forensics_load_session_map(PDO $r, DateTimeImmutable $from, DateTimeImmutable $to): array {
-  $st = $r->prepare("\n    SELECT\n      username,\n      callingstationid,\n      framedipaddress,\n      UNIX_TIMESTAMP(acctstarttime) AS start_ts,\n      UNIX_TIMESTAMP(COALESCE(NULLIF(acctstoptime,'0000-00-00 00:00:00'), acctupdatetime, UTC_TIMESTAMP())) AS end_ts\n    FROM radacct\n    WHERE framedipaddress IS NOT NULL\n      AND framedipaddress <> ''\n      AND acctstarttime IS NOT NULL\n      AND acctstarttime <= :to_ts\n      AND COALESCE(NULLIF(acctstoptime,'0000-00-00 00:00:00'), acctupdatetime, UTC_TIMESTAMP()) >= :from_ts\n    ORDER BY framedipaddress, acctstarttime ASC\n  ");
-  $st->execute([
+function forensics_load_session_map(PDO $r, DateTimeImmutable $from, DateTimeImmutable $to, ?int $locationId = null): array {
+  $sql = "\n    SELECT\n      username,\n      callingstationid,\n      framedipaddress,\n      UNIX_TIMESTAMP(acctstarttime) AS start_ts,\n      UNIX_TIMESTAMP(COALESCE(NULLIF(acctstoptime,'0000-00-00 00:00:00'), acctupdatetime, UTC_TIMESTAMP())) AS end_ts\n    FROM radacct\n    WHERE framedipaddress IS NOT NULL\n      AND framedipaddress <> ''\n      AND acctstarttime IS NOT NULL\n      AND acctstarttime <= :to_ts\n      AND COALESCE(NULLIF(acctstoptime,'0000-00-00 00:00:00'), acctupdatetime, UTC_TIMESTAMP()) >= :from_ts";
+  $bind = [
     ':from_ts' => $from->format('Y-m-d H:i:s'),
     ':to_ts' => $to->format('Y-m-d H:i:s'),
-  ]);
+  ];
+
+  if ($locationId !== null && $locationId > 0) {
+    $ips = location_nas_ips($locationId);
+    if ($ips) {
+      $ph = [];
+      foreach ($ips as $i => $ip) {
+        $k = ':ip'.$i;
+        $ph[] = $k;
+        $bind[$k] = $ip;
+      }
+      $sql .= " AND nasipaddress IN (".implode(',', $ph).")";
+    }
+  }
+
+  $sql .= "\n    ORDER BY framedipaddress, acctstarttime ASC\n  ";
+  $st = $r->prepare($sql);
+  $st->execute($bind);
 
   $map = [];
   while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
@@ -251,13 +269,14 @@ function forensics_csv_rows_from_file(string $nfdumpBin, string $file, callable 
   }
 }
 
-function forensics_stream_mapped_csv($out, array $env, PDO $r, DateTimeImmutable $from, DateTimeImmutable $to, ?string $userFilterCanon = null): array {
+function forensics_stream_mapped_csv($out, array $env, PDO $r, DateTimeImmutable $from, DateTimeImmutable $to, ?string $userFilterCanon = null, ?int $locationId = null): array {
   $dir = forensics_netflow_dir($env);
   $bin = forensics_nfdump_bin($env);
   $rowLimit = forensics_row_limit($env);
 
   $files = forensics_list_capture_files($dir, $from, $to);
-  $sessionMap = forensics_load_session_map($r, $from, $to);
+  $sessionMap = forensics_load_session_map($r, $from, $to, $locationId);
+  $exporterMap = location_exporter_map($locationId);
 
   $filterCanon = null;
   $filterLocal = null;
@@ -273,6 +292,7 @@ function forensics_stream_mapped_csv($out, array $env, PDO $r, DateTimeImmutable
     'protocol', 'tcp_flags',
     'bytes', 'packets',
     'exporter_public_ip', 'exporter_id',
+    'location_id', 'location_code',
     'src_username', 'src_user_local', 'src_user_mac',
     'dst_username', 'dst_user_local', 'dst_user_mac',
     'user_match', 'user_remote_ip'
@@ -288,7 +308,7 @@ function forensics_stream_mapped_csv($out, array $env, PDO $r, DateTimeImmutable
     $processedFiles++;
     forensics_csv_rows_from_file($bin, $file, function(array $flow) use (
       &$rows, $rowLimit, $out, $fromTs, $toTs,
-      $sessionMap, $filterCanon, $filterLocal
+      $sessionMap, $filterCanon, $filterLocal, $exporterMap, $locationId
     ): void {
       $sa = $flow['sa'] ?? '';
       $da = $flow['da'] ?? '';
@@ -300,6 +320,11 @@ function forensics_stream_mapped_csv($out, array $env, PDO $r, DateTimeImmutable
       if ($te === false) $te = $ts;
 
       if ($ts > $toTs || $te < $fromTs) return;
+
+      $locMeta = location_resolve_by_exporter($exporterMap, (string)($flow['ra'] ?? ''), (string)($flow['exid'] ?? ''));
+      $flowLocId = (int)($locMeta['id'] ?? 0);
+      $flowLocCode = (string)($locMeta['code'] ?? '');
+      if ($locationId !== null && $locationId > 0 && $flowLocId !== $locationId) return;
 
       $srcSess = forensics_match_session($sessionMap, $sa, (int)$ts);
       $dstSess = forensics_match_session($sessionMap, $da, (int)$ts);
@@ -366,6 +391,8 @@ function forensics_stream_mapped_csv($out, array $env, PDO $r, DateTimeImmutable
         (string)($flow['ipkt'] ?? ''),
         (string)($flow['ra'] ?? ''),
         (string)($flow['exid'] ?? ''),
+        $flowLocId > 0 ? (string)$flowLocId : '',
+        $flowLocCode,
         $srcUser,
         $srcLocal,
         $srcMac,
@@ -383,13 +410,15 @@ function forensics_stream_mapped_csv($out, array $env, PDO $r, DateTimeImmutable
     'rows' => $rows,
     'row_limit' => $rowLimit,
     'netflow_dir' => $dir,
+    'location_id' => $locationId,
   ];
 }
 
-function forensics_stream_raw_csv($out, array $env, DateTimeImmutable $from, DateTimeImmutable $to): array {
+function forensics_stream_raw_csv($out, array $env, DateTimeImmutable $from, DateTimeImmutable $to, ?int $locationId = null): array {
   $dir = forensics_netflow_dir($env);
   $bin = forensics_nfdump_bin($env);
   $rowLimit = forensics_row_limit($env);
+  $exporterMap = location_exporter_map($locationId);
 
   $files = forensics_list_capture_files($dir, $from, $to);
   $fromTs = $from->getTimestamp();
@@ -398,7 +427,7 @@ function forensics_stream_raw_csv($out, array $env, DateTimeImmutable $from, Dat
   fputcsv($out, [
     'flow_start_utc','flow_end_utc','duration_sec',
     'src_ip','src_port','dst_ip','dst_port','protocol','tcp_flags',
-    'bytes','packets','exporter_public_ip','exporter_id'
+    'bytes','packets','exporter_public_ip','exporter_id','location_id','location_code'
   ]);
 
   $rows = 0;
@@ -406,12 +435,17 @@ function forensics_stream_raw_csv($out, array $env, DateTimeImmutable $from, Dat
 
   foreach ($files as $file) {
     $processedFiles++;
-    forensics_csv_rows_from_file($bin, $file, function(array $flow) use (&$rows, $rowLimit, $out, $fromTs, $toTs): void {
+    forensics_csv_rows_from_file($bin, $file, function(array $flow) use (&$rows, $rowLimit, $out, $fromTs, $toTs, $exporterMap, $locationId): void {
       $ts = strtotime(($flow['ts'] ?? '').' UTC');
       $te = strtotime(($flow['te'] ?? '').' UTC');
       if ($ts === false) return;
       if ($te === false) $te = $ts;
       if ($ts > $toTs || $te < $fromTs) return;
+
+      $locMeta = location_resolve_by_exporter($exporterMap, (string)($flow['ra'] ?? ''), (string)($flow['exid'] ?? ''));
+      $flowLocId = (int)($locMeta['id'] ?? 0);
+      $flowLocCode = (string)($locMeta['code'] ?? '');
+      if ($locationId !== null && $locationId > 0 && $flowLocId !== $locationId) return;
 
       $rows++;
       if ($rows > $rowLimit) {
@@ -432,6 +466,8 @@ function forensics_stream_raw_csv($out, array $env, DateTimeImmutable $from, Dat
         (string)($flow['ipkt'] ?? ''),
         (string)($flow['ra'] ?? ''),
         (string)($flow['exid'] ?? ''),
+        $flowLocId > 0 ? (string)$flowLocId : '',
+        $flowLocCode,
       ]);
     });
   }
@@ -441,6 +477,7 @@ function forensics_stream_raw_csv($out, array $env, DateTimeImmutable $from, Dat
     'rows' => $rows,
     'row_limit' => $rowLimit,
     'netflow_dir' => $dir,
+    'location_id' => $locationId,
   ];
 }
 
@@ -455,7 +492,7 @@ function forensics_collector_status(array $env): array {
     $entries = @scandir($dir);
     if (is_array($entries)) {
       foreach ($entries as $name) {
-        if (!preg_match('/^nfcapd\.(\d{12})$/', $name, $m)) continue;
+        if (!preg_match('/^nfcapd\.(\d{12})(?:\.\d+)?$/', $name, $m)) continue;
         $path = rtrim($dir, '/').'/'.$name;
         if (!is_file($path)) continue;
         $mtime = (int)@filemtime($path);
@@ -474,7 +511,7 @@ function forensics_collector_status(array $env): array {
     $entries = @scandir($dir);
     if (is_array($entries)) {
       foreach ($entries as $name) {
-        if (!preg_match('/^nfcapd\.(\d{12})$/', $name)) continue;
+        if (!preg_match('/^nfcapd\.(\d{12})(?:\.\d+)?$/', $name)) continue;
         $path = rtrim($dir, '/').'/'.$name;
         if (!is_file($path)) continue;
         $mtime = (int)@filemtime($path);

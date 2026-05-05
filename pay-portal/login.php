@@ -7,17 +7,17 @@ $err = '';
 $msg = (string)($_GET['msg'] ?? '');
 $prefill = (string)($_GET['username'] ?? $_GET['user'] ?? $_GET['msisdn'] ?? '');
 $prefill = msisdn_display(normalize_msisdn($prefill)) ?: $prefill;
+$locationCode = location_normalize_code((string)($_GET['location_code'] ?? $_GET['site_code'] ?? $_POST['location_code'] ?? ''));
+if ($locationCode === '') {
+  $sCode = location_session_get_code();
+  if ($sCode !== null) $locationCode = $sCode;
+}
 
-if (!user_logged_in() && isset($_GET['autologin']) && $_GET['autologin'] !== '0') {
-  $u = (string)($_GET['username'] ?? $_GET['user'] ?? $_GET['msisdn'] ?? '');
-  $ip = (string)($_GET['ip'] ?? '');
-  $mac = (string)($_GET['mac'] ?? '');
-  if ($u !== '' && $ip !== '' && user_do_autologin($u, $ip, $mac)) {
-    header('Location: /portal.php');
-    exit;
-  } else {
-    $err = 'Please login to continue.';
-  }
+function login_retry_message(int $retryAfter): string {
+  $retryAfter = max(1, $retryAfter);
+  if ($retryAfter < 60) return "Too many attempts. Try again in {$retryAfter} seconds.";
+  $mins = (int)ceil($retryAfter / 60);
+  return "Too many attempts. Try again in {$mins} minute(s).";
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -25,11 +25,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $pass   = (string)($_POST['password'] ?? '');
   if ($msisdn === '' || $pass === '') {
     $err = 'Please enter your number and password.';
-  } elseif (user_do_login($msisdn, $pass)) {
-    header('Location: /portal.php');
-    exit;
   } else {
-    $err = 'Login failed. Check your number and password.';
+    $clientIp = nister_client_ip($ENV);
+    if ($clientIp === '') $clientIp = 'unknown';
+    $msisdnNorm = normalize_msisdn($msisdn);
+    $userKey = ($msisdnNorm !== '') ? $msisdnNorm : strtolower(trim($msisdn));
+    $ipKey = $clientIp;
+    $comboKey = $clientIp . '|' . $userKey;
+
+    $ipGate = nister_rate_limit_allow('portal_login_ip', $ipKey, 10, 600, 900);
+    $userGate = nister_rate_limit_allow('portal_login_user', $comboKey, 6, 600, 900);
+    if (!($ipGate['allowed'] ?? false) || !($userGate['allowed'] ?? false)) {
+      $retryAfter = max((int)($ipGate['retry_after'] ?? 0), (int)($userGate['retry_after'] ?? 0));
+      $err = login_retry_message($retryAfter > 0 ? $retryAfter : 60);
+    } elseif (user_do_login($msisdn, $pass)) {
+      nister_rate_limit_clear('portal_login_ip', $ipKey);
+      nister_rate_limit_clear('portal_login_user', $comboKey);
+      header('Location: /portal.php');
+      exit;
+    } else {
+      $ipHit = nister_rate_limit_hit('portal_login_ip', $ipKey, 10, 600, 900);
+      $userHit = nister_rate_limit_hit('portal_login_user', $comboKey, 6, 600, 900);
+      if (!($ipHit['allowed'] ?? true) || !($userHit['allowed'] ?? true)) {
+        $retryAfter = max((int)($ipHit['retry_after'] ?? 0), (int)($userHit['retry_after'] ?? 0));
+        $err = login_retry_message($retryAfter > 0 ? $retryAfter : 60);
+      } else {
+        $err = 'Login failed. Check your number and password.';
+      }
+    }
   }
 }
 ?>
@@ -73,7 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php if ($err !== ''): ?>
       <div class="msg err"><?=htmlspecialchars($err, ENT_QUOTES, 'UTF-8')?></div>
     <?php endif; ?>
-    <form method="post" action="/login.php" autocomplete="off">
+    <form method="post" action="/login.php<?= $locationCode !== '' ? ('?location_code='.rawurlencode($locationCode)) : '' ?>" autocomplete="off">
+      <?php if ($locationCode !== ''): ?>
+        <input type="hidden" name="location_code" value="<?=htmlspecialchars($locationCode, ENT_QUOTES, 'UTF-8')?>">
+      <?php endif; ?>
       <div class="field">
         <label class="label" for="msisdn">Phone number</label>
         <input id="msisdn" name="msisdn" type="tel" placeholder="e.g. 059xxxxxxx" value="<?=htmlspecialchars($prefill, ENT_QUOTES, 'UTF-8')?>" required>

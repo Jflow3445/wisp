@@ -16,6 +16,11 @@ HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
 LEGACY_NOPAID="${LEGACY_NOPAID:-nopaid}"
 
 die(){ echo "ERROR: $*" >&2; exit 2; }
+need(){ command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1"; }
+validate_group_name(){
+  local name="$1" value="$2"
+  [[ "$value" =~ ^[A-Za-z0-9_:-]+$ ]] || die "Invalid group name in ${name}"
+}
 alert(){ 
   local msg="$1"
   local alert_log="/var/log/nister/alerts.log"
@@ -29,11 +34,20 @@ alert(){
   fi
 }
 
+validate_group_name HS_ACTIVE "$HS_ACTIVE"
+validate_group_name HS_LIMITED "$HS_LIMITED"
+validate_group_name HS_NOPAID "$HS_NOPAID"
+validate_group_name LEGACY_NOPAID "$LEGACY_NOPAID"
+
 [[ -n "$USER_RAW" ]] || die "Usage: $0 <msisdn> [HS_LIMITED|HS_ACTIVE|HS_NOPAID]"
 [[ "$TARGET" == "$HS_LIMITED" || "$TARGET" == "$HS_ACTIVE" || "$TARGET" == "$HS_NOPAID" ]] || die "TARGET must be HS_LIMITED, HS_ACTIVE, or HS_NOPAID"
+need mysql
+need radclient
+need awk
 
 # ---- DB creds from freeradius sql module ----
 SQLMOD="$(readlink -f /etc/freeradius/3.0/mods-enabled/sql)"
+[[ -n "${SQLMOD:-}" && -r "$SQLMOD" ]] || die "sql module not readable: /etc/freeradius/3.0/mods-enabled/sql"
 get_kv() {
   awk -F= -v k="$1" '$0 ~ "^[[:space:]]*"k"[[:space:]]*=" {
     v=$2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); gsub(/^"+|"+$/, "", v);
@@ -57,7 +71,8 @@ user=$DB_USER
 password=$DB_PASS
 database=$DB_NAME
 EOF2
-cleanup(){ rm -f "$CNF"; }
+COA_SECRET_FILE_RUNTIME=""
+cleanup(){ rm -f "$CNF" "${COA_SECRET_FILE_RUNTIME:-}"; }
 trap cleanup EXIT
 
 sql_exec(){ mysql --defaults-extra-file="$CNF" -e "$1" 2>/dev/null; }
@@ -76,6 +91,9 @@ msisdn_local(){
 }
 
 # ---- CoA target ----
+if [[ ! -r "$PROXYCONF" && -z "${COA_SECRET:-}" ]]; then
+  die "proxy.conf not readable and COA_SECRET not provided"
+fi
 COA_IP="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="ipaddr"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
 COA_PORT="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="port"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
 COA_SECRET_CONF="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="secret"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
@@ -90,6 +108,21 @@ if [[ -z "$COA_SECRET" ]]; then
   fi
 fi
 [[ -n "$COA_SECRET" ]] || die "Could not load CoA secret (set COA_SECRET or fix proxy.conf or /etc/nister/coa_secret)."
+COA_SECRET_FILE_RUNTIME="$(mktemp /tmp/.coa_secret.XXXXXX)"
+chmod 600 "$COA_SECRET_FILE_RUNTIME"
+printf '%s' "$COA_SECRET" >"$COA_SECRET_FILE_RUNTIME"
+
+LOGICAL_OPEN_RECENT_MINUTES="${LOGICAL_OPEN_RECENT_MINUTES:-30}"
+[[ "$LOGICAL_OPEN_RECENT_MINUTES" =~ ^[0-9]+$ ]] || LOGICAL_OPEN_RECENT_MINUTES=30
+RADACCT_LOGICAL_OPEN_SQL="(
+  (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
+  OR (
+    acctstoptime IS NOT NULL
+    AND acctstoptime<>'0000-00-00 00:00:00'
+    AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
+    AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${LOGICAL_OPEN_RECENT_MINUTES} MINUTE)
+  )
+)"
 
 # digits-only (kills SQL injection)
 U="$(echo "$USER_RAW" | tr -cd '0-9')"
@@ -189,7 +222,7 @@ mapfile -t rows < <(
   mysql --defaults-extra-file="$CNF" -N -B -e "
     SELECT username, nasipaddress, framedipaddress, acctsessionid, callingstationid
     FROM radacct
-    WHERE username IN ($IN_LIST) AND acctstoptime IS NULL
+    WHERE username IN ($IN_LIST) AND ${RADACCT_LOGICAL_OPEN_SQL}
     ORDER BY acctstarttime DESC
     LIMIT 50;" || true
 )
@@ -237,7 +270,7 @@ for row in "${rows[@]}"; do
   payload_lines+=("Message-Authenticator = 0x00")
   payload="$(printf '%s\n' "${payload_lines[@]}")"
 
-  out="$(printf '%s' "$payload" | radclient -x -r 1 -t 3 "${NAS_TARGET}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
+  out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$COA_SECRET_FILE_RUNTIME" "${NAS_TARGET}:${COA_PORT}" disconnect 2>&1 || true)"
   if echo "$out" | grep -q "Disconnect-ACK"; then
     (( ok++ ))
   else

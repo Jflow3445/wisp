@@ -27,6 +27,18 @@ $normalize_msisdn = static function(?string $s): string {
   return $s;
 };
 
+$reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+if ($reqMethod !== 'POST') {
+  http_response_code(405);
+  echo json_encode(['ok'=>false,'error'=>'method_not_allowed'], JSON_UNESCAPED_SLASHES);
+  exit;
+}
+if (!nister_is_same_origin_request()) {
+  http_response_code(403);
+  echo json_encode(['ok'=>false,'error'=>'origin_not_allowed'], JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 // Merge JSON into $_POST for convenience
 try {
   $ct = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
@@ -43,7 +55,7 @@ try {
   }
 } catch (Throwable $e) { /* ignore */ }
 
-$in = $_POST + $_GET;
+$in = $_POST;
 
 // Canonical fields Admin uses
 $ref = trim((string)($in['ref'] ?? $in['txref'] ?? $in['txid'] ?? $in['reference'] ?? ''));
@@ -163,10 +175,12 @@ try {
     http_response_code(409);
     echo json_encode(['ok'=>false,'error'=>'duplicate_ref','ref'=>$ref], JSON_UNESCAPED_SLASHES);
   } else {
+    error_log('[deposit_request.php] db_error ref=' . $ref . ' err=' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['ok'=>false,'error'=>'db_error:'.$e->getMessage()], JSON_UNESCAPED_SLASHES);
+    echo json_encode(['ok'=>false,'error'=>'db_error'], JSON_UNESCAPED_SLASHES);
   }
 } catch (Throwable $e) {
+  error_log('[deposit_request.php] server_error ref=' . $ref . ' err=' . $e->getMessage());
   http_response_code(500);
-  echo json_encode(['ok'=>false,'error'=>'server_error:'.$e->getMessage()], JSON_UNESCAPED_SLASHES);
+  echo json_encode(['ok'=>false,'error'=>'server_error'], JSON_UNESCAPED_SLASHES);
 }

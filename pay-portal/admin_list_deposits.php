@@ -1,12 +1,22 @@
 <?php
 require_once __DIR__.'/lib/common.php';
 header('Content-Type: application/json; charset=utf-8');
-$env = array_merge(
-  env_load('/etc/pay.env'),
-  env_load(__DIR__.'/.env')
-);
+
+$env = app_boot();
+$legacyRaw = strtolower(trim((string)($env['ALLOW_LEGACY_ADMIN_ENDPOINTS'] ?? getenv('ALLOW_LEGACY_ADMIN_ENDPOINTS') ?? ($_ENV['ALLOW_LEGACY_ADMIN_ENDPOINTS'] ?? ''))));
+$legacyEnabled = in_array($legacyRaw, ['1','true','yes','on'], true);
+if (!$legacyEnabled) {
+  http_response_code(410);
+  echo json_encode(['ok'=>false,'error'=>'legacy_endpoint_disabled','detail'=>'Use /admin/index.php']);
+  exit;
+}
+
 $expected = $env['ADMIN_DEPOSIT_SECRET'] ?? getenv('ADMIN_DEPOSIT_SECRET') ?? ($_ENV['ADMIN_DEPOSIT_SECRET'] ?? '');
-$secret = $_GET['secret'] ?? $_SERVER['HTTP_X_ADMIN_SECRET'] ?? '';
+$method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+$secret = (string)($_SERVER['HTTP_X_ADMIN_SECRET'] ?? '');
+if ($secret === '' && $method === 'POST') {
+  $secret = (string)($_POST['secret'] ?? '');
+}
 if ($expected === '' || !hash_equals((string)$expected, (string)$secret)){
   http_response_code(403); echo json_encode(['ok'=>false,'error'=>'forbidden']); exit;
 }

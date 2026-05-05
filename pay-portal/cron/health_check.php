@@ -5,6 +5,7 @@ require_once __DIR__.'/../lib/health.php';
 require_once __DIR__.'/../lib/radius.php';
 
 $ENV = app_boot();
+nister_require_cli_or_token($ENV);
 
 if (!function_exists('nister_username_variants')) {
   function nister_username_variants(string $u): array {
@@ -45,12 +46,22 @@ if ($radiusUser !== '' && $radiusPass !== '' && $radiusSecret !== '') {
   $radiusOk = (strpos($out, 'Access-Accept') !== false) ? 1 : 0;
   if ($radiusOk === 0) $radiusNote = 'radius_auth_failed';
 } else {
+  $radiusOk = 0;
   $radiusNote = 'radius_auth_skipped';
 }
 
 // ---- Tunnel route + ping ----
+$tunnelHost = (string)($ENV['HEALTH_TUNNEL_HOST'] ?? '10.10.20.4');
+$tunnelExpectedDevRaw = (string)($ENV['HEALTH_TUNNEL_DEV'] ?? 'ppp0');
+$tunnelAllowedDevs = [];
+if ($tunnelExpectedDevRaw !== '') {
+  foreach (preg_split('/[,\s]+/', $tunnelExpectedDevRaw, -1, PREG_SPLIT_NO_EMPTY) as $dev) {
+    $dev = trim((string)$dev);
+    if ($dev !== '') $tunnelAllowedDevs[$dev] = true;
+  }
+}
 $routeDev = null;
-[$rcRoute, $routeOut] = sh("ip route get 10.10.20.4");
+[$rcRoute, $routeOut] = sh("ip route get " . escapeshellarg($tunnelHost));
 if ($rcRoute === 0 && preg_match('/dev\\s+(\\S+)/', $routeOut, $m)) {
   $routeDev = $m[1];
 }
@@ -58,15 +69,30 @@ if ($rcRoute === 0 && preg_match('/dev\\s+(\\S+)/', $routeOut, $m)) {
 $pingMs = null;
 $lossPct = null;
 $tunnelOk = null;
-[$rcPing, $pingOut] = sh("ping -c 3 -W 1 10.10.20.4");
-if (preg_match('/(\\d+)% packet loss/', $pingOut, $m)) {
-  $lossPct = (int)$m[1];
+$tunnelNote = '';
+[$rcPing, $pingOut] = sh("ping -c 3 -W 1 " . escapeshellarg($tunnelHost));
+if (preg_match('/([0-9]+(?:[.,][0-9]+)?)% packet loss/', $pingOut, $m)) {
+  $lossRaw = str_replace(',', '.', (string)$m[1]);
+  if (is_numeric($lossRaw)) {
+    $lossPct = (int)round((float)$lossRaw);
+    if ($lossPct < 0) $lossPct = 0;
+    if ($lossPct > 100) $lossPct = 100;
+  }
 }
 if (preg_match('/rtt .* = ([0-9.]+)\\/([0-9.]+)\\//', $pingOut, $m)) {
   $pingMs = (int)round((float)$m[2]);
 }
 if ($routeDev !== null) {
   $tunnelOk = ($lossPct !== null && $lossPct < 100) ? 1 : 0;
+  if ($tunnelAllowedDevs && !isset($tunnelAllowedDevs[$routeDev])) {
+    $tunnelOk = 0;
+    $tunnelNote = 'tunnel_route_mismatch';
+  } elseif ($tunnelOk === 0) {
+    $tunnelNote = 'tunnel_ping_failed';
+  }
+} else {
+  $tunnelOk = 0;
+  $tunnelNote = 'tunnel_route_unknown';
 }
 
 // ---- CoA test (optional) ----
@@ -89,7 +115,16 @@ if ($coaSecret !== '' && $coaUser !== '') {
     $ph = implode(',', array_fill(0, count($targets), '?'));
     $st = $pdo->prepare("SELECT username, nasipaddress, framedipaddress, acctsessionid, callingstationid
                          FROM radacct
-                         WHERE acctstoptime IS NULL AND username IN ($ph)
+                         WHERE (
+                           (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
+                           OR (
+                             acctstoptime IS NOT NULL
+                             AND acctstoptime<>'0000-00-00 00:00:00'
+                             AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
+                             AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
+                           )
+                         )
+                           AND username IN ($ph)
                          ORDER BY acctstarttime DESC
                          LIMIT 50");
     $st->execute($targets);
@@ -180,7 +215,7 @@ if ($coaOk === 0) $overallOk = 0;
 $noteParts = array_filter([
   $radiusNote,
   $coaNote,
-  ($tunnelOk === 0 ? 'tunnel_down' : ''),
+  ($tunnelOk === 0 ? ($tunnelNote !== '' ? $tunnelNote : 'tunnel_down') : ''),
 ]);
 $note = $noteParts ? implode(';', $noteParts) : null;
 

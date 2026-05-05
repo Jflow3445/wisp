@@ -4,12 +4,24 @@ require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/sms.php';
 header('Content-Type: application/json; charset=utf-8');
 
-$env = array_merge(
-  env_load('/etc/pay.env'),
-  env_load(__DIR__.'/.env')
-);
+// Security hotfix: legacy secret-based admin endpoints are disabled by default.
+$env = app_boot();
+$legacyRaw = strtolower(trim((string)($env['ALLOW_LEGACY_ADMIN_ENDPOINTS'] ?? getenv('ALLOW_LEGACY_ADMIN_ENDPOINTS') ?? ($_ENV['ALLOW_LEGACY_ADMIN_ENDPOINTS'] ?? ''))));
+$legacyEnabled = in_array($legacyRaw, ['1','true','yes','on'], true);
+if (!$legacyEnabled) {
+  http_response_code(410);
+  echo json_encode(['ok'=>false,'error'=>'legacy_endpoint_disabled','detail'=>'Use /admin/index.php']);
+  exit;
+}
+
+$method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+if ($method !== 'POST') {
+  http_response_code(405);
+  echo json_encode(['ok'=>false,'error'=>'method_not_allowed']); exit;
+}
+
 $expected = $env['ADMIN_DEPOSIT_SECRET'] ?? getenv('ADMIN_DEPOSIT_SECRET') ?? ($_ENV['ADMIN_DEPOSIT_SECRET'] ?? '');
-$secret = $_GET['secret'] ?? $_SERVER['HTTP_X_ADMIN_SECRET'] ?? '';
+$secret = $_SERVER['HTTP_X_ADMIN_SECRET'] ?? ($_POST['secret'] ?? ($_POST['s'] ?? ''));
 if ($expected === '' || !hash_equals((string)$expected, (string)$secret)){
   http_response_code(403); echo json_encode(['ok'=>false,'error'=>'forbidden']); exit;
 }
@@ -18,6 +30,9 @@ $raw = file_get_contents('php://input'); $in = json_decode($raw,true) ?: $_POST;
 $id = trim((string)($in['id']??'')); $action = strtolower(trim((string)($in['action']??'')));
 if (!$id || !in_array($action,['approve','decline'],true)){
   http_response_code(422); echo json_encode(['ok'=>false,'error'=>'id + action required']); exit;
+}
+if (!preg_match('/^[A-Za-z0-9_-]{1,80}$/', $id)) {
+  http_response_code(422); echo json_encode(['ok'=>false,'error'=>'invalid_id']); exit;
 }
 
 $src = __DIR__.'/data/manual_deposits/pending/'.$id.'.json';

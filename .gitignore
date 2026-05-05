@@ -64,3 +64,13 @@ wifi-portal/daloradius/library/daloradius.conf.php.*
 *.bak*
 *.fixbak*
 deploy_check*.txt
+
+# runtime/operator captures (can contain router secrets)
+live_*.txt
+final_rotation_validation_*.txt
+mikrotik_*_*.txt
+reboot_window_*.txt
+secret_rotation_*.txt
+deploy_backup_manifest_*.txt
+*.rsc
+mikrotik_backups/

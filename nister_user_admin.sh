@@ -21,6 +21,15 @@ HS_PRIO="${HS_PRIO:-0}"
 
 die(){ echo "ERROR: $*" >&2; exit 2; }
 need(){ command -v "$1" >/dev/null 2>&1 || die "Missing dependency: $1"; }
+validate_group_name(){
+  local name="$1" value="$2"
+  [[ "$value" =~ ^[A-Za-z0-9_:-]+$ ]] || die "Invalid group name in ${name}"
+}
+
+validate_group_name HS_ACTIVE "$HS_ACTIVE"
+validate_group_name HS_LIMITED "$HS_LIMITED"
+validate_group_name HS_NOPAID "$HS_NOPAID"
+validate_group_name LEGACY_NOPAID "$LEGACY_NOPAID"
 
 is_valid_ipv4(){
   [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
@@ -103,6 +112,18 @@ msisdn_local(){
     echo "$d"
   fi
 }
+
+LOGICAL_OPEN_RECENT_MINUTES="${LOGICAL_OPEN_RECENT_MINUTES:-30}"
+[[ "$LOGICAL_OPEN_RECENT_MINUTES" =~ ^[0-9]+$ ]] || LOGICAL_OPEN_RECENT_MINUTES=30
+RADACCT_LOGICAL_OPEN_SQL="(
+  (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
+  OR (
+    acctstoptime IS NOT NULL
+    AND acctstoptime<>'0000-00-00 00:00:00'
+    AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
+    AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${LOGICAL_OPEN_RECENT_MINUTES} MINUTE)
+  )
+)"
 
 sql_in(){
   local out="" x
@@ -335,13 +356,18 @@ kick_user(){
   if [[ -z "${NAS_IP:-}" && -n "${NAS_IPS:-}" ]]; then
     NAS_IP="${NAS_IPS%%,*}"
   fi
+  local coa_secret_file
+  coa_secret_file="$(mktemp -p "$STATE_DIR" .coa_secret.XXXXXX)"
+  chmod 600 "$coa_secret_file"
+  printf '%s' "$COA_SECRET" >"$coa_secret_file"
+  trap 'rm -f "$coa_secret_file"' RETURN
 
   local in_list; in_list="$(sql_in "$@")"
   mapfile -t rows < <(mysqlq "
     SELECT username, framedipaddress, acctsessionid, nasipaddress, callingstationid
     FROM radacct
     WHERE username IN (${in_list})
-      AND acctstoptime IS NULL
+      AND ${RADACCT_LOGICAL_OPEN_SQL}
     ORDER BY acctstarttime DESC
     LIMIT 50;" || true)
 
@@ -378,7 +404,7 @@ kick_user(){
     payload="$(printf '%s\n' "${payload_lines[@]}")"
 
     echo "[*] Kicking user=$u ip=${ip:-na} sid=${sid_safe:-na} mac=${mac:-na} via ${nas:-${NAS_IP}}:${COA_PORT}"
-    out="$(printf '%s' "$payload" | radclient -x -r 1 -t 3 "${nas:-${NAS_IP}}:${COA_PORT}" disconnect "$COA_SECRET" 2>&1 || true)"
+    out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$coa_secret_file" "${nas:-${NAS_IP}}:${COA_PORT}" disconnect 2>&1 || true)"
     if echo "$out" | grep -q "Disconnect-ACK"; then
       ((ok+=1))
     else
@@ -411,7 +437,7 @@ show_user(){
   mysql --defaults-extra-file="$CNF" -e "
     SELECT username, framedipaddress, acctsessionid, nasipaddress, acctstarttime
     FROM radacct
-    WHERE username IN (${in_list}) AND acctstoptime IS NULL
+    WHERE username IN (${in_list}) AND ${RADACCT_LOGICAL_OPEN_SQL}
     ORDER BY acctstarttime DESC
     LIMIT 10;" || true
 }

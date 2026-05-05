@@ -191,16 +191,49 @@ function fetchWithTimeout(url, opts, ms){
     .finally(function(){ clearTimeout(t); });
 }
 
+function safeApiBase(raw){
+  var v = String(raw || '').trim();
+  if (!v) return '';
+  try {
+    var u = new URL(v, window.location.href);
+    if (u.protocol !== 'https:') return '';
+    var h = String(u.hostname || '').toLowerCase();
+    var allowed = (h === 'api.nister.org');
+    if (!allowed) return '';
+    var p = (u.pathname && u.pathname !== '/') ? u.pathname.replace(/\/+$/,'') : '';
+    return u.origin + p;
+  } catch(e){
+    return '';
+  }
+}
+
+function safePayBase(raw){
+  var v = String(raw || '').trim();
+  if (!v) return '';
+  try {
+    var u = new URL(v, window.location.href);
+    if (u.protocol !== 'https:') return '';
+    var h = String(u.hostname || '').toLowerCase();
+    if (h !== 'pay.nister.org') return '';
+    if (/\/checkout\/?$/i.test(u.pathname || '')) u.pathname = '';
+    var p = (u.pathname && u.pathname !== '/') ? u.pathname.replace(/\/+$/,'') : '';
+    return u.origin + p;
+  } catch(e){
+    return '';
+  }
+}
+
 function pickApiUrl(username){
+  var apiOverride = safeApiBase(qs('api'));
   var cfgBase = (window.NISTER_CFG && window.NISTER_CFG.api_base) ? window.NISTER_CFG.api_base : '';
-  var base = (qs('api')||cfgBase||'https://api.nister.org').replace(/\/+$/,'');
+  var safeCfg = safeApiBase(cfgBase);
+  var base = (apiOverride || safeCfg || 'https://api.nister.org').replace(/\/+$/,'');
   if (!/\/status\.php$/i.test(base) && base.indexOf('/hotspot-api/status.php') === -1) {
     base = base.replace(/\/+$/,'') + '/hotspot-api/status.php';
   }
   if(!/\.php($|\?)/.test(base)) base += '/status.php';
   var t = Date.now();
-  var extra = qs('diag') ? '&diag=1' : '';
-  return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t + extra;
+  return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t;
 }
 
 function buildApiUrl(base, username){
@@ -211,16 +244,17 @@ function buildApiUrl(base, username){
   }
   if(!/\.php($|\?)/.test(base)) base += '/status.php';
   var t = Date.now();
-  var extra = qs('diag') ? '&diag=1' : '';
-  return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t + extra;
+  return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t;
 }
 
 function apiCandidates(username){
+  var apiOverride = safeApiBase(qs('api'));
   var cfgApi = (window.NISTER_CFG && window.NISTER_CFG.api_base) ? window.NISTER_CFG.api_base : '';
+  var safeCfg = safeApiBase(cfgApi);
   var pageProto = (location.protocol === 'https:') ? 'https:' : 'http:';
   var raw = [
-    qs('api'),
-    cfgApi,
+    apiOverride,
+    safeCfg,
     pageProto + '//api.nister.org',
     'https://api.nister.org'
   ];
@@ -235,20 +269,12 @@ function apiCandidates(username){
 }
 
 function pickPayLoginUrl(username, mac, ip){
-  var base = (window.NISTER_CFG && window.NISTER_CFG.pay_base) ? String(window.NISTER_CFG.pay_base) : 'https://pay.nister.org';
-  base = base.trim();
-  try {
-    var u = new URL(base);
-    if (/\/checkout\/?$/i.test(u.pathname || '')) u.pathname = '';
-    base = u.origin + (u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/+$/,'') : '');
-  } catch(e){
-    base = base.replace(/\/checkout\/?$/i,'').replace(/\/+$/,'');
-  }
+  var raw = (window.NISTER_CFG && window.NISTER_CFG.pay_base) ? String(window.NISTER_CFG.pay_base) : '';
+  var base = safePayBase(raw) || 'https://pay.nister.org';
   return base + '/login.php?' + new URLSearchParams({
     username: username || '',
     mac: mac || '',
-    ip: ip || '',
-    autologin: '1'
+    ip: ip || ''
   }).toString();
 }
 
@@ -424,10 +450,6 @@ function populateFromServer(j){
     paidBadge.textContent='NOT PAID';
   }
 
-  if (j.diag) {
-    h('debug3').textContent = 'server diag: ' + JSON.stringify(j.diag);
-  }
-
   var ref = j.referral || {};
   var code = (ref.invite_code || '').trim();
   h('ref_code').textContent = code ? code : 'N/A';
@@ -469,11 +491,10 @@ function populateFromServer(j){
 
 function setUnknownUI(){
   var badge=h('statusBadge'); badge.className='badge warn';
-  var err = state.lastErr ? (' Details: '+state.lastErr) : '';
   badge.textContent='Unable to verify - limited access assumed';
   h('title').textContent='Status unknown';
   var note=h('statusNote'); note.className='note warn';
-  note.textContent='We could not reach the billing server.'+err+' You may have limited access until verification succeeds.';
+  note.textContent='We could not reach the billing server. You may have limited access until verification succeeds.';
   note.style.display='block';
 
   ['quota','used','remain','period','expiry','left','group','alist','pct','rate'].forEach(function(id){
@@ -505,26 +526,6 @@ function loadViaXHR(url){
   });
 }
 
-function loadViaJsonp(url){
-  return new Promise(function(resolve,reject){
-    var cb = '_nister_cb_' + String(Date.now()) + '_' + String(Math.floor(Math.random()*100000));
-    window[cb] = function(j){
-      try{
-        delete window[cb];
-      }catch(_){}
-      resolve(j);
-    };
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = url + (url.indexOf('?') > -1 ? '&' : '?') + 'callback=' + encodeURIComponent(cb);
-    s.onerror = function(){
-      try{ delete window[cb]; }catch(_){}
-      reject(new Error('jsonp error'));
-    };
-    document.head.appendChild(s);
-  });
-}
-
 function loadRadiusStatus(){
   h('title').textContent='Checking account...';
   h('statusNote').style.display='none';
@@ -552,9 +553,9 @@ function loadRadiusStatus(){
     var next = function(err){
       try{
         var msg = (err && (err.message || err.name)) || 'api failed';
-        state.lastErr = msg + ' @ ' + url;
+        state.lastErr = msg;
         var d2 = h('debug2');
-        if (d2) d2.textContent = 'api fail: ' + state.lastErr;
+        if (d2) d2.textContent = 'api fail: trying fallback';
       }catch(_){}
       tryOne(idx + 1);
     };
@@ -568,15 +569,9 @@ function loadRadiusStatus(){
       fetchWithTimeout(url, {}, 6000)
         .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
         .then(handleJson)
-        .catch(function(){
-          loadViaXHR(url).then(handleJson).catch(function(){
-            loadViaJsonp(url).then(handleJson).catch(next);
-          });
-        });
+        .catch(function(){ loadViaXHR(url).then(handleJson).catch(next); });
     } else {
-      loadViaXHR(url).then(handleJson).catch(function(){
-        loadViaJsonp(url).then(handleJson).catch(next);
-      });
+      loadViaXHR(url).then(handleJson).catch(next);
     }
   };
 
@@ -605,10 +600,35 @@ document.addEventListener('DOMContentLoaded', function(){
   var browse = document.getElementById('btnBrowse');
   if (browse){
     var cont = qs('continue') || '';
-    if (cont && cont.indexOf('http') === 0){
-      browse.href = cont;
-    } else {
-      var orig = '$(link-orig)';
+    var trustedHosts = {};
+    var allowHost = function(host){
+      host = String(host || '').toLowerCase();
+      if (!host) return false;
+      if (trustedHosts[host]) return true;
+      if (host === String(location.hostname || '').toLowerCase()) return true;
+      if (/(^|\\.)nister\\.org$/.test(host)) return true;
+      return false;
+    };
+    var contSet = false;
+    var orig = '$(link-orig)';
+    if (orig && orig.indexOf('$(') === -1) {
+      try {
+        var ou = new URL(orig, window.location.href);
+        if (ou.protocol === 'http:' || ou.protocol === 'https:') {
+          trustedHosts[String(ou.hostname || '').toLowerCase()] = true;
+        }
+      } catch (e) {}
+    }
+    if (cont) {
+      try {
+        var cu = new URL(cont, window.location.href);
+        if ((cu.protocol === 'http:' || cu.protocol === 'https:') && allowHost(cu.hostname)) {
+          browse.href = cu.toString();
+          contSet = true;
+        }
+      } catch (e) {}
+    }
+    if (!contSet) {
       if (orig && orig.indexOf('$(') === -1) browse.href = orig;
       else browse.href = 'https://nister.org';
     }

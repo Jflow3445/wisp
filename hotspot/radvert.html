@@ -15,9 +15,9 @@
   .actions .btn{width:100%}
 </style>
 <script>
-  var popup = '';
+  var popup = null;
   function openOrig() {
-    if (window.focus) popup.focus();
+    if (popup && typeof popup.focus === 'function') popup.focus();
     location.href = unescape('$(link-orig-esc)');
   }
   function openAd() {
@@ -25,11 +25,11 @@
   }
   function openAdvert() {
     if (window.name != 'hotspot_advert') {
-      popup = open('$(link-redirect)', 'hotspot_advert', '');
-      setTimeout("openOrig()", 1000);
+      popup = window.open('$(link-redirect)', 'hotspot_advert', '');
+      setTimeout(openOrig, 1000);
       return;
     }
-    setTimeout("openAd()", 1000);
+    setTimeout(openAd, 1000);
   }
 </script>
 </head>

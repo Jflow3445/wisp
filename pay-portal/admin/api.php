@@ -9,6 +9,7 @@ require_once __DIR__.'/../lib/settings.php';
 require_once __DIR__.'/../lib/alerts.php';
 require_once __DIR__.'/../lib/health.php';
 require_once __DIR__.'/../lib/forensics.php';
+require_once __DIR__.'/../lib/location.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 require_once __DIR__.'/../lib/sms.php';
 require_once __DIR__.'/../lib/referrals.php';
@@ -19,6 +20,13 @@ header('Content-Type: application/json; charset=utf-8');
 if (!admin_logged_in()) {
   http_response_code(401);
   echo json_encode(['ok'=>false,'error'=>'unauthorized']); exit;
+}
+admin_require_csrf_post();
+
+try {
+  location_bootstrap();
+} catch (Throwable $e) {
+  // non-fatal; location-scoped endpoints can still report explicit errors later
 }
 
 $fn = $_GET['fn'] ?? '';
@@ -34,6 +42,135 @@ function column_exists(PDO $pdo, string $table, string $col): bool {
   $qc = $pdo->quote($col);
   $st = $pdo->query("SHOW COLUMNS FROM {$table} LIKE {$qc}");
   return (bool)$st->fetchColumn();
+}
+
+function admin_attach_location_profiles(array &$rows): void {
+  global $PDO;
+  if (!$rows) return;
+  if (!table_exists($PDO, 'user_location_profiles')) return;
+  if (!table_exists($PDO, 'locations')) return;
+
+  $canon = [];
+  foreach ($rows as $r) {
+    $u = normalize_msisdn((string)($r['username'] ?? ''));
+    if ($u !== '') $canon[$u] = true;
+  }
+  if (!$canon) return;
+
+  $vals = array_keys($canon);
+  $ph = implode(',', array_fill(0, count($vals), '?'));
+  $sql = "SELECT p.msisdn, p.location_id, l.code AS location_code, l.name AS location_name
+          FROM user_location_profiles p
+          LEFT JOIN locations l ON l.id = p.location_id
+          WHERE p.msisdn IN ({$ph})";
+  $st = $PDO->prepare($sql);
+  $st->execute($vals);
+  $map = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+    $m = normalize_msisdn((string)($row['msisdn'] ?? ''));
+    if ($m === '') continue;
+    $map[$m] = [
+      'location_id' => (int)($row['location_id'] ?? 0),
+      'location_code' => (string)($row['location_code'] ?? ''),
+      'location_name' => (string)($row['location_name'] ?? ''),
+    ];
+  }
+
+  foreach ($rows as &$r) {
+    $m = normalize_msisdn((string)($r['username'] ?? ''));
+    if ($m === '' || !isset($map[$m])) continue;
+    $r['location_id'] = $map[$m]['location_id'];
+    $r['location_code'] = $map[$m]['location_code'];
+    $r['location_name'] = $map[$m]['location_name'];
+  }
+  unset($r);
+}
+
+function admin_attach_alert_sites(array &$rows): void {
+  global $PDO;
+  if (!$rows) return;
+
+  admin_attach_location_profiles($rows);
+
+  $defaultId = location_default_id();
+  $defaultLoc = location_find_by_id($defaultId);
+  $defaultCode = (string)($defaultLoc['code'] ?? location_default_code());
+  $defaultName = (string)($defaultLoc['name'] ?? 'Default Site');
+  $fallbackUsers = [];
+  foreach ($rows as $row) {
+    $locId = (int)($row['location_id'] ?? 0);
+    if ($locId > 0) continue;
+    $m = normalize_msisdn((string)($row['username'] ?? ''));
+    if ($m === '') continue;
+    $fallbackUsers[$m] = true;
+  }
+  if ($fallbackUsers) {
+    $defaults = location_filter_msisdns(array_keys($fallbackUsers), $defaultId);
+    $defaultSet = array_fill_keys(array_map(static fn($v): string => (string)$v, $defaults), true);
+    foreach ($rows as &$row) {
+      $locId = (int)($row['location_id'] ?? 0);
+      if ($locId > 0) continue;
+      $m = normalize_msisdn((string)($row['username'] ?? ''));
+      if ($m === '' || !isset($defaultSet[$m])) continue;
+      $row['location_id'] = $defaultId;
+      $row['location_code'] = $defaultCode;
+      $row['location_name'] = $defaultName;
+    }
+    unset($row);
+  }
+
+  if (!table_exists($PDO, 'location_nas') || !table_exists($PDO, 'locations')) return;
+  $ipSet = [];
+  foreach ($rows as $row) {
+    $locId = (int)($row['location_id'] ?? 0);
+    if ($locId > 0) continue;
+    $ip = trim((string)($row['remote_addr'] ?? ''));
+    if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) continue;
+    $ipSet[$ip] = true;
+  }
+  if (!$ipSet) return;
+
+  $ips = array_keys($ipSet);
+  $ph = implode(',', array_fill(0, count($ips), '?'));
+  $sql = "SELECT n.location_id,
+                 l.code AS location_code,
+                 l.name AS location_name,
+                 COALESCE(n.nas_ip,'') AS nas_ip,
+                 COALESCE(n.exporter_ip,'') AS exporter_ip
+          FROM location_nas n
+          JOIN locations l ON l.id=n.location_id
+          WHERE n.active=1
+            AND (
+              (n.nas_ip IS NOT NULL AND n.nas_ip<>'' AND n.nas_ip IN ({$ph}))
+              OR
+              (n.exporter_ip IS NOT NULL AND n.exporter_ip<>'' AND n.exporter_ip IN ({$ph}))
+            )
+          ORDER BY n.id ASC";
+  $st = $PDO->prepare($sql);
+  $st->execute(array_merge($ips, $ips));
+  $ipMap = [];
+  foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $m) {
+    $payload = [
+      'location_id' => (int)($m['location_id'] ?? 0),
+      'location_code' => (string)($m['location_code'] ?? ''),
+      'location_name' => (string)($m['location_name'] ?? ''),
+    ];
+    $nasIp = trim((string)($m['nas_ip'] ?? ''));
+    $expIp = trim((string)($m['exporter_ip'] ?? ''));
+    if ($nasIp !== '' && !isset($ipMap[$nasIp])) $ipMap[$nasIp] = $payload;
+    if ($expIp !== '' && !isset($ipMap[$expIp])) $ipMap[$expIp] = $payload;
+  }
+
+  foreach ($rows as &$row) {
+    $locId = (int)($row['location_id'] ?? 0);
+    if ($locId > 0) continue;
+    $ip = trim((string)($row['remote_addr'] ?? ''));
+    if ($ip === '' || !isset($ipMap[$ip])) continue;
+    $row['location_id'] = (int)($ipMap[$ip]['location_id'] ?? 0);
+    $row['location_code'] = (string)($ipMap[$ip]['location_code'] ?? '');
+    $row['location_name'] = (string)($ipMap[$ip]['location_name'] ?? '');
+  }
+  unset($row);
 }
 
 function radacct_open_where_clause(): string {
@@ -57,6 +194,72 @@ function parse_bool($v): bool {
   $s = strtolower(trim((string)$v));
   if ($s === '') return false;
   return !in_array($s, ['0','false','no','off'], true);
+}
+
+function admin_location_scope(array $in, bool $allowAll = true): array {
+  $scope = location_scope_from_input($in, $allowAll);
+  if (!($scope['ok'] ?? false)) return $scope;
+  $scope['location_id'] = isset($scope['location_id']) && $scope['location_id'] !== null
+    ? (int)$scope['location_id']
+    : null;
+  return $scope;
+}
+
+function admin_user_scope_check(array $in, string $msisdn): array {
+  $scope = admin_location_scope($in, true);
+  if (!($scope['ok'] ?? false)) {
+    return [
+      'ok' => false,
+      'error' => (string)($scope['error'] ?? 'invalid_location_scope'),
+      'http_code' => 400,
+    ];
+  }
+
+  $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+  if ($locationId === null || $locationId <= 0) {
+    return ['ok'=>true, 'location_id'=>null, 'scope'=>$scope];
+  }
+
+  $profile = null;
+  try {
+    $profile = location_profile_get($msisdn);
+  } catch (Throwable $e) {
+    $profile = null;
+  }
+  $userLocId = (int)($profile['location_id'] ?? 0);
+  if (!$profile || $userLocId <= 0) {
+    return [
+      'ok' => false,
+      'error' => 'user_location_unknown',
+      'http_code' => 409,
+      'location_id' => $locationId,
+      'detail' => 'User has no bound location profile yet.',
+    ];
+  }
+
+  if ($userLocId !== $locationId) {
+    return [
+      'ok' => false,
+      'error' => 'user_out_of_scope',
+      'http_code' => 403,
+      'location_id' => $locationId,
+      'user_location_id' => $userLocId,
+      'user_location_code' => (string)($profile['code'] ?? $profile['last_location_code'] ?? ''),
+      'detail' => 'Selected site does not match user location.',
+    ];
+  }
+
+  return ['ok'=>true, 'location_id'=>$locationId, 'scope'=>$scope, 'profile'=>$profile];
+}
+
+function admin_emit_scope_error(array $check): void {
+  http_response_code((int)($check['http_code'] ?? 400));
+  $out = ['ok'=>false, 'error'=>(string)($check['error'] ?? 'invalid_location_scope')];
+  if (isset($check['detail']) && $check['detail'] !== '') $out['detail'] = (string)$check['detail'];
+  if (array_key_exists('location_id', $check)) $out['location_id'] = $check['location_id'];
+  if (array_key_exists('user_location_id', $check)) $out['user_location_id'] = $check['user_location_id'];
+  if (array_key_exists('user_location_code', $check)) $out['user_location_code'] = $check['user_location_code'];
+  echo json_encode($out);
 }
 
 function settings_allowed_keys(): array {
@@ -226,6 +429,167 @@ function parse_quota_bytes(array $in): ?int {
   return null;
 }
 
+function promo_parse_expiry(array $in, DateTimeZone $tz): ?DateTimeImmutable {
+  $raw = trim((string)from_any([$in], 'expires_at', ''));
+  $daysRaw = trim((string)from_any([$in], 'days', from_any([$in], 'expires_days', '')));
+  if ($raw !== '') {
+    $dt = nister_parse_expiry_datetime($raw, $tz);
+    if ($dt instanceof DateTimeImmutable) return $dt;
+    return null;
+  }
+  if ($daysRaw !== '' && is_numeric($daysRaw)) {
+    $days = (int)$daysRaw;
+    if ($days > 0) return (new DateTimeImmutable('now', $tz))->modify('+'.$days.' days');
+  }
+  return null;
+}
+
+function promo_user_list_dedupe(array $rows): array {
+  $out = [];
+  foreach ($rows as $u) {
+    $m = normalize_msisdn((string)$u);
+    if (!preg_match('/^233\d{9}$/', $m)) continue;
+    $out[$m] = true;
+  }
+  return array_keys($out);
+}
+
+function promo_fetch_recent_users(PDO $pdo, PDO $r, int $days, ?int $locationId = null): array {
+  $users = [];
+  $days = max(1, $days);
+
+  if (table_exists($pdo, 'signup_otp_sessions') && column_exists($pdo, 'signup_otp_sessions', 'created_at')) {
+    $hasLoc = column_exists($pdo, 'signup_otp_sessions', 'location_id');
+    if ($hasLoc && $locationId !== null && $locationId > 0) {
+      $st = $pdo->prepare("SELECT DISTINCT msisdn
+                           FROM signup_otp_sessions
+                           WHERE created_at >= DATE_SUB(NOW(), INTERVAL :d DAY)
+                             AND location_id=:l");
+      $st->bindValue(':d', $days, PDO::PARAM_INT);
+      $st->bindValue(':l', $locationId, PDO::PARAM_INT);
+      $st->execute();
+    } else {
+      $st = $pdo->prepare("SELECT DISTINCT msisdn
+                           FROM signup_otp_sessions
+                           WHERE created_at >= DATE_SUB(NOW(), INTERVAL :d DAY)");
+      $st->bindValue(':d', $days, PDO::PARAM_INT);
+      $st->execute();
+    }
+    $users = array_merge($users, $st->fetchAll(PDO::FETCH_COLUMN, 0) ?: []);
+  }
+
+  if (table_exists($pdo, 'accounts') && column_exists($pdo, 'accounts', 'created_at')) {
+    $st = $pdo->prepare("SELECT DISTINCT msisdn
+                         FROM accounts
+                         WHERE created_at >= DATE_SUB(NOW(), INTERVAL :d DAY)");
+    $st->bindValue(':d', $days, PDO::PARAM_INT);
+    $st->execute();
+    $users = array_merge($users, $st->fetchAll(PDO::FETCH_COLUMN, 0) ?: []);
+  }
+
+  if (table_exists($pdo, 'purchases') && column_exists($pdo, 'purchases', 'created_at')) {
+    $hasLoc = column_exists($pdo, 'purchases', 'location_id');
+    if ($hasLoc && $locationId !== null && $locationId > 0) {
+      $st = $pdo->prepare("SELECT DISTINCT msisdn
+                           FROM purchases
+                           WHERE created_at >= DATE_SUB(NOW(), INTERVAL :d DAY)
+                             AND location_id=:l");
+      $st->bindValue(':d', $days, PDO::PARAM_INT);
+      $st->bindValue(':l', $locationId, PDO::PARAM_INT);
+      $st->execute();
+    } else {
+      $st = $pdo->prepare("SELECT DISTINCT msisdn
+                           FROM purchases
+                           WHERE created_at >= DATE_SUB(NOW(), INTERVAL :d DAY)");
+      $st->bindValue(':d', $days, PDO::PARAM_INT);
+      $st->execute();
+    }
+    $users = array_merge($users, $st->fetchAll(PDO::FETCH_COLUMN, 0) ?: []);
+  }
+
+  if (!$users && table_exists($r, 'radcheck') && column_exists($r, 'radcheck', 'created_at')) {
+    $st = $r->prepare("SELECT DISTINCT username
+                       FROM radcheck
+                       WHERE attribute='Cleartext-Password'
+                         AND created_at >= DATE_SUB(NOW(), INTERVAL :d DAY)");
+    $st->bindValue(':d', $days, PDO::PARAM_INT);
+    $st->execute();
+    $users = array_merge($users, $st->fetchAll(PDO::FETCH_COLUMN, 0) ?: []);
+  }
+
+  return location_filter_msisdns(promo_user_list_dedupe($users), $locationId);
+}
+
+function promo_collect_targets(PDO $pdo, PDO $r, array $in, ?int $locationId = null): array {
+  $scope = strtolower(trim((string)from_any([$in], 'scope', 'all')));
+  if ($scope === '') $scope = 'all';
+
+  if ($scope === 'all') {
+    return location_filter_msisdns(promo_user_list_dedupe(sms_fetch_all_users($r)), $locationId);
+  }
+
+  if ($scope === 'group') {
+    $group = trim((string)from_any([$in], 'group', ''));
+    if ($group === '') return [];
+    return location_filter_msisdns(promo_user_list_dedupe(sms_fetch_group_users($r, $group)), $locationId);
+  }
+
+  if ($scope === 'recent') {
+    $days = (int)from_any([$in], 'recent_days', from_any([$in], 'days', 0));
+    if ($days <= 0) return [];
+    return promo_fetch_recent_users($pdo, $r, $days, $locationId);
+  }
+
+  return [];
+}
+
+function promo_bootstrap_data_table(PDO $r): void {
+  $r->exec("CREATE TABLE IF NOT EXISTS nister_data_promos (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(32) NOT NULL,
+    location_id INT NULL,
+    grant_bytes BIGINT UNSIGNED NOT NULL,
+    expires_at DATETIME NOT NULL,
+    promo_ref VARCHAR(64) NOT NULL,
+    notes VARCHAR(255) NULL,
+    created_by VARCHAR(64) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_data_promo_location (location_id),
+    KEY idx_user_exp (username, expires_at),
+    KEY idx_ref (promo_ref)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+  $st = $r->query("SHOW COLUMNS FROM nister_data_promos LIKE 'location_id'");
+  if (!$st->fetchColumn()) {
+    $r->exec("ALTER TABLE nister_data_promos ADD COLUMN location_id INT NULL AFTER username, ADD KEY idx_data_promo_location (location_id)");
+  }
+}
+
+function promo_bootstrap_wallet_table(PDO $pdo): void {
+  $pdo->exec("CREATE TABLE IF NOT EXISTS wallet_promo_grants (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    msisdn VARCHAR(32) NOT NULL,
+    location_id INT NULL,
+    ref VARCHAR(64) NOT NULL,
+    total_cents INT NOT NULL,
+    remaining_cents INT NOT NULL,
+    expires_at DATETIME NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    notes TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    consumed_at DATETIME NULL,
+    expired_at DATETIME NULL,
+    UNIQUE KEY uq_wallet_promo_ref_msisdn (ref, msisdn),
+    KEY idx_wallet_promo_location (location_id),
+    KEY idx_wallet_promo_user_state (msisdn, status, expires_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+  location_add_column_if_missing(
+    $pdo,
+    'wallet_promo_grants',
+    'location_id',
+    "`location_id` INT NULL AFTER `msisdn`, ADD KEY `idx_wallet_promo_location` (`location_id`)"
+  );
+}
+
 function admin_user_canon(string $username): string {
   $d = preg_replace('/\D+/', '', $username);
   if ($d === '') return trim($username);
@@ -238,7 +602,7 @@ function admin_group_rank(string $group): int {
   $g = strtoupper(trim($group));
   if ($g === 'HS_ACTIVE') return 3;
   if ($g === 'HS_LIMITED') return 2;
-  if ($g === 'HS_NOPAID' || $g === 'NOPAID') return 1;
+  if ($g === 'HS_NOPAID') return 1;
   return 0;
 }
 
@@ -309,6 +673,153 @@ try {
       break;
     }
 
+    case 'locations_list': {
+      $rows = location_list(true);
+      echo json_encode(['ok'=>true, 'locations'=>$rows, 'default_id'=>location_default_id()]);
+      break;
+    }
+
+    case 'location_save': {
+      try {
+        $active = array_key_exists('active', $in) ? (parse_bool($in['active']) ? 1 : 0) : 1;
+        $row = location_save([
+          'id' => (int)from_any([$in], 'id', 0),
+          'code' => (string)from_any([$in], 'code', ''),
+          'name' => (string)from_any([$in], 'name', ''),
+          'timezone' => (string)from_any([$in], 'timezone', 'Africa/Accra'),
+          'active' => $active,
+        ]);
+        echo json_encode(['ok'=>true, 'location'=>$row]);
+      } catch (Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'location_save_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'location_nas_list': {
+      try {
+        $scope = admin_location_scope($in, true);
+        if (!($scope['ok'] ?? false)) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+          break;
+        }
+        $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+        $rows = location_nas_list($locationId);
+        echo json_encode(['ok'=>true, 'items'=>$rows, 'location_id'=>$locationId]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'location_nas_list_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'location_nas_save': {
+      try {
+        $active = array_key_exists('active', $in) ? (parse_bool($in['active']) ? 1 : 0) : 1;
+        $row = location_nas_save([
+          'id' => (int)from_any([$in], 'id', 0),
+          'location_id' => (int)from_any([$in], 'location_id', 0),
+          'nas_ip' => (string)from_any([$in], 'nas_ip', ''),
+          'exporter_ip' => (string)from_any([$in], 'exporter_ip', ''),
+          'exporter_id' => (string)from_any([$in], 'exporter_id', ''),
+          'label' => (string)from_any([$in], 'label', ''),
+          'active' => $active,
+        ]);
+        echo json_encode(['ok'=>true, 'item'=>$row]);
+      } catch (Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'location_nas_save_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'location_nas_delete': {
+      try {
+        $id = (int)from_any([$in], 'id', 0);
+        if ($id <= 0) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'mapping_id_required']);
+          break;
+        }
+        location_nas_delete($id);
+        echo json_encode(['ok'=>true]);
+      } catch (Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'location_nas_delete_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'location_discovery_list': {
+      try {
+        $scope = admin_location_scope($in, true);
+        if (!($scope['ok'] ?? false)) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+          break;
+        }
+        $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+        $onlyUnassigned = !array_key_exists('only_unassigned', $in) ? true : parse_bool($in['only_unassigned']);
+        $limit = isset($in['limit']) ? max(1, min(1000, (int)$in['limit'])) : 200;
+        $items = location_router_discovery_list($locationId, $onlyUnassigned, $limit);
+        echo json_encode([
+          'ok' => true,
+          'items' => $items,
+          'location_id' => $locationId,
+          'only_unassigned' => $onlyUnassigned,
+        ]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'location_discovery_list_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'location_discovery_assign': {
+      try {
+        $id = (int)from_any([$in], 'id', 0);
+        $locationId = (int)from_any([$in], 'location_id', 0);
+        if ($id <= 0) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'discovery_id_required']);
+          break;
+        }
+        if ($locationId <= 0) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'location_required']);
+          break;
+        }
+        $who = (string)($_SESSION['admin_user'] ?? 'admin');
+        $res = location_discovery_assign($id, $locationId, $who);
+        echo json_encode(['ok'=>true] + (is_array($res) ? $res : []));
+      } catch (Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'location_discovery_assign_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'location_discovery_ignore': {
+      try {
+        $id = (int)from_any([$in], 'id', 0);
+        if ($id <= 0) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'discovery_id_required']);
+          break;
+        }
+        $note = trim((string)from_any([$in], 'note', ''));
+        $who = (string)($_SESSION['admin_user'] ?? 'admin');
+        location_discovery_ignore($id, $note !== '' ? $note : null, $who);
+        echo json_encode(['ok'=>true]);
+      } catch (Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'location_discovery_ignore_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
     case 'settings_get': {
       $keys = settings_allowed_keys();
       $out = [];
@@ -341,6 +852,7 @@ try {
       $st->bindValue(':lim', $limit, PDO::PARAM_INT);
       $st->execute();
       $rows = $st->fetchAll() ?: [];
+      admin_attach_alert_sites($rows);
       echo json_encode(['ok'=>true,'alerts'=>$rows]);
       break;
     }
@@ -385,6 +897,7 @@ try {
         $latest = health_latest($pdo);
         $events = health_events($pdo, 30);
         $coaStats = health_coa_success_stats($pdo, 120);
+        $enforcement = health_enforcement_snapshot($pdo);
         $coaRate = $coaStats['rate'] ?? null;
         $uptime24 = health_uptime_ratio($pdo, 24);
         echo json_encode([
@@ -393,6 +906,7 @@ try {
           'events' => $events,
           'coa_rate' => $coaRate,
           'coa_stats' => $coaStats,
+          'enforcement' => $enforcement,
           'uptime24' => $uptime24,
         ]);
       } catch (Throwable $e) {
@@ -415,356 +929,107 @@ try {
 
     case 'user_state_list': {
       $r = rdb_pdo();
+      if (function_exists('radius_normalize_legacy_nopaid')) {
+        radius_normalize_legacy_nopaid($r);
+      }
+      $scope = admin_location_scope($in, true);
+      if (!($scope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+        break;
+      }
       $limit = isset($in['limit']) ? max(1, min(1000, (int)$in['limit'])) : 300;
-      $where = "rug.groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')";
-      $params = [];
+      $expiredOnly = !empty($in['expired_only']);
+      $exhaustedOnly = !empty($in['exhausted_only']);
+      $groupFilter = '';
       if (!empty($in['group'])) {
-        $g = (string)$in['group'];
-        if (in_array($g, ['HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid'], true)) {
-          $where = "rug.groupname = :g";
-          $params[':g'] = $g;
+        $g = strtoupper(trim((string)$in['group']));
+        if (in_array($g, ['HS_ACTIVE','HS_LIMITED','HS_NOPAID'], true)) {
+          $groupFilter = $g;
         }
       }
-      if (!empty($in['search'])) {
-        $where .= " AND rug.username LIKE :q";
-        $params[':q'] = '%'.preg_replace('/\D+/', '', (string)$in['search']).'%';
-      }
-      $having = [];
-      if (!empty($in['expired_only'])) $having[] = "expired_flag = 1";
-      if (!empty($in['exhausted_only'])) $having[] = "exhausted_flag = 1";
-      $havingSql = $having ? ("HAVING ".implode(" AND ", $having)) : "";
+      $searchDigits = preg_replace('/\D+/', '', (string)($in['search'] ?? ''));
+      $candidateLimit = ($expiredOnly || $exhaustedOnly || $groupFilter !== '' || $searchDigits !== '')
+        ? min(5000, $limit * 8)
+        : min(5000, $limit * 4);
 
-      $st = $r->prepare("
-        SELECT
-          rug.username,
-          rug.groupname,
-          (
-            SELECT rc2.value
-            FROM radcheck rc2
-            WHERE rc2.attribute='Expiration'
-              AND rc2.username IN (rug.username,
-                CASE
-                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                  ELSE rug.username
-                END)
-            ORDER BY rc2.id DESC LIMIT 1
-          ) AS expires,
-          (
-            SELECT ws2.value
-            FROM radreply ws2
-            WHERE ws2.attribute='Nister-Window-Start'
-              AND ws2.username IN (rug.username,
-                CASE
-                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                  ELSE rug.username
-                END)
-            ORDER BY ws2.id DESC LIMIT 1
-          ) AS window_start,
-          COALESCE(
-            (
-              SELECT CAST(rq2.value AS UNSIGNED)
-              FROM radreply rq2
-              WHERE rq2.attribute='Nister-Quota-Bytes'
-                AND rq2.username IN (rug.username,
-                  CASE
-                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                    ELSE rug.username
-                  END)
-              ORDER BY rq2.id DESC LIMIT 1
-            ),
-            (
-              COALESCE((
-                SELECT CAST(rh.value AS UNSIGNED)
-                FROM radreply rh
-                WHERE rh.attribute='Mikrotik-Total-Limit-Gigawords'
-                  AND rh.username IN (rug.username,
-                    CASE
-                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                      ELSE rug.username
-                    END)
-                ORDER BY rh.id DESC LIMIT 1
-              ),0) * 4294967296
-              +
-              COALESCE((
-                SELECT CAST(rlq.value AS UNSIGNED)
-                FROM radreply rlq
-                WHERE rlq.attribute='Mikrotik-Total-Limit'
-                  AND rlq.username IN (rug.username,
-                    CASE
-                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                      ELSE rug.username
-                    END)
-                ORDER BY rlq.id DESC LIMIT 1
-              ),0)
-            )
-          ) AS quota_bytes,
-          (
-            SELECT rl2.value
-            FROM radreply rl2
-            WHERE rl2.attribute='Mikrotik-Rate-Limit'
-              AND rl2.username IN (rug.username,
-                CASE
-                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                  ELSE rug.username
-                END)
-            ORDER BY rl2.id DESC LIMIT 1
-          ) AS rate_limit,
-          (
-            SELECT COALESCE(SUM(
-              COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0) +
-              4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
-            ),0)
-            FROM radacct ra
-            WHERE ra.username IN (rug.username,
-              CASE
-                WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                ELSE rug.username
-              END)
-              AND ra.acctstarttime >= COALESCE(
-                (
-                  SELECT ws3.value
-                  FROM radreply ws3
-                  WHERE ws3.attribute='Nister-Window-Start'
-                    AND ws3.username IN (rug.username,
-                      CASE
-                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                        ELSE rug.username
-                      END)
-                  ORDER BY ws3.id DESC LIMIT 1
-                ),
-                DATE_SUB(NOW(), INTERVAL 30 DAY)
-              )
-          ) AS used_bytes,
-          CASE
-            WHEN (
-              SELECT rc3.value
-              FROM radcheck rc3
-              WHERE rc3.attribute='Expiration'
-                AND rc3.username IN (rug.username,
-                  CASE
-                    WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                    WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                    ELSE rug.username
-                  END)
-              ORDER BY rc3.id DESC LIMIT 1
-            ) IS NULL THEN 0
-            WHEN COALESCE(
-              STR_TO_DATE((
-                SELECT rc4.value
-                FROM radcheck rc4
-                WHERE rc4.attribute='Expiration'
-                  AND rc4.username IN (rug.username,
-                    CASE
-                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                      ELSE rug.username
-                    END)
-                ORDER BY rc4.id DESC LIMIT 1
-              ), '%d %b %Y %H:%i:%s'),
-              STR_TO_DATE((
-                SELECT rc5.value
-                FROM radcheck rc5
-                WHERE rc5.attribute='Expiration'
-                  AND rc5.username IN (rug.username,
-                    CASE
-                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                      ELSE rug.username
-                    END)
-                ORDER BY rc5.id DESC LIMIT 1
-              ), '%Y-%m-%d %H:%i:%s'),
-              STR_TO_DATE((
-                SELECT rc6.value
-                FROM radcheck rc6
-                WHERE rc6.attribute='Expiration'
-                  AND rc6.username IN (rug.username,
-                    CASE
-                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                      ELSE rug.username
-                    END)
-                ORDER BY rc6.id DESC LIMIT 1
-              ), '%b %e %Y %H:%i:%s')
-            ) <= NOW() THEN 1
-            ELSE 0
-          END AS expired_flag,
-          CASE
-            WHEN COALESCE(
-              (
-                SELECT CAST(rq3.value AS UNSIGNED)
-                FROM radreply rq3
-                WHERE rq3.attribute='Nister-Quota-Bytes'
-                  AND rq3.username IN (rug.username,
-                    CASE
-                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                      ELSE rug.username
-                    END)
-                ORDER BY rq3.id DESC LIMIT 1
-              ),
-              (
-                COALESCE((
-                  SELECT CAST(rh2.value AS UNSIGNED)
-                  FROM radreply rh2
-                  WHERE rh2.attribute='Mikrotik-Total-Limit-Gigawords'
-                    AND rh2.username IN (rug.username,
-                      CASE
-                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                        ELSE rug.username
-                      END)
-                  ORDER BY rh2.id DESC LIMIT 1
-                ),0) * 4294967296
-                +
-                COALESCE((
-                  SELECT CAST(rl2.value AS UNSIGNED)
-                  FROM radreply rl2
-                  WHERE rl2.attribute='Mikrotik-Total-Limit'
-                    AND rl2.username IN (rug.username,
-                      CASE
-                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                        ELSE rug.username
-                      END)
-                  ORDER BY rl2.id DESC LIMIT 1
-                ),0)
-              )
-            ) IS NULL THEN 0
-            WHEN COALESCE(
-              (
-                SELECT CAST(rq4.value AS UNSIGNED)
-                FROM radreply rq4
-                WHERE rq4.attribute='Nister-Quota-Bytes'
-                  AND rq4.username IN (rug.username,
-                    CASE
-                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                      ELSE rug.username
-                    END)
-                ORDER BY rq4.id DESC LIMIT 1
-              ),
-              (
-                COALESCE((
-                  SELECT CAST(rh3.value AS UNSIGNED)
-                  FROM radreply rh3
-                  WHERE rh3.attribute='Mikrotik-Total-Limit-Gigawords'
-                    AND rh3.username IN (rug.username,
-                      CASE
-                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                        ELSE rug.username
-                      END)
-                  ORDER BY rh3.id DESC LIMIT 1
-                ),0) * 4294967296
-                +
-                COALESCE((
-                  SELECT CAST(rl3.value AS UNSIGNED)
-                  FROM radreply rl3
-                  WHERE rl3.attribute='Mikrotik-Total-Limit'
-                    AND rl3.username IN (rug.username,
-                      CASE
-                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                        ELSE rug.username
-                      END)
-                  ORDER BY rl3.id DESC LIMIT 1
-                ),0)
-              )
-            ) <= 0 THEN 1
-            WHEN (
-              SELECT COALESCE(SUM(
-                COALESCE(ra2.acctinputoctets,0)+COALESCE(ra2.acctoutputoctets,0) +
-                4294967296*(COALESCE(ra2.acctinputgigawords,0)+COALESCE(ra2.acctoutputgigawords,0))
-              ),0)
-              FROM radacct ra2
-              WHERE ra2.username IN (rug.username,
-                CASE
-                  WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                  WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                  ELSE rug.username
-                END)
-                AND ra2.acctstarttime >= COALESCE(
-                  (
-                    SELECT ws4.value
-                    FROM radreply ws4
-                    WHERE ws4.attribute='Nister-Window-Start'
-                      AND ws4.username IN (rug.username,
-                        CASE
-                          WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                          WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                          ELSE rug.username
-                        END)
-                    ORDER BY ws4.id DESC LIMIT 1
-                  ),
-                  DATE_SUB(NOW(), INTERVAL 30 DAY)
-                )
-            ) >= COALESCE(
-              (
-                SELECT CAST(rq5.value AS UNSIGNED)
-                FROM radreply rq5
-                WHERE rq5.attribute='Nister-Quota-Bytes'
-                  AND rq5.username IN (rug.username,
-                    CASE
-                      WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                      WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                      ELSE rug.username
-                    END)
-                ORDER BY rq5.id DESC LIMIT 1
-              ),
-              (
-                COALESCE((
-                  SELECT CAST(rh4.value AS UNSIGNED)
-                  FROM radreply rh4
-                  WHERE rh4.attribute='Mikrotik-Total-Limit-Gigawords'
-                    AND rh4.username IN (rug.username,
-                      CASE
-                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                        ELSE rug.username
-                      END)
-                  ORDER BY rh4.id DESC LIMIT 1
-                ),0) * 4294967296
-                +
-                COALESCE((
-                  SELECT CAST(rl4.value AS UNSIGNED)
-                  FROM radreply rl4
-                  WHERE rl4.attribute='Mikrotik-Total-Limit'
-                    AND rl4.username IN (rug.username,
-                      CASE
-                        WHEN rug.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(rug.username,4))
-                        WHEN rug.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(rug.username,2))
-                        ELSE rug.username
-                      END)
-                  ORDER BY rl4.id DESC LIMIT 1
-                ),0)
-              )
-            ) THEN 1
-            ELSE 0
-          END AS exhausted_flag
-        FROM radusergroup rug
-        WHERE {$where}
-        {$havingSql}
-        ORDER BY rug.groupname, rug.username
-        LIMIT :lim
-      ");
-      $st->bindValue(':lim', $limit, PDO::PARAM_INT);
-      foreach ($params as $k=>$v) $st->bindValue($k, $v);
+      $where = "groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')";
+      $params = [];
+      if ($searchDigits !== '') {
+        $where .= " AND username LIKE :q";
+        $params[':q'] = '%'.$searchDigits.'%';
+      }
+      $st = $r->prepare("SELECT DISTINCT username FROM radusergroup WHERE {$where} ORDER BY username LIMIT :lim");
+      $st->bindValue(':lim', $candidateLimit, PDO::PARAM_INT);
+      foreach ($params as $k => $v) $st->bindValue($k, $v);
       $st->execute();
-      $rows = $st->fetchAll() ?: [];
+      $rawUsers = $st->fetchAll(PDO::FETCH_COLUMN, 0) ?: [];
+
+      $canonUsers = [];
+      foreach ($rawUsers as $uRaw) {
+        $u = normalize_msisdn((string)$uRaw);
+        if ($u === '') $u = admin_user_canon((string)$uRaw);
+        if ($u === '') continue;
+        $canonUsers[$u] = true;
+      }
+      $users = array_values(array_map(static fn($v): string => (string)$v, array_keys($canonUsers)));
+
+      if (isset($scope['location_id']) && $scope['location_id'] !== null) {
+        $locId = (int)$scope['location_id'];
+        $users = location_filter_msisdns($users, $locId);
+      }
+
+      $rows = [];
+      foreach ($users as $msisdn) {
+        $msisdn = (string)$msisdn;
+        if ($msisdn === '') continue;
+        try {
+          $exact = radius_user_state_exact((string)$msisdn, $r);
+        } catch (Throwable $e) {
+          $exact = null;
+        }
+        if (!is_array($exact)) continue;
+
+        $row = [
+          'username' => normalize_msisdn((string)($exact['username'] ?? $msisdn)) ?: $msisdn,
+          'groupname' => (string)($exact['groupname'] ?? ''),
+          'expires' => (string)($exact['expires'] ?? ''),
+          'window_start' => (string)($exact['window_start'] ?? ''),
+          'quota_bytes' => $exact['quota_bytes'] ?? null,
+          'used_bytes' => (int)($exact['used_bytes'] ?? 0),
+          'expired_flag' => !empty($exact['expired_flag']) ? 1 : 0,
+          'exhausted_flag' => !empty($exact['exhausted_flag']) ? 1 : 0,
+          'rate_limit' => trim((string)($exact['rate_limit'] ?? '')),
+        ];
+
+        if ($groupFilter !== '') {
+          $rowGroup = strtoupper((string)$row['groupname']);
+          if ($rowGroup !== $groupFilter) {
+            continue;
+          }
+        }
+        if ($expiredOnly && ((int)$row['expired_flag'] !== 1)) continue;
+        if ($exhaustedOnly && ((int)$row['exhausted_flag'] !== 1)) continue;
+
+        $rows[] = $row;
+      }
+
       $rows = admin_dedupe_user_state_rows($rows);
+      admin_attach_location_profiles($rows);
+      if (count($rows) > $limit) $rows = array_slice($rows, 0, $limit);
       echo json_encode(['ok'=>true,'users'=>$rows]);
       break;
     }
 
     case 'stats': {
+      $scope = admin_location_scope($in, true);
+      if (!($scope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+        break;
+      }
+      $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+
       $wallet_liability_cents = 0;
       $wallet_accounts_cnt = 0;
       $wallet_deposit_cents = 0;
@@ -926,6 +1191,8 @@ try {
           $recentExpr = column_exists($r, 'radacct', 'acctupdatetime')
             ? 'COALESCE(ra.acctupdatetime, ra.acctstarttime)'
             : 'ra.acctstarttime';
+          $reopenedRecentExpr = "(ra.acctstoptime IS NOT NULL AND ra.acctstoptime <> '0000-00-00 00:00:00' AND {$recentExpr} > ra.acctstoptime)";
+          $logicalOpenExpr = "(($openWhere) OR ($reopenedRecentExpr))";
           $canonExpr = "CASE
             WHEN ra.username REGEXP '^233[0-9]{9}$' THEN ra.username
             WHEN ra.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(ra.username,2))
@@ -948,7 +1215,7 @@ try {
           $active_sessions = (int)($r->query("
             SELECT COUNT(DISTINCT {$sessionKeyExpr})
             FROM radacct ra
-            WHERE {$openWhere}
+            WHERE {$logicalOpenExpr}
               AND {$recentExpr} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)
               {$hsActiveFilter}
           ")->fetchColumn() ?: 0);
@@ -959,8 +1226,324 @@ try {
         $active_sessions_mode = null;
       }
 
+      if ($locationId !== null && $locationId > 0) {
+        try {
+          if (function_exists('radius_normalize_legacy_nopaid')) {
+            $rSeed = rdb_pdo();
+            radius_normalize_legacy_nopaid($rSeed);
+          }
+        } catch (Throwable $e) { /* non-fatal */ }
+        $referral = [
+          'pending_cents'=>0,
+          'released_cents'=>0,
+          'expired_cents'=>0,
+          'pending_cnt'=>0,
+          'released_cnt'=>0,
+          'expired_cnt'=>0,
+          'skipped_cnt'=>0,
+        ];
+        $locUsers = [];
+        if (table_exists($PDO, 'user_location_profiles')) {
+          $stLoc = $PDO->prepare("SELECT msisdn FROM user_location_profiles WHERE location_id=:l");
+          $stLoc->execute([':l' => $locationId]);
+          $locUsers = array_values(array_unique(array_filter(array_map('normalize_msisdn', $stLoc->fetchAll(PDO::FETCH_COLUMN, 0) ?: []))));
+        }
+        if (location_is_default_id($locationId)) {
+          // Compatibility for legacy users that predate explicit profile binding:
+          // default site includes unbound users until they are assigned elsewhere.
+          $seedUsers = [];
+          $seedTables = ['accounts', 'ledger', 'payments', 'purchases', 'auto_renew_settings', 'wallet_promo_grants'];
+          foreach ($seedTables as $seedTable) {
+            if (!table_exists($PDO, $seedTable) || !column_exists($PDO, $seedTable, 'msisdn')) continue;
+            try {
+              $stSeed = $PDO->query("SELECT DISTINCT msisdn FROM `{$seedTable}` WHERE msisdn IS NOT NULL AND msisdn<>'' LIMIT 50000");
+              $seedUsers = array_merge($seedUsers, $stSeed->fetchAll(PDO::FETCH_COLUMN, 0) ?: []);
+            } catch (Throwable $e) { /* non-fatal */ }
+          }
+          try {
+            $rSeed = rdb_pdo();
+            if (table_exists($rSeed, 'radusergroup')) {
+              $stSeedR = $rSeed->query("
+                SELECT DISTINCT username
+                FROM radusergroup
+                WHERE groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')
+                LIMIT 50000
+              ");
+              $seedUsers = array_merge($seedUsers, $stSeedR->fetchAll(PDO::FETCH_COLUMN, 0) ?: []);
+            }
+          } catch (Throwable $e) { /* non-fatal */ }
+
+          $seedCanon = [];
+          foreach ($seedUsers as $rawSeedUser) {
+            $m = normalize_msisdn((string)$rawSeedUser);
+            if ($m !== '') $seedCanon[$m] = true;
+          }
+          if ($seedCanon) {
+            $fallbackUsers = location_filter_msisdns(array_keys($seedCanon), $locationId);
+            foreach ($fallbackUsers as $m) {
+              $m = normalize_msisdn((string)$m);
+              if ($m !== '') $locUsers[] = $m;
+            }
+            $locUsers = array_values(array_unique($locUsers));
+          }
+        }
+
+        $variantMap = [];
+        foreach ($locUsers as $m) {
+          if ($m === '') continue;
+          $variantMap[$m] = true;
+          $variantMap[msisdn_local($m)] = true;
+        }
+        $locVariants = array_values(array_filter(array_unique(array_keys($variantMap))));
+
+        $mkIn = static function(array $vals, string $prefix): array {
+          $ph = [];
+          $bind = [];
+          foreach (array_values($vals) as $i => $v) {
+            $k = ':'.$prefix.$i;
+            $ph[] = $k;
+            $bind[$k] = $v;
+          }
+          return [$ph ? implode(',', $ph) : "''", $bind];
+        };
+
+        if (!$locVariants) {
+          $wallet_liability_cents = 0;
+          $wallet_accounts_cnt = 0;
+          $wallet_deposit_cents = 0;
+          $wallet_purchase_cents = 0;
+          $s = ['pending_cnt'=>0,'pending_cents'=>0,'approved_cnt'=>0,'approved_cents'=>0,'declined_cnt'=>0,'declined_cents'=>0];
+          $t = ['cents'=>0];
+          $p = ['total_cents'=>0,'applied_cents'=>0,'pending_cnt'=>0,'applied_cnt'=>0,'failed_cnt'=>0];
+          $top_plans = [];
+          $pay_series = [];
+          $pur_series = [];
+          $ap = ['active_users'=>0];
+          $active_sessions = 0;
+          $active_sessions_mode = 'open_session_recent_15m';
+        } else {
+          [$inUsers, $bindUsers] = $mkIn($locVariants, 'u');
+
+          if (table_exists($PDO, 'accounts')) {
+            $stW = $PDO->prepare("SELECT COALESCE(SUM(balance_cents),0) AS cents, COUNT(*) AS cnt FROM accounts WHERE msisdn IN ({$inUsers})");
+            $stW->execute($bindUsers);
+            $row = $stW->fetch() ?: ['cents'=>0, 'cnt'=>0];
+            $wallet_liability_cents = (int)($row['cents'] ?? 0);
+            $wallet_accounts_cnt = (int)($row['cnt'] ?? 0);
+          } else {
+            $wallet_liability_cents = 0;
+            $wallet_accounts_cnt = 0;
+          }
+
+          if (table_exists($PDO, 'ledger')) {
+            $stL = $PDO->prepare("
+              SELECT
+                COALESCE(SUM(CASE WHEN type='deposit' THEN amount_cents ELSE 0 END),0) AS deposit_cents,
+                COALESCE(SUM(CASE WHEN type='purchase' THEN -amount_cents ELSE 0 END),0) AS purchase_cents
+              FROM ledger
+              WHERE msisdn IN ({$inUsers})
+            ");
+            $stL->execute($bindUsers);
+            $row = $stL->fetch() ?: ['deposit_cents'=>0, 'purchase_cents'=>0];
+            $wallet_deposit_cents = (int)($row['deposit_cents'] ?? 0);
+            $wallet_purchase_cents = (int)($row['purchase_cents'] ?? 0);
+          } else {
+            $wallet_deposit_cents = 0;
+            $wallet_purchase_cents = 0;
+          }
+
+          if (table_exists($PDO, 'payments') && column_exists($PDO, 'payments', 'msisdn')) {
+            $payAmountExpr = column_exists($PDO, 'payments', 'amount_cents') ? 'amount_cents' : 'amount*100';
+            $stPay = $PDO->prepare("
+              SELECT
+                SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending_cnt,
+                COALESCE(SUM(CASE WHEN status='pending' THEN {$payAmountExpr} ELSE 0 END),0) AS pending_cents,
+                SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved_cnt,
+                COALESCE(SUM(CASE WHEN status='approved' THEN {$payAmountExpr} ELSE 0 END),0) AS approved_cents,
+                SUM(CASE WHEN status='declined' THEN 1 ELSE 0 END) AS declined_cnt,
+                COALESCE(SUM(CASE WHEN status='declined' THEN {$payAmountExpr} ELSE 0 END),0) AS declined_cents
+              FROM payments
+              WHERE msisdn IN ({$inUsers})
+            ");
+            $stPay->execute($bindUsers);
+            $s = $stPay->fetch() ?: $s;
+
+            $stToday = $PDO->prepare("
+              SELECT COALESCE(SUM({$payAmountExpr}),0) AS cents
+              FROM payments
+              WHERE status='approved' AND DATE(approved_at)=CURDATE() AND msisdn IN ({$inUsers})
+            ");
+            $stToday->execute($bindUsers);
+            $t = $stToday->fetch() ?: $t;
+
+            $stSeries = $PDO->prepare("
+              SELECT DATE(approved_at) AS d, COALESCE(SUM({$payAmountExpr}),0) AS cents
+              FROM payments
+              WHERE status='approved' AND approved_at IS NOT NULL AND msisdn IN ({$inUsers})
+              GROUP BY DATE(approved_at)
+              ORDER BY d DESC
+              LIMIT 14
+            ");
+            $stSeries->execute($bindUsers);
+            $pay_series = $stSeries->fetchAll() ?: [];
+          } else {
+            $s = ['pending_cnt'=>0,'pending_cents'=>0,'approved_cnt'=>0,'approved_cents'=>0,'declined_cnt'=>0,'declined_cents'=>0];
+            $t = ['cents'=>0];
+            $pay_series = [];
+          }
+
+          if (table_exists($PDO, 'purchases')) {
+            $purAmountExpr = column_exists($PDO, 'purchases', 'price_cents') ? 'price_cents' : 'price*100';
+            $hasPurLoc = column_exists($PDO, 'purchases', 'location_id');
+            if ($hasPurLoc) {
+              $stPur = $PDO->prepare("
+                SELECT
+                  COALESCE(SUM({$purAmountExpr}),0) AS total_cents,
+                  COALESCE(SUM(CASE WHEN status='applied' THEN {$purAmountExpr} ELSE 0 END),0) AS applied_cents,
+                  COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) AS pending_cnt,
+                  COALESCE(SUM(CASE WHEN status='applied' THEN 1 ELSE 0 END),0) AS applied_cnt,
+                  COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed_cnt
+                FROM purchases
+                WHERE location_id=:l
+              ");
+              $stPur->execute([':l' => $locationId]);
+              $p = $stPur->fetch() ?: $p;
+
+              $stTop = $PDO->prepare("
+                SELECT plan_code, COUNT(*) AS cnt, COALESCE(SUM({$purAmountExpr}),0) AS cents
+                FROM purchases
+                WHERE status='applied' AND activated_at IS NOT NULL
+                  AND activated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                  AND location_id=:l
+                GROUP BY plan_code
+                ORDER BY cnt DESC
+                LIMIT 8
+              ");
+              $stTop->execute([':l' => $locationId]);
+              $top_plans = $stTop->fetchAll() ?: [];
+
+              $stPurSeries = $PDO->prepare("
+                SELECT DATE(activated_at) AS d, COALESCE(SUM({$purAmountExpr}),0) AS cents
+                FROM purchases
+                WHERE status='applied' AND activated_at IS NOT NULL AND location_id=:l
+                GROUP BY DATE(activated_at)
+                ORDER BY d DESC
+                LIMIT 14
+              ");
+              $stPurSeries->execute([':l' => $locationId]);
+              $pur_series = $stPurSeries->fetchAll() ?: [];
+            } else {
+              $stPur = $PDO->prepare("
+                SELECT
+                  COALESCE(SUM({$purAmountExpr}),0) AS total_cents,
+                  COALESCE(SUM(CASE WHEN status='applied' THEN {$purAmountExpr} ELSE 0 END),0) AS applied_cents,
+                  COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) AS pending_cnt,
+                  COALESCE(SUM(CASE WHEN status='applied' THEN 1 ELSE 0 END),0) AS applied_cnt,
+                  COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed_cnt
+                FROM purchases
+                WHERE msisdn IN ({$inUsers})
+              ");
+              $stPur->execute($bindUsers);
+              $p = $stPur->fetch() ?: $p;
+
+              $stTop = $PDO->prepare("
+                SELECT plan_code, COUNT(*) AS cnt, COALESCE(SUM({$purAmountExpr}),0) AS cents
+                FROM purchases
+                WHERE status='applied' AND activated_at IS NOT NULL
+                  AND activated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                  AND msisdn IN ({$inUsers})
+                GROUP BY plan_code
+                ORDER BY cnt DESC
+                LIMIT 8
+              ");
+              $stTop->execute($bindUsers);
+              $top_plans = $stTop->fetchAll() ?: [];
+
+              $stPurSeries = $PDO->prepare("
+                SELECT DATE(activated_at) AS d, COALESCE(SUM({$purAmountExpr}),0) AS cents
+                FROM purchases
+                WHERE status='applied' AND activated_at IS NOT NULL AND msisdn IN ({$inUsers})
+                GROUP BY DATE(activated_at)
+                ORDER BY d DESC
+                LIMIT 14
+              ");
+              $stPurSeries->execute($bindUsers);
+              $pur_series = $stPurSeries->fetchAll() ?: [];
+            }
+          } else {
+            $p = ['total_cents'=>0,'applied_cents'=>0,'pending_cnt'=>0,'applied_cnt'=>0,'failed_cnt'=>0];
+            $top_plans = [];
+            $pur_series = [];
+          }
+
+          $ap = ['active_users'=>0];
+          try {
+            $rActive = rdb_pdo();
+            if (table_exists($rActive, 'radusergroup')) {
+              $stA = $rActive->prepare("
+                SELECT COUNT(DISTINCT
+                  CASE
+                    WHEN username REGEXP '^233[0-9]{9}$' THEN username
+                    WHEN username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(username,2))
+                    ELSE username
+                  END
+                ) AS active_users
+                FROM radusergroup
+                WHERE groupname='HS_ACTIVE' AND username IN ({$inUsers})
+              ");
+              $stA->execute($bindUsers);
+              $ap['active_users'] = (int)($stA->fetchColumn() ?: 0);
+            }
+          } catch (Throwable $e) {
+            $ap = ['active_users'=>0];
+          }
+
+          try {
+            $r = rdb_pdo();
+            if (table_exists($r, 'radacct')) {
+              $openWhere = str_replace('acctstoptime', 'ra.acctstoptime', radacct_open_where_clause());
+              $recentExpr = column_exists($r, 'radacct', 'acctupdatetime')
+                ? 'COALESCE(ra.acctupdatetime, ra.acctstarttime)'
+                : 'ra.acctstarttime';
+              $reopenedRecentExpr = "(ra.acctstoptime IS NOT NULL AND ra.acctstoptime <> '0000-00-00 00:00:00' AND {$recentExpr} > ra.acctstoptime)";
+              $logicalOpenExpr = "(($openWhere) OR ($reopenedRecentExpr))";
+              $canonExpr = "CASE
+                WHEN ra.username REGEXP '^233[0-9]{9}$' THEN ra.username
+                WHEN ra.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(ra.username,2))
+                ELSE ra.username
+              END";
+              $peerExpr = "CASE
+                WHEN ra.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(ra.username,4))
+                WHEN ra.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(ra.username,2))
+                ELSE ra.username
+              END";
+              $sessionKeyExpr = "CONCAT({$canonExpr}, '|', COALESCE(NULLIF(ra.callingstationid,''), NULLIF(ra.acctsessionid,''), NULLIF(ra.framedipaddress,''), CAST(ra.radacctid AS CHAR)))";
+              $stSess = $r->prepare("
+                SELECT COUNT(DISTINCT {$sessionKeyExpr})
+                FROM radacct ra
+                WHERE {$logicalOpenExpr}
+                  AND {$recentExpr} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)
+                  AND EXISTS (
+                    SELECT 1 FROM radusergroup rug
+                    WHERE rug.groupname='HS_ACTIVE'
+                      AND rug.username IN (ra.username, {$peerExpr}, {$canonExpr})
+                  )
+                  AND ra.username IN ({$inUsers})
+              ");
+              $stSess->execute($bindUsers);
+              $active_sessions = (int)($stSess->fetchColumn() ?: 0);
+              $active_sessions_mode = 'open_session_recent_15m';
+            }
+          } catch (Throwable $e) {
+            $active_sessions = 0;
+            $active_sessions_mode = 'open_session_recent_15m';
+          }
+        }
+      }
+
       echo json_encode([
         'ok' => true,
+        'location_id' => $locationId,
         'wallet_liability_cents' => (int)$wallet_liability_cents,
         'wallet' => [
           'accounts_cnt' => (int)$wallet_accounts_cnt,
@@ -995,14 +1578,64 @@ try {
     }
 
     case 'pending': {
-      $st = $PDO->query("
+      $scope = admin_location_scope($in, true);
+      if (!($scope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+        break;
+      }
+      $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+
+      if ($locationId === null || !column_exists($PDO, 'payments', 'msisdn')) {
+        $st = $PDO->query("
+          SELECT id, ref, msisdn, amount, method, payer_name, notes, status, created_at
+          FROM payments
+          WHERE status='pending'
+          ORDER BY id DESC
+          LIMIT 200
+        ");
+        echo json_encode(['ok'=>true,'pending'=>$st->fetchAll(), 'location_id'=>$locationId]);
+        break;
+      }
+
+      $locUsers = [];
+      $pendingCandidates = [];
+      $stCand = $PDO->query("
+        SELECT DISTINCT msisdn
+        FROM payments
+        WHERE status='pending' AND msisdn IS NOT NULL AND msisdn<>''
+        ORDER BY id DESC
+        LIMIT 5000
+      ");
+      $pendingCandidates = $stCand ? ($stCand->fetchAll(PDO::FETCH_COLUMN, 0) ?: []) : [];
+      $locUsers = location_filter_msisdns($pendingCandidates, $locationId);
+      $variants = [];
+      foreach ($locUsers as $m) {
+        $variants[$m] = true;
+        $variants[msisdn_local($m)] = true;
+      }
+      $vals = array_values(array_filter(array_keys($variants)));
+      if (!$vals) {
+        echo json_encode(['ok'=>true,'pending'=>[], 'location_id'=>$locationId]);
+        break;
+      }
+      $ph = [];
+      $bind = [];
+      foreach ($vals as $i => $v) {
+        $k = ':u'.$i;
+        $ph[] = $k;
+        $bind[$k] = $v;
+      }
+      $sql = "
         SELECT id, ref, msisdn, amount, method, payer_name, notes, status, created_at
         FROM payments
-        WHERE status='pending'
+        WHERE status='pending' AND msisdn IN (".implode(',', $ph).")
         ORDER BY id DESC
         LIMIT 200
-      ");
-      echo json_encode(['ok'=>true,'pending'=>$st->fetchAll()]);
+      ";
+      $st = $PDO->prepare($sql);
+      $st->execute($bind);
+      echo json_encode(['ok'=>true,'pending'=>$st->fetchAll(), 'location_id'=>$locationId]);
       break;
     }
 
@@ -1015,6 +1648,15 @@ try {
         http_response_code(400);
         echo json_encode(['ok'=>false,'error'=>'bad_request']); break;
       }
+      $scope = admin_location_scope($in, true);
+      if (!($scope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+        break;
+      }
+      $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+      $hasPaymentMsisdn = false;
+      try { $hasPaymentMsisdn = column_exists($PDO, 'payments', 'msisdn'); } catch (Throwable $e) { $hasPaymentMsisdn = false; }
 
       $outerStarted = false;
       if (!$PDO->inTransaction()) { $PDO->beginTransaction(); $outerStarted = true; }
@@ -1025,6 +1667,13 @@ try {
         $st->execute([':r'=>$ref]);
         $row = $st->fetch();
         if (!$row) { throw new RuntimeException('not_found'); }
+        if ($locationId !== null && $hasPaymentMsisdn) {
+          $rowMsisdn = normalize_msisdn((string)($row['msisdn'] ?? ''));
+          if ($rowMsisdn !== '') {
+            $allowed = location_filter_msisdns([$rowMsisdn], $locationId);
+            if (!$allowed) throw new RuntimeException('forbidden_scope');
+          }
+        }
         if ($row['status'] !== 'pending') {
           echo json_encode([
             'ok'=>true,
@@ -1182,6 +1831,8 @@ try {
         if ($outerStarted && $PDO->inTransaction()) $PDO->rollBack();
         if ($e->getMessage() === 'not_found') {
           http_response_code(404); echo json_encode(['ok'=>false,'error'=>'not_found']);
+        } elseif ($e->getMessage() === 'forbidden_scope') {
+          http_response_code(403); echo json_encode(['ok'=>false,'error'=>'forbidden_scope']);
         } else {
           http_response_code(500); echo json_encode(['ok'=>false,'error'=>'server_error','detail'=>$e->getMessage()]);
         }
@@ -1191,8 +1842,48 @@ try {
 
     case 'plans': {
       try {
-        $plans = radius_fetch_plans(true);
-        echo json_encode(['ok'=>true,'plans'=>$plans]);
+        $scope = admin_location_scope($in, true);
+        if (!($scope['ok'] ?? false)) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+          break;
+        }
+        $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+        if ($locationId !== null && $locationId > 0) {
+          $plans = radius_fetch_plans(true, $locationId);
+          echo json_encode(['ok'=>true,'plans'=>$plans,'location_id'=>$locationId]);
+          break;
+        }
+
+        $plansBySite = [];
+        $flat = [];
+        foreach (location_list(true) as $loc) {
+          $locId = (int)($loc['id'] ?? 0);
+          if ($locId <= 0) continue;
+          $siteCode = (string)($loc['code'] ?? '');
+          $siteName = (string)($loc['name'] ?? $siteCode);
+          $sitePlans = radius_fetch_plans(true, $locId);
+          foreach ($sitePlans as &$planRow) {
+            if (!is_array($planRow)) continue;
+            $planRow['location_id'] = $locId;
+            $planRow['location_code'] = $siteCode;
+            $planRow['location_name'] = $siteName;
+          }
+          unset($planRow);
+          $plansBySite[] = [
+            'location_id' => $locId,
+            'location_code' => $siteCode,
+            'location_name' => $siteName,
+            'plans' => $sitePlans,
+          ];
+          foreach ($sitePlans as $planRow) $flat[] = $planRow;
+        }
+        echo json_encode([
+          'ok' => true,
+          'plans' => $flat,
+          'plans_by_site' => $plansBySite,
+          'location_id' => null,
+        ]);
       } catch (Throwable $e) {
         http_response_code(500);
         echo json_encode(['ok'=>false,'error'=>'plan_list_failed','detail'=>$e->getMessage()]);
@@ -1201,6 +1892,17 @@ try {
     }
 
     case 'plan_save': {
+      $scope = admin_location_scope($in, false);
+      if (!($scope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'location_required')]); break;
+      }
+      $locationId = (int)($scope['location_id'] ?? 0);
+      if ($locationId <= 0) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'location_required']); break;
+      }
+
       $code = trim((string)from_any([$in],'plan_code',''));
       if ($code === '' || !preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/', $code)) {
         http_response_code(400);
@@ -1277,41 +1979,70 @@ try {
       ];
 
       try {
-        $r = rdb_pdo();
-        $started = false;
-        if (!$r->inTransaction()) { $r->beginTransaction(); $started = true; }
-
-        $ph = implode(",", array_fill(0, count($planAttrs), "?"));
-        foreach (['radgroupreply','radgroupcheck'] as $tbl) {
-          $st = $r->prepare("DELETE FROM {$tbl} WHERE groupname=? AND attribute IN ($ph)");
-          $st->execute(array_merge([$code], $planAttrs));
-        }
-
-        $ins = $r->prepare("INSERT INTO radgroupreply (groupname, attribute, op, value)
-                            VALUES (:g, :a, ':=', :v)");
-        foreach ($attrs as $a=>$v) {
-          $ins->execute([':g'=>$code, ':a'=>$a, ':v'=>$v]);
-        }
-
-        if ($started && $r->inTransaction()) $r->commit();
+        location_upsert_plan($locationId, [
+          'code' => $code,
+          'display_name' => $display,
+          'price_cents' => $price,
+          'duration_days' => $days,
+          'quota_bytes' => $quotaBytes,
+          'rate_limit' => $rate,
+          'address_list' => $addr,
+          'active' => $active,
+        ]);
       } catch (Throwable $e) {
-        if (isset($r) && $r instanceof PDO && $r->inTransaction()) $r->rollBack();
         http_response_code(500);
         echo json_encode(['ok'=>false,'error'=>'plan_save_failed','detail'=>$e->getMessage()]);
         break;
       }
 
+      // Keep legacy global radgroup sync only for default site compatibility.
+      if (location_is_default_id($locationId)) {
+        try {
+          $r = rdb_pdo();
+          $started = false;
+          if (!$r->inTransaction()) { $r->beginTransaction(); $started = true; }
+
+          $ph = implode(",", array_fill(0, count($planAttrs), "?"));
+          foreach (['radgroupreply','radgroupcheck'] as $tbl) {
+            $st = $r->prepare("DELETE FROM {$tbl} WHERE groupname=? AND attribute IN ($ph)");
+            $st->execute(array_merge([$code], $planAttrs));
+          }
+
+          $ins = $r->prepare("INSERT INTO radgroupreply (groupname, attribute, op, value)
+                              VALUES (:g, :a, ':=', :v)");
+          foreach ($attrs as $a=>$v) {
+            $ins->execute([':g'=>$code, ':a'=>$a, ':v'=>$v]);
+          }
+
+          if ($started && $r->inTransaction()) $r->commit();
+        } catch (Throwable $e) {
+          if (isset($r) && $r instanceof PDO && $r->inTransaction()) $r->rollBack();
+          error_log('[admin/api plan_save global_sync] location='.$locationId.' code='.$code.' error='.$e->getMessage());
+        }
+      }
+
       $saved = null;
       try {
-        foreach (radius_fetch_plans(true) as $p) {
+        foreach (radius_fetch_plans(true, $locationId) as $p) {
           if (strcasecmp($p['code'], $code) === 0) { $saved = $p; break; }
         }
       } catch (Throwable $e) { $saved = null; }
-      echo json_encode(['ok'=>true,'plan'=>$saved]);
+      echo json_encode(['ok'=>true,'plan'=>$saved,'location_id'=>$locationId]);
       break;
     }
 
     case 'plan_delete': {
+      $scope = admin_location_scope($in, false);
+      if (!($scope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'location_required')]); break;
+      }
+      $locationId = (int)($scope['location_id'] ?? 0);
+      if ($locationId <= 0) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'location_required']); break;
+      }
+
       $code = trim((string)from_any([$in],'plan_code',''));
       if ($code === '' || !preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/', $code)) {
         http_response_code(400);
@@ -1335,31 +2066,49 @@ try {
       ];
 
       try {
-        $r = rdb_pdo();
-        $started = false;
-        if (!$r->inTransaction()) { $r->beginTransaction(); $started = true; }
-        $ph = implode(",", array_fill(0, count($planAttrs), "?"));
-        foreach (['radgroupreply','radgroupcheck'] as $tbl) {
-          $st = $r->prepare("DELETE FROM {$tbl} WHERE groupname=? AND attribute IN ($ph)");
-          $st->execute(array_merge([$code], $planAttrs));
-        }
-        if ($started && $r->inTransaction()) $r->commit();
+        location_delete_plan($locationId, $code);
       } catch (Throwable $e) {
-        if (isset($r) && $r instanceof PDO && $r->inTransaction()) $r->rollBack();
         http_response_code(500);
         echo json_encode(['ok'=>false,'error'=>'plan_delete_failed','detail'=>$e->getMessage()]);
         break;
       }
 
-      echo json_encode(['ok'=>true]);
+      if (location_is_default_id($locationId)) {
+        try {
+          $r = rdb_pdo();
+          $started = false;
+          if (!$r->inTransaction()) { $r->beginTransaction(); $started = true; }
+          $ph = implode(",", array_fill(0, count($planAttrs), "?"));
+          foreach (['radgroupreply','radgroupcheck'] as $tbl) {
+            $st = $r->prepare("DELETE FROM {$tbl} WHERE groupname=? AND attribute IN ($ph)");
+            $st->execute(array_merge([$code], $planAttrs));
+          }
+          if ($started && $r->inTransaction()) $r->commit();
+        } catch (Throwable $e) {
+          if (isset($r) && $r instanceof PDO && $r->inTransaction()) $r->rollBack();
+          error_log('[admin/api plan_delete global_sync] location='.$locationId.' code='.$code.' error='.$e->getMessage());
+        }
+      }
+
+      echo json_encode(['ok'=>true,'location_id'=>$locationId]);
       break;
     }
 
     case 'user_lookup': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
 
       $out = ['ok'=>true,'msisdn'=>$msisdn];
+      try {
+        $prof = location_profile_get($msisdn);
+        if ($prof) {
+          $out['location_id'] = (int)($prof['location_id'] ?? 0);
+          $out['location_code'] = (string)($prof['code'] ?? $prof['last_location_code'] ?? '');
+          $out['location_name'] = (string)($prof['name'] ?? '');
+        }
+      } catch (Throwable $e) { /* non-fatal */ }
       try {
         $out['balance_cents'] = wallet_balance($msisdn);
       } catch (Throwable $e) {
@@ -1387,7 +2136,7 @@ try {
           if (!empty($stateRow['groupname'])) $status['group'] = (string)$stateRow['groupname'];
 
           $g = strtoupper((string)($status['group'] ?? ''));
-          if (in_array($g, ['HS_LIMITED','HS_NOPAID','NOPAID'], true)) {
+          if (in_array($g, ['HS_LIMITED','HS_NOPAID'], true)) {
             $status['policy_limited'] = true;
           }
           $policyLimited = !empty($status['policy_limited']);
@@ -1457,11 +2206,56 @@ try {
       break;
     }
 
+    case 'user_assign_location': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+
+      $locRaw = (int)from_any([$in], 'location_id', 0);
+      if ($locRaw <= 0) {
+        $scope = admin_location_scope($in, false);
+        if (!($scope['ok'] ?? false)) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'location_required')]);
+          break;
+        }
+        $locRaw = (int)($scope['location_id'] ?? 0);
+      }
+      if ($locRaw <= 0) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'location_required']);
+        break;
+      }
+
+      $loc = location_find_by_id($locRaw);
+      if (!$loc) {
+        http_response_code(404);
+        echo json_encode(['ok'=>false,'error'=>'location_not_found']);
+        break;
+      }
+
+      try {
+        location_profile_set($msisdn, $locRaw, (string)($loc['code'] ?? ''));
+        echo json_encode([
+          'ok'=>true,
+          'msisdn'=>$msisdn,
+          'location_id'=>$locRaw,
+          'location_code'=>(string)($loc['code'] ?? ''),
+          'location_name'=>(string)($loc['name'] ?? ''),
+        ]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'assign_location_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
     case 'user_set_password': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $pass = trim((string)from_any([$in],'password',''));
       if ($msisdn === '' || $pass === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and password required']); break; }
-      if (strlen($pass) < 4) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'password_too_short']); break; }
+      if (strlen($pass) < 8) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'password_too_short','min_length'=>8]); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $r = rdb_pdo();
         $targets = nister_username_variants($msisdn);
@@ -1492,8 +2286,9 @@ try {
         } catch (Throwable $e) { /* ignore */ }
         echo json_encode(['ok'=>true]);
       } catch (Throwable $e) {
+        error_log('[admin/api user_set_password] msisdn=' . $msisdn . ' err=' . $e->getMessage());
         http_response_code(500);
-        echo json_encode(['ok'=>false,'error'=>'password_update_failed','detail'=>$e->getMessage()]);
+        echo json_encode(['ok'=>false,'error'=>'password_update_failed']);
       }
       break;
     }
@@ -1502,14 +2297,10 @@ try {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $pass = trim((string)from_any([$in],'password',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
-
-      $generated = false;
-      if ($pass === '') {
-        // 8-digit temporary password for quick account recovery.
-        $pass = (string)random_int(10000000, 99999999);
-        $generated = true;
-      }
-      if (strlen($pass) < 4) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'password_too_short']); break; }
+      if ($pass === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'password_required']); break; }
+      if (strlen($pass) < 8) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'password_too_short','min_length'=>8]); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
 
       try {
         $r = rdb_pdo();
@@ -1583,12 +2374,11 @@ try {
           'ok'=>true,
           'msisdn'=>$msisdn,
           'targets'=>$targets,
-          'generated_password'=>$generated,
-          'password'=>$pass,
         ]);
       } catch (Throwable $e) {
+        error_log('[admin/api user_reset_login] msisdn=' . $msisdn . ' err=' . $e->getMessage());
         http_response_code(500);
-        echo json_encode(['ok'=>false,'error'=>'user_reset_login_failed','detail'=>$e->getMessage()]);
+        echo json_encode(['ok'=>false,'error'=>'user_reset_login_failed']);
       }
       break;
     }
@@ -1596,6 +2386,8 @@ try {
     case 'user_delete': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
         if (!$targets) {
@@ -1667,6 +2459,8 @@ try {
         echo json_encode(['ok'=>false,'error'=>'confirm_required','detail'=>'Set confirm=PURGE to proceed']);
         break;
       }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
         $ids = array_values(array_unique(array_filter([$msisdn, msisdn_local($msisdn)])));
@@ -1760,6 +2554,8 @@ try {
     case 'user_force_expire': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $r = rdb_pdo();
         $targets = nister_username_variants($msisdn);
@@ -1785,6 +2581,8 @@ try {
     case 'user_force_exhaust': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $r = rdb_pdo();
         $targets = nister_username_variants($msisdn);
@@ -1813,6 +2611,22 @@ try {
       $ip = trim((string)from_any([$in],'ip',''));
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($ip === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'ip required']); break; }
+      $scope = admin_location_scope($in, true);
+      if (!($scope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+        break;
+      }
+      $scopeLocationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+      if ($scopeLocationId !== null && $scopeLocationId > 0) {
+        if ($msisdn === '') {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'msisdn_required_for_scoped_kick','detail'=>'Provide msisdn when a site scope is selected.']);
+          break;
+        }
+        $scopeCheck = admin_user_scope_check($in, $msisdn);
+        if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
+      }
       try {
         $res = radius_force_kick_ip($ip, $msisdn !== '' ? $msisdn : null, $ENV);
         if (!empty($res['ok'])) {
@@ -1840,6 +2654,8 @@ try {
       $raw = trim((string)from_any([$in],'expires_at',''));
       $days = (int)from_any([$in],'days',0);
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $tz = new DateTimeZone(date_default_timezone_get());
         if ($raw === '' && $days > 0) {
@@ -1863,6 +2679,8 @@ try {
     case 'user_add_quota': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       $delta = bytes_from_input($in);
       if ($delta === null || $delta <= 0) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'quota bytes required']); break; }
       try {
@@ -1889,6 +2707,8 @@ try {
     case 'user_set_quota': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       $val = bytes_from_input($in);
       if ($val === null || $val <= 0) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'quota bytes required']); break; }
       try {
@@ -1912,6 +2732,8 @@ try {
     case 'user_clear_quota': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $r = rdb_pdo();
         $targets = nister_username_variants($msisdn);
@@ -1931,6 +2753,8 @@ try {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $addr = trim((string)from_any([$in],'addrlist',''));
       if ($msisdn === '' || $addr === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and addrlist required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       $addrUp = strtoupper($addr);
       try {
         $r = rdb_pdo();
@@ -1971,6 +2795,8 @@ try {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $rate = trim((string)from_any([$in],'rate_limit',''));
       if ($msisdn === '' || $rate === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and rate_limit required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $r = rdb_pdo();
         foreach (nister_username_variants($msisdn) as $u) {
@@ -1988,6 +2814,8 @@ try {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $group = trim((string)from_any([$in],'group',''));
       if ($msisdn === '' || $group === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and group required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $r = rdb_pdo();
         $g = strtoupper($group);
@@ -2015,6 +2843,8 @@ try {
     case 'user_reset_nopaid': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         $r = rdb_pdo();
         foreach (nister_username_variants($msisdn) as $u) {
@@ -2043,6 +2873,13 @@ try {
       $recipientsRaw = $in['recipients'] ?? $in['recipient'] ?? '';
 
       if ($message === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'message required']); break; }
+      $smsScope = admin_location_scope($in, true);
+      if (!($smsScope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($smsScope['error'] ?? 'invalid_location_scope')]);
+        break;
+      }
+      $locationId = isset($smsScope['location_id']) && $smsScope['location_id'] !== null ? (int)$smsScope['location_id'] : null;
 
       $apiKey = settings_get('MNOTIFY_API_KEY', '') ?? '';
       $base = settings_get('MNOTIFY_BASE', '') ?? '';
@@ -2089,9 +2926,29 @@ try {
       $chunkSize = 100;
       $sent = 0;
       $skipped = 0;
+      $scopeSkipped = 0;
       $lastGateway = null;
       $skipped = count(array_values($recipients)) - count(array_unique($recipients));
       $recipients = array_values(array_unique($recipients));
+      if ($locationId !== null && $locationId > 0) {
+        $allowed = array_flip(location_filter_msisdns($recipients, $locationId));
+        $filtered = [];
+        foreach ($recipients as $rcpt) {
+          $canon = normalize_msisdn((string)$rcpt);
+          if ($canon !== '' && isset($allowed[$canon])) {
+            $local = sms_recipient_normalize((string)$rcpt);
+            if ($local !== '') $filtered[] = $local;
+          } else {
+            $scopeSkipped++;
+          }
+        }
+        $recipients = array_values(array_unique($filtered));
+      }
+      if (!$recipients) {
+        http_response_code(404);
+        echo json_encode(['ok'=>false,'error'=>'no_recipients_in_scope','location_id'=>$locationId,'out_of_scope'=>$scopeSkipped]);
+        break;
+      }
 
       foreach (array_chunk(array_values($recipients), $chunkSize) as $idx => $chunk) {
         if ($provider === 'pilosms') {
@@ -2187,7 +3044,15 @@ try {
         }
       }
 
-      echo json_encode(['ok'=>true,'provider'=>$provider,'gateway'=>$lastGateway,'recipients'=>$sent,'skipped'=>$skipped]);
+      echo json_encode([
+        'ok'=>true,
+        'provider'=>$provider,
+        'gateway'=>$lastGateway,
+        'location_id'=>$locationId,
+        'recipients'=>$sent,
+        'skipped'=>$skipped,
+        'out_of_scope'=>$scopeSkipped,
+      ]);
       break;
     }
 
@@ -2196,6 +3061,8 @@ try {
       $amount = parse_amount_cents($in);
       $notes = trim((string)($in['notes'] ?? 'Admin credit'));
       if ($msisdn === '' || $amount <= 0) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and amount required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
 
       $ref = 'ADM-' . date('YmdHis') . '-' . bin2hex(random_bytes(3));
       try {
@@ -2223,12 +3090,207 @@ try {
       break;
     }
 
+    case 'debit_wallet': {
+      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      $amount = parse_amount_cents($in);
+      $notes = trim((string)($in['notes'] ?? 'Admin debit'));
+      if ($msisdn === '' || $amount <= 0) { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and amount required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
+
+      $ref = 'ADM-DB-' . date('YmdHis') . '-' . bin2hex(random_bytes(3));
+      try {
+        $ok = wallet_try_debit_typed($msisdn, $amount, $ref, $notes, 'admin_debit');
+        if (!$ok) {
+          http_response_code(409);
+          echo json_encode(['ok'=>false,'error'=>'insufficient_funds']);
+          break;
+        }
+        $bal = null;
+        try { $bal = wallet_balance($msisdn); } catch (Throwable $e) { $bal = null; }
+        echo json_encode(['ok'=>true,'ref'=>$ref,'balance_cents'=>$bal]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'debit_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'promo_run': {
+      $locScope = admin_location_scope($in, true);
+      if (!($locScope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($locScope['error'] ?? 'invalid_location_scope')]);
+        break;
+      }
+      $locationId = isset($locScope['location_id']) && $locScope['location_id'] !== null ? (int)$locScope['location_id'] : null;
+
+      $kind = strtolower(trim((string)from_any([$in], 'kind', from_any([$in], 'promo_type', ''))));
+      if (!in_array($kind, ['wallet','data'], true)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'invalid_kind','detail'=>'Use wallet or data']);
+        break;
+      }
+
+      $scope = strtolower(trim((string)from_any([$in], 'scope', 'all')));
+      if (!in_array($scope, ['all','group','recent'], true)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'invalid_scope','detail'=>'Use all, group, or recent']);
+        break;
+      }
+
+      $r = rdb_pdo();
+      $targets = promo_collect_targets($PDO, $r, $in, $locationId);
+      if (!$targets) {
+        http_response_code(404);
+        echo json_encode(['ok'=>false,'error'=>'no_targets']);
+        break;
+      }
+
+      $tz = new DateTimeZone(date_default_timezone_get());
+      $exp = promo_parse_expiry($in, $tz);
+      if (!$exp) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'expiry_required','detail'=>'Provide expires_at or days']);
+        break;
+      }
+      $expUtc = $exp->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+      $notes = trim((string)from_any([$in], 'notes', 'Admin promo'));
+      $createdBy = (string)($_SESSION['admin_user'] ?? 'admin');
+      $baseRef = 'PROMO-' . date('YmdHis') . '-' . bin2hex(random_bytes(3));
+
+      $created = 0;
+      $failed = 0;
+      $errors = [];
+
+      if ($kind === 'wallet') {
+        $amount = parse_amount_cents($in);
+        if ($amount <= 0) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'amount_required','detail'=>'Wallet promo needs amount > 0']);
+          break;
+        }
+        try { promo_bootstrap_wallet_table($PDO); } catch (Throwable $e) {
+          http_response_code(500);
+          echo json_encode(['ok'=>false,'error'=>'promo_table_failed','detail'=>$e->getMessage()]);
+          break;
+        }
+
+        $i = 0;
+        foreach ($targets as $msisdn) {
+          $i++;
+          $ref = $baseRef . '-W-' . $i;
+          try {
+            wallet_credit_promo_with_expiry($msisdn, $amount, $expUtc, $ref, $notes, $locationId);
+            $created++;
+          } catch (Throwable $e) {
+            $failed++;
+            if (count($errors) < 20) $errors[] = ['msisdn'=>$msisdn, 'detail'=>$e->getMessage()];
+          }
+        }
+
+        echo json_encode([
+          'ok'=>true,
+          'kind'=>'wallet',
+          'scope'=>$scope,
+          'location_id'=>$locationId,
+          'amount_cents'=>$amount,
+          'expires_at_utc'=>$expUtc,
+          'total_targets'=>count($targets),
+          'created'=>$created,
+          'failed'=>$failed,
+          'errors'=>$errors,
+        ]);
+        break;
+      }
+
+      $bytes = parse_quota_bytes($in);
+      if ($bytes === null || $bytes <= 0) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>'quota_required','detail'=>'Data promo needs bytes/gb/mb > 0']);
+        break;
+      }
+
+      try { promo_bootstrap_data_table($r); } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'promo_table_failed','detail'=>$e->getMessage()]);
+        break;
+      }
+
+      $hasDataLoc = false;
+      try { $hasDataLoc = column_exists($r, 'nister_data_promos', 'location_id'); } catch (Throwable $e) { $hasDataLoc = false; }
+      if ($hasDataLoc) {
+        $ins = $r->prepare("INSERT INTO nister_data_promos
+                            (username, location_id, grant_bytes, expires_at, promo_ref, notes, created_by)
+                            VALUES (:u,:l,:b,:e,:r,:n,:by)");
+      } else {
+        $ins = $r->prepare("INSERT INTO nister_data_promos
+                            (username, grant_bytes, expires_at, promo_ref, notes, created_by)
+                            VALUES (:u,:b,:e,:r,:n,:by)");
+      }
+      $i = 0;
+      foreach ($targets as $msisdn) {
+        $i++;
+        $ref = $baseRef . '-D-' . $i;
+        try {
+          $bind = [
+            ':u' => $msisdn,
+            ':b' => $bytes,
+            ':e' => $expUtc,
+            ':r' => $ref,
+            ':n' => $notes,
+            ':by' => $createdBy,
+          ];
+          if ($hasDataLoc) $bind[':l'] = $locationId;
+          $ins->execute($bind);
+          $created++;
+        } catch (Throwable $e) {
+          $failed++;
+          if (count($errors) < 20) $errors[] = ['msisdn'=>$msisdn, 'detail'=>$e->getMessage()];
+        }
+      }
+
+      echo json_encode([
+        'ok'=>true,
+        'kind'=>'data',
+        'scope'=>$scope,
+        'location_id'=>$locationId,
+        'quota_bytes'=>$bytes,
+        'expires_at_utc'=>$expUtc,
+        'total_targets'=>count($targets),
+        'created'=>$created,
+        'failed'=>$failed,
+        'errors'=>$errors,
+      ]);
+      break;
+    }
+
     case 'apply_plan': {
+      $scope = admin_location_scope($in, true);
+      if (!($scope['ok'] ?? false)) {
+        http_response_code(400);
+        echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+        break;
+      }
+      $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       $code = (string)from_any([$in],'plan_code','');
       if ($msisdn === '' || $code === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn and plan_code required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
 
-      $plan = radius_find_plan($code);
+      $effectiveLocationId = $locationId;
+      if ($effectiveLocationId === null || $effectiveLocationId <= 0) {
+        try {
+          $prof = location_profile_get($msisdn);
+          if ($prof && !empty($prof['location_id'])) {
+            $effectiveLocationId = (int)$prof['location_id'];
+          }
+        } catch (Throwable $e) { /* non-fatal */ }
+      }
+      $strictLocationPlan = ($effectiveLocationId !== null && $effectiveLocationId > 0);
+      $plan = radius_find_plan($code, $effectiveLocationId, $strictLocationPlan);
       if (!$plan) { http_response_code(404); echo json_encode(['ok'=>false,'error'=>'unknown_plan']); break; }
 
       $price = parse_amount_cents($in);
@@ -2250,7 +3312,7 @@ try {
       try {
         radius_apply_plan($msisdn, $applyPlan, $purchaseAt);
         if (function_exists('radius_try_disconnect')) {
-          try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
+          try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : [], $effectiveLocationId); } catch (Throwable $e) { /* ignore */ }
         }
       } catch (Throwable $e) {
         http_response_code(500);
@@ -2281,6 +3343,7 @@ try {
             $fields[]="`$c`"; $vals[]=":$c"; $bind[":$c"]=$v;
           };
           if (!empty($has['msisdn'])) $add('msisdn', $msisdn);
+          if (!empty($has['location_id']) && $effectiveLocationId !== null && $effectiveLocationId > 0) $add('location_id', $effectiveLocationId);
           if (!empty($has['plan_code'])) $add('plan_code', $plan['code']);
           if (!empty($has['price_cents']) && $price > 0) $add('price_cents', $price);
           if (!empty($has['status'])) $add('status', 'applied');
@@ -2312,13 +3375,15 @@ try {
           sms_send($msisdn, $msg);
         }
       } catch (Throwable $e) { /* ignore */ }
-      echo json_encode(['ok'=>true,'expires_at'=>$expiresStr,'purchase_id'=>$pid,'purchase_error'=>$purchaseErr]);
+      echo json_encode(['ok'=>true,'location_id'=>$effectiveLocationId,'expires_at'=>$expiresStr,'purchase_id'=>$pid,'purchase_error'=>$purchaseErr]);
       break;
     }
 
     case 'disconnect_user': {
       $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
+      $scopeCheck = admin_user_scope_check($in, $msisdn);
+      if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
         radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []);
         echo json_encode(['ok'=>true]);

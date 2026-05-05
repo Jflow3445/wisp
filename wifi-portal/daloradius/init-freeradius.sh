@@ -3,6 +3,22 @@
 # GitHub: git@github.com:lirantal/daloradius.git
 RADIUS_PATH=/etc/freeradius
 
+function require_default_client_secret {
+	local secret="${DEFAULT_CLIENT_SECRET:-}"
+
+	if [ -z "$secret" ]; then
+		echo "ERROR: DEFAULT_CLIENT_SECRET must be set and non-empty." >&2
+		exit 1
+	fi
+
+	case "$secret" in
+		testing123|changeme|CHANGE_ME|__CHANGE_ME__)
+			echo "ERROR: DEFAULT_CLIENT_SECRET is using an insecure default/placeholder value." >&2
+			exit 1
+			;;
+	esac
+}
+
 function init_freeradius {
 	# Enable SQL in freeradius
 	sed -i 's|driver = "rlm_sql_null"|driver = "rlm_sql_mysql"|' $RADIUS_PATH/mods-available/sql
@@ -40,9 +56,9 @@ function init_freeradius {
 	sed -i 's|^#\s*password = .*|password = "'$MYSQL_PASSWORD'"|' $RADIUS_PATH/mods-available/sql
 	sed -i 's|^#\s*login = .*|login = "'$MYSQL_USER'"|' $RADIUS_PATH/mods-available/sql
 
-	if [ -n "$DEFAULT_CLIENT_SECRET" ]; then
-		sed -i 's|testing123|'$DEFAULT_CLIENT_SECRET'|' $RADIUS_PATH/mods-available/sql
-	fi
+	local escaped_default_client_secret
+	escaped_default_client_secret="$(printf '%s' "$DEFAULT_CLIENT_SECRET" | sed -e 's/[\\/&|]/\\&/g')"
+	sed -i "s|testing123|$escaped_default_client_secret|g" $RADIUS_PATH/mods-available/sql
 	echo "freeradius initialization completed."
 }
 
@@ -54,17 +70,16 @@ function init_database {
 	IP=`ifconfig eth0 | awk '/inet/{ print $2;} '` # does also work: $IP=`hostname -I | awk '{print $1}'`
 	NM=`ifconfig eth0 | awk '/netmask/{ print $4;} '`
 	CIDR=`ipcalc $IP $NM | awk '/Network/{ print $2;} '`
-	SECRET=testing123
-	if [ -n "$DEFAULT_CLIENT_SECRET" ]; then
-		SECRET=$DEFAULT_CLIENT_SECRET
-	fi
-	echo "Adding client for $CIDR with default secret $SECRET"
-	mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "INSERT INTO nas (nasname,shortname,type,ports,secret,server,community,description) VALUES ('$CIDR','DOCKER NET','other',0,'$SECRET',NULL,'','')"
+	SECRET="$DEFAULT_CLIENT_SECRET"
+	SECRET_SQL_ESCAPED="$(printf '%s' "$SECRET" | sed "s/'/''/g")"
+	echo "Adding client for $CIDR with configured client secret"
+	mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "INSERT INTO nas (nasname,shortname,type,ports,secret,server,community,description) VALUES ('$CIDR','DOCKER NET','other',0,'$SECRET_SQL_ESCAPED',NULL,'','')"
 
 	echo "Database initialization for freeradius completed."
 }
 
 echo "Starting freeradius..."
+require_default_client_secret
 
 # wait for MySQL-Server to be ready
 while ! mysqladmin ping -h"$MYSQL_HOST" --silent; do

@@ -19,6 +19,11 @@ $minTopupCents = (int)$get('TOPUP_MIN_CENTS', 3000);
 if ($minTopupCents <= 0) $minTopupCents = 3000;
 $loggedIn = user_logged_in();
 $userMsisdn = $loggedIn ? user_msisdn_display() : '';
+$loginHref = '/login.php';
+$siteCode = location_session_get_code();
+if ($siteCode !== null && $siteCode !== '') {
+  $loginHref .= '?location_code='.rawurlencode($siteCode);
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -212,7 +217,7 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
           <button class="btn primary" id="topup_now" type="button"<?= $loggedIn ? '' : ' disabled' ?>>Top up wallet</button>
           <a class="btn ghost" href="#plans_section">Browse plans</a>
           <?php if (!$loggedIn): ?>
-            <a class="btn outline" href="/login.php">Login to your account</a>
+            <a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login to your account</a>
           <?php endif; ?>
         </div>
         <div class="trust">
@@ -231,7 +236,7 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
             <div class="callout" style="margin-bottom:12px">
               <div class="callout-title">Login required</div>
               <div class="sub">Please sign in with the same password you use on the captive portal to access wallet and purchases.</div>
-              <div style="margin-top:8px"><a class="btn outline" href="/login.php">Login</a></div>
+              <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
             </div>
           <?php endif; ?>
           <div class="field">
@@ -269,7 +274,7 @@ $userMsisdn = $loggedIn ? user_msisdn_display() : '';
             <div class="callout" style="margin-bottom:12px">
               <div class="callout-title">Login required</div>
               <div class="sub">Log in to view your referral code and rewards.</div>
-              <div style="margin-top:8px"><a class="btn outline" href="/login.php">Login</a></div>
+              <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
             </div>
           <?php endif; ?>
           <div class="field">

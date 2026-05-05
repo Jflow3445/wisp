@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/db.php';
 require_once __DIR__.'/common.php';
+require_once __DIR__.'/location.php';
 
 function auto_renew_bootstrap(): void {
   static $ready = false;
@@ -11,6 +12,7 @@ function auto_renew_bootstrap(): void {
 
   $PDO->exec("CREATE TABLE IF NOT EXISTS auto_renew_settings (
     msisdn VARCHAR(32) PRIMARY KEY,
+    location_id INT NULL,
     enabled TINYINT(1) NOT NULL DEFAULT 0,
     plan_code VARCHAR(64) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -18,18 +20,34 @@ function auto_renew_bootstrap(): void {
     last_renew_at DATETIME NULL,
     last_attempt_at DATETIME NULL,
     last_error VARCHAR(255) NULL,
-    KEY idx_enabled (enabled, updated_at)
+    KEY idx_enabled (enabled, updated_at),
+    KEY idx_auto_renew_location (location_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+  try {
+    location_add_column_if_missing(
+      $PDO,
+      'auto_renew_settings',
+      'location_id',
+      "`location_id` INT NULL AFTER `msisdn`, ADD KEY `idx_auto_renew_location` (`location_id`)"
+    );
+    $defaultLoc = location_default_id();
+    $PDO->prepare("UPDATE auto_renew_settings SET location_id=:l WHERE location_id IS NULL")
+      ->execute([':l' => $defaultLoc]);
+  } catch (Throwable $e) {
+    // non-fatal
+  }
 
   $ready = true;
 }
 
-function auto_renew_get(string $rawMsisdn): array {
+function auto_renew_get(string $rawMsisdn, ?int $locationId = null): array {
   auto_renew_bootstrap();
   global $PDO;
   $msisdn = normalize_msisdn($rawMsisdn);
   if ($msisdn === '') {
     return [
+      'location_id' => $locationId,
       'enabled' => false,
       'plan_code' => null,
       'updated_at' => null,
@@ -39,12 +57,13 @@ function auto_renew_get(string $rawMsisdn): array {
     ];
   }
 
-  $st = $PDO->prepare("SELECT enabled, plan_code, updated_at, last_renew_at, last_attempt_at, last_error
+  $st = $PDO->prepare("SELECT location_id, enabled, plan_code, updated_at, last_renew_at, last_attempt_at, last_error
                        FROM auto_renew_settings WHERE msisdn=:m LIMIT 1");
-  $st->execute([':m'=>$msisdn]);
+  $st->execute([':m' => $msisdn]);
   $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
   if (!$row) {
     return [
+      'location_id' => $locationId,
       'enabled' => false,
       'plan_code' => null,
       'updated_at' => null,
@@ -54,7 +73,17 @@ function auto_renew_get(string $rawMsisdn): array {
     ];
   }
 
+  $rowLoc = (int)($row['location_id'] ?? 0);
+  if ($locationId !== null && $locationId > 0 && $rowLoc !== $locationId) {
+    try {
+      $PDO->prepare("UPDATE auto_renew_settings SET location_id=:l WHERE msisdn=:m")
+        ->execute([':l' => $locationId, ':m' => $msisdn]);
+      $rowLoc = $locationId;
+    } catch (Throwable $e) { /* non-fatal */ }
+  }
+
   return [
+    'location_id' => $rowLoc > 0 ? $rowLoc : $locationId,
     'enabled' => ((int)($row['enabled'] ?? 0)) === 1,
     'plan_code' => ($row['plan_code'] ?? '') !== '' ? (string)$row['plan_code'] : null,
     'updated_at' => $row['updated_at'] ?? null,
@@ -64,12 +93,13 @@ function auto_renew_get(string $rawMsisdn): array {
   ];
 }
 
-function auto_renew_set(string $rawMsisdn, bool $enabled, ?string $planCode = null): array {
+function auto_renew_set(string $rawMsisdn, bool $enabled, ?string $planCode = null, ?int $locationId = null): array {
   auto_renew_bootstrap();
   global $PDO;
   $msisdn = normalize_msisdn($rawMsisdn);
   if ($msisdn === '') {
     return [
+      'location_id' => $locationId,
       'enabled' => false,
       'plan_code' => null,
       'updated_at' => null,
@@ -81,19 +111,23 @@ function auto_renew_set(string $rawMsisdn, bool $enabled, ?string $planCode = nu
 
   $planCode = $planCode !== null ? trim($planCode) : null;
   if ($planCode === '') $planCode = null;
+  if ($locationId === null || $locationId <= 0) {
+    $locationId = location_default_id();
+  }
 
   $st = $PDO->prepare(
-    "INSERT INTO auto_renew_settings (msisdn, enabled, plan_code, created_at, updated_at)
-     VALUES (:m, :e, :p, NOW(), NOW())
-     ON DUPLICATE KEY UPDATE enabled=VALUES(enabled), plan_code=VALUES(plan_code), updated_at=NOW()"
+    "INSERT INTO auto_renew_settings (msisdn, location_id, enabled, plan_code, created_at, updated_at)
+     VALUES (:m, :l, :e, :p, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE location_id=VALUES(location_id), enabled=VALUES(enabled), plan_code=VALUES(plan_code), updated_at=NOW()"
   );
   $st->execute([
     ':m'=>$msisdn,
+    ':l'=>$locationId,
     ':e'=>$enabled ? 1 : 0,
     ':p'=>$planCode,
   ]);
 
-  return auto_renew_get($msisdn);
+  return auto_renew_get($msisdn, $locationId);
 }
 
 function auto_renew_mark_attempt(string $rawMsisdn, ?string $error=null): void {

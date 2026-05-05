@@ -81,8 +81,17 @@ function doLogin(){
     return;
   }
   clearGuard();
-  if ('$(chap-id)'!=='' && typeof hexMD5 === 'function') {
-    f.password.value = hexMD5('$(chap-id)'+p+'$(chap-challenge)');
+  var chapId = '$(chap-id)';
+  var chapChal = '$(chap-challenge)';
+  var chapPresent = (
+    chapId !== '' && chapId.indexOf('$(') === -1 &&
+    chapChal !== '' && chapChal.indexOf('$(') === -1
+  );
+  if (chapPresent && typeof hexMD5 === 'function') {
+    f.password.value = hexMD5(chapId + p + chapChal);
+  } else {
+    // PAP/HTTPS fallback keeps auto-login working on profiles that do not require CHAP.
+    f.password.value = p;
   }
   f.submit();
 }

@@ -95,10 +95,8 @@ function db_pdo(array $env): PDO {
     if ($name === '') $name = 'radius';
     $dsn = "mysql:host={$host};dbname={$name};charset=utf8mb4";
   }
-  if ($user === '') $user = 'radius';
-  if ($pass === '') $pass = 'BishopFelix@50Dolla';
-  if ($dsn === '' || $user === '') {
-    throw new RuntimeException('DB not configured (DB_DSN/DB_USER)');
+  if ($dsn === '' || $user === '' || $pass === '') {
+    throw new RuntimeException('DB not configured (DB_DSN/DB_USER/DB_PASS)');
   }
     $opts = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -195,5 +193,271 @@ if (!function_exists('msisdn_display')) {
   function msisdn_display(string $s): string {
     // For UI only – show 0-leading local for Ghana
     return msisdn_local($s);
+  }
+}
+
+if (!function_exists('nister_trusted_proxy_cidrs')) {
+  function nister_trusted_proxy_cidrs(array $env = []): array {
+    $raw = (string)($env['TRUSTED_PROXY_CIDRS'] ?? $env['TRUSTED_PROXIES'] ?? '');
+    if ($raw === '') {
+      $raw = (string)(getenv('TRUSTED_PROXY_CIDRS') ?: getenv('TRUSTED_PROXIES') ?: '');
+    }
+    $out = [
+      '127.0.0.1/32' => true,
+      '::1/128' => true,
+    ];
+    if ($raw !== '') {
+      $parts = preg_split('/[\s,]+/', $raw) ?: [];
+      foreach ($parts as $p) {
+        $p = trim((string)$p);
+        if ($p === '') continue;
+        $out[$p] = true;
+      }
+    }
+    return array_keys($out);
+  }
+}
+
+if (!function_exists('nister_ip_in_cidr')) {
+  function nister_ip_in_cidr(string $ip, string $cidr): bool {
+    $ip = trim($ip);
+    $cidr = trim($cidr);
+    if ($ip === '' || $cidr === '') return false;
+    if (strpos($cidr, '/') === false) {
+      return strcasecmp($ip, $cidr) === 0;
+    }
+    [$subnet, $bitsRaw] = explode('/', $cidr, 2);
+    $subnet = trim($subnet);
+    $bits = (int)$bitsRaw;
+    $ipBin = @inet_pton($ip);
+    $subBin = @inet_pton($subnet);
+    if ($ipBin === false || $subBin === false) return false;
+    if (strlen($ipBin) !== strlen($subBin)) return false;
+    $maxBits = strlen($ipBin) * 8;
+    if ($bits < 0 || $bits > $maxBits) return false;
+    $bytes = intdiv($bits, 8);
+    $remain = $bits % 8;
+    if ($bytes > 0 && substr($ipBin, 0, $bytes) !== substr($subBin, 0, $bytes)) {
+      return false;
+    }
+    if ($remain === 0) return true;
+    $mask = (~((1 << (8 - $remain)) - 1)) & 0xFF;
+    return ((ord($ipBin[$bytes]) & $mask) === (ord($subBin[$bytes]) & $mask));
+  }
+}
+
+if (!function_exists('nister_ip_in_cidrs')) {
+  function nister_ip_in_cidrs(string $ip, array $cidrs): bool {
+    foreach ($cidrs as $cidr) {
+      if (nister_ip_in_cidr($ip, (string)$cidr)) return true;
+    }
+    return false;
+  }
+}
+
+if (!function_exists('nister_client_ip')) {
+  function nister_client_ip(array $env = []): string {
+    $remote = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    if (!filter_var($remote, FILTER_VALIDATE_IP)) return '';
+    $trusted = nister_trusted_proxy_cidrs($env);
+    if (!nister_ip_in_cidrs($remote, $trusted)) return $remote;
+
+    $xff = (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
+    if ($xff !== '') {
+      foreach (explode(',', $xff) as $part) {
+        $part = trim((string)$part);
+        if (filter_var($part, FILTER_VALIDATE_IP)) return $part;
+      }
+    }
+    $xri = trim((string)($_SERVER['HTTP_X_REAL_IP'] ?? ''));
+    if (filter_var($xri, FILTER_VALIDATE_IP)) return $xri;
+    return $remote;
+  }
+}
+
+if (!function_exists('nister_rate_limit_dir')) {
+  function nister_rate_limit_dir(): string {
+    $dir = rtrim(sys_get_temp_dir(), "/\\") . '/nister-rate-limit';
+    if (!is_dir($dir)) {
+      @mkdir($dir, 0700, true);
+    }
+    return $dir;
+  }
+}
+
+if (!function_exists('nister_rate_limit_path')) {
+  function nister_rate_limit_path(string $scope, string $key): string {
+    $scope = strtolower(trim($scope));
+    $scope = preg_replace('/[^a-z0-9._-]+/', '_', $scope) ?: 'default';
+    $hash = hash('sha256', $key);
+    return nister_rate_limit_dir() . '/' . $scope . '-' . $hash . '.json';
+  }
+}
+
+if (!function_exists('nister_rate_limit_read_state')) {
+  function nister_rate_limit_read_state(string $path): array {
+    $raw = @file_get_contents($path);
+    $j = is_string($raw) ? json_decode($raw, true) : null;
+    $attempts = [];
+    if (is_array($j) && isset($j['attempts']) && is_array($j['attempts'])) {
+      foreach ($j['attempts'] as $ts) {
+        if (is_int($ts) || ctype_digit((string)$ts)) $attempts[] = (int)$ts;
+      }
+    }
+    $lockUntil = 0;
+    if (is_array($j) && isset($j['lock_until']) && (is_int($j['lock_until']) || ctype_digit((string)$j['lock_until']))) {
+      $lockUntil = (int)$j['lock_until'];
+    }
+    return ['attempts' => $attempts, 'lock_until' => max(0, $lockUntil)];
+  }
+}
+
+if (!function_exists('nister_rate_limit_write_state')) {
+  function nister_rate_limit_write_state(string $path, array $state): void {
+    $payload = [
+      'attempts' => array_values(array_map('intval', (array)($state['attempts'] ?? []))),
+      'lock_until' => (int)($state['lock_until'] ?? 0),
+    ];
+    @file_put_contents($path, json_encode($payload, JSON_UNESCAPED_SLASHES), LOCK_EX);
+  }
+}
+
+if (!function_exists('nister_rate_limit_allow')) {
+  function nister_rate_limit_allow(
+    string $scope,
+    string $key,
+    int $maxAttempts = 5,
+    int $windowSec = 300,
+    int $lockoutSec = 900
+  ): array {
+    $maxAttempts = max(1, $maxAttempts);
+    $windowSec = max(1, $windowSec);
+    $lockoutSec = max(1, $lockoutSec);
+    $path = nister_rate_limit_path($scope, $key);
+    $state = nister_rate_limit_read_state($path);
+    $now = time();
+    $cutoff = $now - $windowSec;
+    $attempts = array_values(array_filter((array)$state['attempts'], static fn($ts): bool => (int)$ts > $cutoff));
+    $lockUntil = (int)($state['lock_until'] ?? 0);
+
+    if ($lockUntil <= $now && count($attempts) >= $maxAttempts) {
+      $lockUntil = $now + $lockoutSec;
+    }
+
+    $state['attempts'] = $attempts;
+    $state['lock_until'] = $lockUntil;
+    nister_rate_limit_write_state($path, $state);
+
+    if ($lockUntil > $now) {
+      return [
+        'allowed' => false,
+        'retry_after' => max(1, $lockUntil - $now),
+        'remaining' => 0,
+      ];
+    }
+
+    $remaining = max(0, $maxAttempts - count($attempts));
+    return [
+      'allowed' => true,
+      'retry_after' => 0,
+      'remaining' => $remaining,
+    ];
+  }
+}
+
+if (!function_exists('nister_rate_limit_hit')) {
+  function nister_rate_limit_hit(
+    string $scope,
+    string $key,
+    int $maxAttempts = 5,
+    int $windowSec = 300,
+    int $lockoutSec = 900
+  ): array {
+    $maxAttempts = max(1, $maxAttempts);
+    $windowSec = max(1, $windowSec);
+    $lockoutSec = max(1, $lockoutSec);
+    $path = nister_rate_limit_path($scope, $key);
+    $state = nister_rate_limit_read_state($path);
+    $now = time();
+    $cutoff = $now - $windowSec;
+    $attempts = array_values(array_filter((array)$state['attempts'], static fn($ts): bool => (int)$ts > $cutoff));
+    $attempts[] = $now;
+    $lockUntil = (int)($state['lock_until'] ?? 0);
+    if (count($attempts) >= $maxAttempts) {
+      $lockUntil = $now + $lockoutSec;
+    }
+    $state['attempts'] = $attempts;
+    $state['lock_until'] = $lockUntil;
+    nister_rate_limit_write_state($path, $state);
+    return [
+      'allowed' => $lockUntil <= $now,
+      'retry_after' => ($lockUntil > $now) ? max(1, $lockUntil - $now) : 0,
+      'remaining' => max(0, $maxAttempts - count($attempts)),
+    ];
+  }
+}
+
+if (!function_exists('nister_rate_limit_clear')) {
+  function nister_rate_limit_clear(string $scope, string $key): void {
+    $path = nister_rate_limit_path($scope, $key);
+    if (is_file($path)) {
+      @unlink($path);
+    }
+  }
+}
+
+if (!function_exists('nister_same_host')) {
+  function nister_same_host(string $a, string $b): bool {
+    $a = strtolower(trim($a));
+    $b = strtolower(trim($b));
+    if ($a === '' || $b === '') return false;
+    return hash_equals($a, $b);
+  }
+}
+
+if (!function_exists('nister_request_matches_host')) {
+  function nister_request_matches_host(string $url, string $expectedHost): bool {
+    if ($url === '' || $expectedHost === '') return false;
+    $parts = parse_url($url);
+    if (!is_array($parts)) return false;
+    $host = strtolower((string)($parts['host'] ?? ''));
+    if ($host === '') return false;
+    return nister_same_host($host, strtolower($expectedHost));
+  }
+}
+
+if (!function_exists('nister_is_same_origin_request')) {
+  function nister_is_same_origin_request(): bool {
+    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if (in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) return true;
+
+    $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+    if ($host === '') return false;
+    if (strpos($host, ':') !== false) {
+      $host = strtolower((string)parse_url('http://' . $host, PHP_URL_HOST));
+    }
+    $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+    if ($origin !== '') return nister_request_matches_host($origin, $host);
+    $referer = trim((string)($_SERVER['HTTP_REFERER'] ?? ''));
+    if ($referer !== '') return nister_request_matches_host($referer, $host);
+    return false;
+  }
+}
+
+if (!function_exists('nister_require_cli_or_token')) {
+  function nister_require_cli_or_token(array $env, string $tokenKey = 'CRON_HTTP_TOKEN'): void {
+    if (PHP_SAPI === 'cli') return;
+    $expected = trim((string)($env[$tokenKey] ?? ''));
+    if ($expected === '') {
+      $tmp = getenv($tokenKey);
+      if ($tmp !== false) $expected = trim((string)$tmp);
+    }
+    if ($expected === '') {
+      $expected = trim((string)($_ENV[$tokenKey] ?? ''));
+    }
+    $provided = trim((string)($_SERVER['HTTP_X_CRON_TOKEN'] ?? ($_POST['token'] ?? $_GET['token'] ?? '')));
+    if ($expected === '' || $provided === '' || !hash_equals($expected, $provided)) {
+      json_out(['ok' => false, 'error' => 'forbidden'], 403);
+    }
   }
 }

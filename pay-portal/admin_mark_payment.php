@@ -6,18 +6,30 @@ require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/db.php';
 require_once __DIR__.'/lib/sms.php';
 
+// Security hotfix: legacy secret-based admin endpoints are disabled by default.
+$ENV = app_boot();
+$legacyRaw = strtolower(trim((string)($ENV['ALLOW_LEGACY_ADMIN_ENDPOINTS'] ?? getenv('ALLOW_LEGACY_ADMIN_ENDPOINTS') ?? ($_ENV['ALLOW_LEGACY_ADMIN_ENDPOINTS'] ?? ''))));
+$legacyEnabled = in_array($legacyRaw, ['1','true','yes','on'], true);
+if (!$legacyEnabled) {
+  http_response_code(410);
+  echo json_encode(['ok'=>false,'error'=>'legacy_endpoint_disabled','detail'=>'Use /admin/index.php'], JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 try{
-  $ENV = app_boot();
   $PDO = db_pdo($ENV);
 
   $SECRET = (string)($ENV['ADMIN_DEPOSIT_SECRET'] ?? '');
-  $tok    = (string)($_GET['s'] ?? $_POST['s'] ?? '');
+  $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+  if ($method !== 'POST') throw new RuntimeException('method_not_allowed');
+
+  $tok    = (string)($_SERVER['HTTP_X_ADMIN_SECRET'] ?? ($_POST['secret'] ?? ($_POST['s'] ?? '')));
   if ($SECRET === '' || !hash_equals($SECRET, $tok)) {
     throw new RuntimeException('forbidden');
   }
 
-  $ref    = (string)($_GET['ref'] ?? $_POST['ref'] ?? '');
-  $action = strtolower((string)($_GET['action'] ?? $_POST['action'] ?? ''));
+  $ref    = (string)($_POST['ref'] ?? '');
+  $action = strtolower((string)($_POST['action'] ?? ''));
   if ($ref === '' || !in_array($action, ['approve','decline'], true)) {
     throw new RuntimeException('ref + action required');
   }

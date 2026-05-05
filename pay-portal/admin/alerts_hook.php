@@ -5,12 +5,19 @@ require_once __DIR__.'/../lib/alerts.php';
 
 $env = app_boot();
 $secret = (string)($env['ADMIN_ALERT_SECRET'] ?? getenv('ADMIN_ALERT_SECRET') ?? ($_ENV['ADMIN_ALERT_SECRET'] ?? ''));
-$provided = $_SERVER['HTTP_X_ALERT_SECRET'] ?? $_GET['secret'] ?? ($_POST['secret'] ?? '');
-if ($secret !== '' && !hash_equals($secret, (string)$provided)) {
+$method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+$in = body_json();
+$provided = (string)($_SERVER['HTTP_X_ALERT_SECRET'] ?? '');
+if ($provided === '' && $method === 'POST') {
+  $provided = (string)($_POST['secret'] ?? ($in['secret'] ?? ''));
+}
+if ($secret === '') {
+  error_log('[alerts_hook] ADMIN_ALERT_SECRET missing');
+  json_out(['ok'=>false,'error'=>'misconfigured'], 503);
+}
+if (!hash_equals($secret, (string)$provided)) {
   json_out(['ok'=>false,'error'=>'forbidden'], 403);
 }
-
-$in = body_json();
 $ts  = isset($in['ts']) ? trim((string)$in['ts']) : null;
 $msg = isset($in['msg']) ? trim((string)$in['msg']) : '';
 if ($msg === '') {

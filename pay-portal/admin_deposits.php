@@ -4,9 +4,21 @@ require_once __DIR__.'/lib/common.php';
 require_once __DIR__.'/lib/db.php';
 
 $ENV = app_boot();
+$legacyRaw = strtolower(trim((string)($ENV['ALLOW_LEGACY_ADMIN_ENDPOINTS'] ?? getenv('ALLOW_LEGACY_ADMIN_ENDPOINTS') ?? ($_ENV['ALLOW_LEGACY_ADMIN_ENDPOINTS'] ?? ''))));
+$legacyEnabled = in_array($legacyRaw, ['1','true','yes','on'], true);
+if (!$legacyEnabled) {
+  http_response_code(410);
+  echo 'legacy_endpoint_disabled: use /admin/index.php';
+  exit;
+}
+
 $PDO = db_pdo($ENV);
 $SECRET = (string)($ENV['ADMIN_DEPOSIT_SECRET'] ?? '');
-$tok = (string)($_GET['s'] ?? '');
+$method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+$tok = (string)($_SERVER['HTTP_X_ADMIN_SECRET'] ?? '');
+if ($tok === '' && $method === 'POST') {
+  $tok = (string)($_POST['secret'] ?? ($_POST['s'] ?? ''));
+}
 
 if ($SECRET === '' || !hash_equals($SECRET, $tok)) {
   http_response_code(403);
@@ -61,8 +73,18 @@ if (is_dir($dir)) {
       <td><b>GHS <?= number_format((float)$r['amount'],2) ?></b> <span class="pill"><?= (int)$r['amount_cents'] ?>c</span></td>
       <td class="muted"><?= h($r['created_at']) ?></td>
       <td>
-        <a class="btn appr" href="admin_mark_payment.php?ref=<?= urlencode($r['ref']) ?>&action=approve&s=<?= urlencode($tok) ?>">Approve</a>
-        <a class="btn decl" href="admin_mark_payment.php?ref=<?= urlencode($r['ref']) ?>&action=decline&s=<?= urlencode($tok) ?>">Decline</a>
+        <form method="post" action="admin_mark_payment.php" style="display:inline">
+          <input type="hidden" name="ref" value="<?= h($r['ref']) ?>">
+          <input type="hidden" name="action" value="approve">
+          <input type="hidden" name="s" value="<?= h($tok) ?>">
+          <button class="btn appr" type="submit">Approve</button>
+        </form>
+        <form method="post" action="admin_mark_payment.php" style="display:inline">
+          <input type="hidden" name="ref" value="<?= h($r['ref']) ?>">
+          <input type="hidden" name="action" value="decline">
+          <input type="hidden" name="s" value="<?= h($tok) ?>">
+          <button class="btn decl" type="submit">Decline</button>
+        </form>
       </td>
     </tr>
   <?php endforeach; ?>
@@ -82,8 +104,18 @@ if (is_dir($dir)) {
       <td><?= h($f['txref'] ?? '') ?></td>
       <td class="muted"><?= h($f['created_at'] ?? '') ?></td>
       <td>
-        <a class="btn appr" href="admin_update_deposit.php?id=<?= urlencode($f['id'] ?? '') ?>&action=approve&secret=<?= urlencode($tok) ?>">Approve</a>
-        <a class="btn decl" href="admin_update_deposit.php?id=<?= urlencode($f['id'] ?? '') ?>&action=decline&secret=<?= urlencode($tok) ?>">Decline</a>
+        <form method="post" action="admin_update_deposit.php" style="display:inline">
+          <input type="hidden" name="id" value="<?= h((string)($f['id'] ?? '')) ?>">
+          <input type="hidden" name="action" value="approve">
+          <input type="hidden" name="secret" value="<?= h($tok) ?>">
+          <button class="btn appr" type="submit">Approve</button>
+        </form>
+        <form method="post" action="admin_update_deposit.php" style="display:inline">
+          <input type="hidden" name="id" value="<?= h((string)($f['id'] ?? '')) ?>">
+          <input type="hidden" name="action" value="decline">
+          <input type="hidden" name="secret" value="<?= h($tok) ?>">
+          <button class="btn decl" type="submit">Decline</button>
+        </form>
       </td>
     </tr>
   <?php endforeach; ?>

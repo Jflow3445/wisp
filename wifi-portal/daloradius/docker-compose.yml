@@ -9,8 +9,8 @@ services:
     environment:
       - MYSQL_DATABASE=radius
       - MYSQL_USER=radius
-      - MYSQL_PASSWORD=radiusdbpw
-      - MYSQL_ROOT_PASSWORD=radiusrootdbpw
+      - MYSQL_PASSWORD=${RADIUS_DB_PASSWORD:?RADIUS_DB_PASSWORD must be set}
+      - MYSQL_ROOT_PASSWORD=${RADIUS_DB_ROOT_PASSWORD:?RADIUS_DB_ROOT_PASSWORD must be set}
     volumes:
       - "./data/mysql:/var/lib/mysql"
 
@@ -30,9 +30,9 @@ services:
       - MYSQL_PORT=3306
       - MYSQL_DATABASE=radius
       - MYSQL_USER=radius
-      - MYSQL_PASSWORD=radiusdbpw
-      # Optional settings
-      - DEFAULT_CLIENT_SECRET=testing123
+      - MYSQL_PASSWORD=${RADIUS_DB_PASSWORD:?RADIUS_DB_PASSWORD must be set}
+      # Required secret
+      - DEFAULT_CLIENT_SECRET=${RADIUS_CLIENT_SECRET:?RADIUS_CLIENT_SECRET must be set}
     volumes:
       - ./data/freeradius:/data
       - radius_logs:/var/log/freeradius
@@ -54,9 +54,9 @@ services:
       - MYSQL_PORT=3306
       - MYSQL_DATABASE=radius
       - MYSQL_USER=radius
-      - MYSQL_PASSWORD=radiusdbpw
+      - MYSQL_PASSWORD=${RADIUS_DB_PASSWORD:?RADIUS_DB_PASSWORD must be set}
       # Optional Settings:
-      - DEFAULT_CLIENT_SECRET=testing123
+      - DEFAULT_CLIENT_SECRET=${RADIUS_CLIENT_SECRET:?RADIUS_CLIENT_SECRET must be set}
       - DEFAULT_FREERADIUS_SERVER=radius
       - MAIL_SMTPADDR=127.0.0.1
       - MAIL_PORT=25

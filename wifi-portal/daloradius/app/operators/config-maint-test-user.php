@@ -49,7 +49,7 @@
     }
 
     if (!isset($configValues['CONFIG_MAINT_TEST_USER_RADIUSSECRET'])) {
-        $configValues['CONFIG_MAINT_TEST_USER_RADIUSSECRET'] = "testing123";
+        $configValues['CONFIG_MAINT_TEST_USER_RADIUSSECRET'] = "";
     }
 
     $radclient_path = is_radclient_present();
@@ -84,7 +84,15 @@
                        ) ? intval(trim($_REQUEST['radius_port'])) : intval($configValues['CONFIG_MAINT_TEST_USER_RADIUSPORT']);
 
         $secret = (isset($_REQUEST['secret']) && !empty(trim($_REQUEST['secret'])))
-                ? trim($_REQUEST['secret']) : $configValues['CONFIG_MAINT_TEST_USER_RADIUSSECRET'];
+                ? trim($_REQUEST['secret']) : trim($configValues['CONFIG_MAINT_TEST_USER_RADIUSSECRET']);
+        $secret_is_valid = (!empty($secret) && $secret !== "testing123");
+
+        if (!$secret_is_valid) {
+            $secret = "";
+            $failureMsg = "RADIUS client secret is required and cannot be 'testing123'. "
+                        . "Set CONFIG_MAINT_TEST_USER_RADIUSSECRET explicitly or provide a secret in this form.";
+            $logAction .= "$failureMsg on page: ";
+        }
 
         $username = (isset($_REQUEST['username']) && !empty(trim($_REQUEST['username']))) ? trim($_REQUEST['username']) : "";
         $password = (isset($_REQUEST['password']) && !empty(trim($_REQUEST['password']))) ? trim($_REQUEST['password']) : "";
@@ -92,101 +100,105 @@
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (array_key_exists('csrf_token', $_POST) && isset($_POST['csrf_token']) && dalo_check_csrf_token($_POST['csrf_token'])) {
-
-                include implode(DIRECTORY_SEPARATOR, [ $configValues['COMMON_INCLUDES'], 'db_open.php' ]);
-
-                if (!user_exists($dbSocket, $username)) {
-                    // required
-                    $failureMsg = "This user does not exist";
+                if (!$secret_is_valid) {
+                    $failureMsg = "RADIUS client secret is required and cannot be 'testing123'. "
+                                . "Set CONFIG_MAINT_TEST_USER_RADIUSSECRET explicitly or provide a secret in this form.";
                 } else {
-                    $selected_dictionary = (isset($_POST['selected_dictionary']) && !empty(trim($_POST['selected_dictionary'])) &&
-                                       in_array(trim($_POST['selected_dictionary']), $valid_dictionaryPaths))
-                                    ? trim($_POST['selected_dictionary']) : "";
+                    include implode(DIRECTORY_SEPARATOR, [ $configValues['COMMON_INCLUDES'], 'db_open.php' ]);
 
-                    $dictionaryPath = (!empty($selected_dictionary)) ? "$dictionaryDir/dictionary.$selected_dictionary" : "";
-
-                    $debug = (isset($_POST['debug']) && in_array($_POST['debug'], array("yes", "no"))) ? $_POST['debug'] : "no";
-                    $timeout = (isset($_POST['timeout']) && intval($_POST['timeout']) > 0) ? intval($_POST['timeout']) : 3;
-                    $retries = (isset($_POST['retries']) && intval($_POST['retries']) > 0) ? intval($_POST['retries']) : 3;
-                    $count = (isset($_POST['count']) && intval($_POST['count']) > 0) ? intval($_POST['count']) : 1;
-                    $requests = (isset($_POST['requests']) && intval($_POST['requests']) > 0) ? intval($_POST['requests']) : 1;
-
-                    $simulate = (isset($_POST['simulate']) && $_POST['simulate'] === "on");
-
-                    $password1 = (isset($_POST['password1']) && !empty(trim($_POST['password1']))) ? trim($_POST['password1']) : "";
-                    $password2 = (isset($_POST['password2']) && !empty(trim($_POST['password2']))) ? trim($_POST['password2']) : "";
-
-                    // this will be passed to user_auth function
-                    $params =  array(
-                                        "command" => "auth",
-                                        "server" => $radius_addr,
-                                        "port" => $radius_port,
-                                        "username" => $username,
-                                        "secret" => $secret,
-                                        "count" => $count,
-                                        "requests" => $requests,
-                                        "retries" => $retries,
-                                        "timeout" => $timeout,
-                                        "debug" => ($debug == "yes"),
-                                        "dictionary" => $dictionaryPath,
-                                        "simulate" => $simulate,
-                                    );
-
-
-                    $error = false;
-                    if (empty($password1)) {
-                        $error = true;
-                        $failureMsg = "The provided password is empty or invalid";
-                    } else if (empty($password2)) {
-                        $error = true;
-                        $failureMsg = "The provided password (confirmation) is empty or invalid";
-                    } else if ($password1 !== $password2) {
-                        $error = true;
-                        $failureMsg = "Password and password (confirmation) should match";
+                    if (!user_exists($dbSocket, $username)) {
+                        // required
+                        $failureMsg = "This user does not exist";
                     } else {
-                        $params["password"] = $password1;
-                        $params["password_type"] = "User-Password";
-                    }
+                        $selected_dictionary = (isset($_POST['selected_dictionary']) && !empty(trim($_POST['selected_dictionary'])) &&
+                                           in_array(trim($_POST['selected_dictionary']), $valid_dictionaryPaths))
+                                        ? trim($_POST['selected_dictionary']) : "";
 
-                    if (!$error) {
-                        $failureMsg = "";
-                        $successMsg = "";
+                        $dictionaryPath = (!empty($selected_dictionary)) ? "$dictionaryDir/dictionary.$selected_dictionary" : "";
 
-                        // update configuration
-                        $configValues['CONFIG_MAINT_TEST_USER_RADIUSSERVER'] = $radius_addr;
-                        $configValues['CONFIG_MAINT_TEST_USER_RADIUSPORT'] = $radius_port;
-                        $configValues['CONFIG_MAINT_TEST_USER_RADIUSSECRET'] = $secret;
-                        include implode(DIRECTORY_SEPARATOR, [ $configValues['COMMON_INCLUDES'], 'config_write.php' ]);
+                        $debug = (isset($_POST['debug']) && in_array($_POST['debug'], array("yes", "no"))) ? $_POST['debug'] : "no";
+                        $timeout = (isset($_POST['timeout']) && intval($_POST['timeout']) > 0) ? intval($_POST['timeout']) : 3;
+                        $retries = (isset($_POST['retries']) && intval($_POST['retries']) > 0) ? intval($_POST['retries']) : 3;
+                        $count = (isset($_POST['count']) && intval($_POST['count']) > 0) ? intval($_POST['count']) : 1;
+                        $requests = (isset($_POST['requests']) && intval($_POST['requests']) > 0) ? intval($_POST['requests']) : 1;
 
-                        // test user
-                        $result = user_auth($params);
+                        $simulate = (isset($_POST['simulate']) && $_POST['simulate'] === "on");
 
-                        $username_enc = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
+                        $password1 = (isset($_POST['password1']) && !empty(trim($_POST['password1']))) ? trim($_POST['password1']) : "";
+                        $password2 = (isset($_POST['password2']) && !empty(trim($_POST['password2']))) ? trim($_POST['password2']) : "";
 
-                        if ($result["error"]) {
-                            if (!empty($failureMsg)) {
-                                $failureMsg .= str_repeat("<br>", 2);
-                            }
+                        // this will be passed to user_auth function
+                        $params =  array(
+                                            "command" => "auth",
+                                            "server" => $radius_addr,
+                                            "port" => $radius_port,
+                                            "username" => $username,
+                                            "secret" => $secret,
+                                            "count" => $count,
+                                            "requests" => $requests,
+                                            "retries" => $retries,
+                                            "timeout" => $timeout,
+                                            "debug" => ($debug == "yes"),
+                                            "dictionary" => $dictionaryPath,
+                                            "simulate" => $simulate,
+                                        );
 
-                            $failureMsg .= sprintf("Cannot perform informative action on user [<strong>%s</strong>, reason: <strong>%s</strong>]",
-                                                  $username_enc, $result["output"]);
-                            $logAction .= sprintf("Cannot perform informative action on user [%s, reason: %s] on page: ",
-                                                 $username, $result["output"]);
+
+                        $error = false;
+                        if (empty($password1)) {
+                            $error = true;
+                            $failureMsg = "The provided password is empty or invalid";
+                        } else if (empty($password2)) {
+                            $error = true;
+                            $failureMsg = "The provided password (confirmation) is empty or invalid";
+                        } else if ($password1 !== $password2) {
+                            $error = true;
+                            $failureMsg = "Password and password (confirmation) should match";
                         } else {
-                            if (!empty($successMsg)) {
-                                $successMsg .= str_repeat("<br>", 2);
-                            }
+                            $params["password"] = $password1;
+                            $params["password_type"] = "User-Password";
+                        }
 
-                            $successMsg .= sprintf('Performed informative action on user <strong>%s</strong>.'
-                                                 . '<pre class="font-monospace my-1">%s</pre>',
-                                                  $username_enc, $result["output"]);
-                            $logAction .= sprintf("Performed informative action on user [%s] on page: ",
-                                                 $username, $result["output"]);
+                        if (!$error) {
+                            $failureMsg = "";
+                            $successMsg = "";
+
+                            // update configuration
+                            $configValues['CONFIG_MAINT_TEST_USER_RADIUSSERVER'] = $radius_addr;
+                            $configValues['CONFIG_MAINT_TEST_USER_RADIUSPORT'] = $radius_port;
+                            $configValues['CONFIG_MAINT_TEST_USER_RADIUSSECRET'] = $secret;
+                            include implode(DIRECTORY_SEPARATOR, [ $configValues['COMMON_INCLUDES'], 'config_write.php' ]);
+
+                            // test user
+                            $result = user_auth($params);
+
+                            $username_enc = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
+
+                            if ($result["error"]) {
+                                if (!empty($failureMsg)) {
+                                    $failureMsg .= str_repeat("<br>", 2);
+                                }
+
+                                $failureMsg .= sprintf("Cannot perform informative action on user [<strong>%s</strong>, reason: <strong>%s</strong>]",
+                                                      $username_enc, $result["output"]);
+                                $logAction .= sprintf("Cannot perform informative action on user [%s, reason: %s] on page: ",
+                                                     $username, $result["output"]);
+                            } else {
+                                if (!empty($successMsg)) {
+                                    $successMsg .= str_repeat("<br>", 2);
+                                }
+
+                                $successMsg .= sprintf('Performed informative action on user <strong>%s</strong>.'
+                                                     . '<pre class="font-monospace my-1">%s</pre>',
+                                                      $username_enc, $result["output"]);
+                                $logAction .= sprintf("Performed informative action on user [%s] on page: ",
+                                                     $username, $result["output"]);
+                            }
                         }
                     }
-                }
 
-                include implode(DIRECTORY_SEPARATOR, [ $configValues['COMMON_INCLUDES'], 'db_close.php' ]);
+                    include implode(DIRECTORY_SEPARATOR, [ $configValues['COMMON_INCLUDES'], 'db_close.php' ]);
+                }
 
             } else {
                 // csrf

@@ -12,10 +12,16 @@ $password = (string)($_POST['password'] ?? '');
 $dst      = (string)($_POST['dst'] ?? '');
 
 // Only allow our router login endpoint
-$defaultLogin = 'http://wifi.nister.org/login';
+$defaultLogin = 'https://wifi.nister.org/login';
 $linkLoginOnly = (string)($_POST['link_login_only'] ?? $defaultLogin);
 $u = parse_url($linkLoginOnly);
-if (!$u || !isset($u['scheme'], $u['host']) || !in_array($u['host'], ['wifi.nister.org','192.168.88.1'], true)) {
+$scheme = strtolower((string)($u['scheme'] ?? ''));
+if (
+  !$u ||
+  !isset($u['scheme'], $u['host']) ||
+  !in_array($scheme, ['http', 'https'], true) ||
+  !in_array((string)$u['host'], ['wifi.nister.org', '192.168.88.1'], true)
+) {
   $linkLoginOnly = $defaultLogin;
 }
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=Run NISTER health sample collector every 30 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+AccuracySec=15s
+Persistent=true
+Unit=nister-health-check.service
+
+[Install]
+WantedBy=timers.target
+

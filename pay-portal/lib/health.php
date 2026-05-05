@@ -156,3 +156,168 @@ function health_uptime_ratio(PDO $pdo, int $hours=24): ?float {
   $ok = (int)($row['ok_cnt'] ?? 0);
   return round(($ok / $tot) * 100, 2);
 }
+
+function health_table_exists(PDO $pdo, string $table): bool {
+  $qt = $pdo->quote($table);
+  $st = $pdo->query("SHOW TABLES LIKE {$qt}");
+  return (bool)$st->fetchColumn();
+}
+
+function health_column_exists(PDO $pdo, string $table, string $col): bool {
+  $qc = $pdo->quote($col);
+  $st = $pdo->query("SHOW COLUMNS FROM {$table} LIKE {$qc}");
+  return (bool)$st->fetchColumn();
+}
+
+function health_rdb_or_fallback(PDO $fallback): PDO {
+  static $rdb = null;
+  if ($rdb instanceof PDO) {
+    return $rdb;
+  }
+  if (!function_exists('rdb_pdo')) {
+    $radiusLib = __DIR__.'/radius.php';
+    if (is_file($radiusLib)) {
+      require_once $radiusLib;
+    }
+  }
+  if (function_exists('rdb_pdo')) {
+    try {
+      $rdb = rdb_pdo();
+      return $rdb;
+    } catch (Throwable $e) {
+      // Fall back to supplied PDO when RADIUS DB is unavailable.
+    }
+  }
+  $rdb = $fallback;
+  return $rdb;
+}
+
+function health_enforcement_snapshot(PDO $pdo): array {
+  health_bootstrap($pdo);
+
+  $out = [
+    'open_sessions_total' => null,
+    'open_sessions_recent_15m' => null,
+    'open_sessions_stale_15m' => null,
+    'open_sessions_stale_60m' => null,
+    'active_recent_hs_sessions_15m' => null,
+    'acct_last_update_utc' => null,
+    'acct_last_update_age_sec' => null,
+    'limit_events_15m' => 0,
+    'limit_events_60m' => 0,
+    'coa_fail_events_60m' => 0,
+    'coa_retry_events_60m' => 0,
+    'coa_probe_ok_15m' => 0,
+    'coa_probe_total_15m' => 0,
+    'coa_probe_ok_120' => 0,
+    'coa_probe_total_120' => 0,
+  ];
+
+  $rdb = health_rdb_or_fallback($pdo);
+  if (health_table_exists($rdb, 'radacct')) {
+    $strictOpenWhere = "(acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')";
+    $recentExpr = health_column_exists($rdb, 'radacct', 'acctupdatetime')
+      ? 'COALESCE(acctupdatetime, acctstarttime)'
+      : 'acctstarttime';
+    $reopenedRecentExpr = "(acctstoptime IS NOT NULL AND acctstoptime<>'0000-00-00 00:00:00' AND {$recentExpr} > acctstoptime AND {$recentExpr} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE))";
+    $openWhere = "(($strictOpenWhere) OR ($reopenedRecentExpr))";
+
+    $q = $rdb->query("SELECT
+        COUNT(*) AS open_total,
+        SUM(CASE WHEN {$recentExpr} >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END) AS open_recent_15m,
+        SUM(CASE WHEN {$recentExpr} < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END) AS open_stale_15m,
+        SUM(CASE WHEN {$recentExpr} < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 MINUTE) THEN 1 ELSE 0 END) AS open_stale_60m,
+        DATE_FORMAT(MAX({$recentExpr}), '%Y-%m-%d %H:%i:%s') AS last_update_utc,
+        COALESCE(TIMESTAMPDIFF(SECOND, MAX({$recentExpr}), UTC_TIMESTAMP()), 0) AS last_update_age_sec
+      FROM radacct
+      WHERE {$openWhere}");
+    $row = $q->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $out['open_sessions_total'] = (int)($row['open_total'] ?? 0);
+    $out['open_sessions_recent_15m'] = (int)($row['open_recent_15m'] ?? 0);
+    $out['open_sessions_stale_15m'] = (int)($row['open_stale_15m'] ?? 0);
+    $out['open_sessions_stale_60m'] = (int)($row['open_stale_60m'] ?? 0);
+    $out['acct_last_update_utc'] = ($row['last_update_utc'] ?? null) ?: null;
+    $out['acct_last_update_age_sec'] = isset($row['last_update_age_sec']) ? (int)$row['last_update_age_sec'] : null;
+
+    if (health_table_exists($rdb, 'radusergroup')) {
+      $q2 = $rdb->query("
+        SELECT COUNT(DISTINCT CONCAT(
+          CASE
+            WHEN ra.username REGEXP '^233[0-9]{9}$' THEN ra.username
+            WHEN ra.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(ra.username,2))
+            ELSE ra.username
+          END,
+          '|',
+          COALESCE(NULLIF(ra.callingstationid,''), NULLIF(ra.acctsessionid,''), NULLIF(ra.framedipaddress,''), CAST(ra.radacctid AS CHAR))
+        )) AS c
+        FROM radacct ra
+        WHERE (
+            (ra.acctstoptime IS NULL OR ra.acctstoptime='0000-00-00 00:00:00')
+            OR (
+              ra.acctstoptime IS NOT NULL
+              AND ra.acctstoptime<>'0000-00-00 00:00:00'
+              AND COALESCE(ra.acctupdatetime, ra.acctstarttime) > ra.acctstoptime
+              AND COALESCE(ra.acctupdatetime, ra.acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)
+            )
+          )
+          AND COALESCE(ra.acctupdatetime, ra.acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)
+          AND EXISTS (
+            SELECT 1
+            FROM radusergroup rug
+            WHERE rug.groupname='HS_ACTIVE'
+              AND rug.username IN (
+                ra.username,
+                CASE
+                  WHEN ra.username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(ra.username,4))
+                  WHEN ra.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(ra.username,2))
+                  ELSE ra.username
+                END,
+                CASE
+                  WHEN ra.username REGEXP '^233[0-9]{9}$' THEN ra.username
+                  WHEN ra.username REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING(ra.username,2))
+                  ELSE ra.username
+                END
+              )
+          )");
+      $out['active_recent_hs_sessions_15m'] = (int)($q2->fetchColumn() ?: 0);
+    }
+  }
+
+  if (health_table_exists($pdo, 'admin_alerts')) {
+    $q3 = $pdo->query("SELECT
+        SUM(CASE WHEN type='limit' AND COALESCE(ts, created_at) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END) AS limit_15m,
+        SUM(CASE WHEN type='limit' AND COALESCE(ts, created_at) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 MINUTE) THEN 1 ELSE 0 END) AS limit_60m,
+        SUM(CASE WHEN type='coa_fail' AND COALESCE(ts, created_at) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 MINUTE) THEN 1 ELSE 0 END) AS coa_fail_60m,
+        SUM(CASE WHEN type='coa_retry' AND COALESCE(ts, created_at) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 MINUTE) THEN 1 ELSE 0 END) AS coa_retry_60m
+      FROM admin_alerts");
+    $r3 = $q3->fetch(PDO::FETCH_ASSOC) ?: [];
+    $out['limit_events_15m'] = (int)($r3['limit_15m'] ?? 0);
+    $out['limit_events_60m'] = (int)($r3['limit_60m'] ?? 0);
+    $out['coa_fail_events_60m'] = (int)($r3['coa_fail_60m'] ?? 0);
+    $out['coa_retry_events_60m'] = (int)($r3['coa_retry_60m'] ?? 0);
+  }
+
+  $q4 = $pdo->query("SELECT
+      SUM(CASE WHEN coa_ok=1 AND ts >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END) AS ok_15m,
+      SUM(CASE WHEN coa_ok IS NOT NULL AND ts >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END) AS tot_15m
+    FROM health_samples");
+  $r4 = $q4->fetch(PDO::FETCH_ASSOC) ?: [];
+  $out['coa_probe_ok_15m'] = (int)($r4['ok_15m'] ?? 0);
+  $out['coa_probe_total_15m'] = (int)($r4['tot_15m'] ?? 0);
+
+  $q5 = $pdo->query("SELECT
+      SUM(CASE WHEN coa_ok=1 THEN 1 ELSE 0 END) AS ok_120,
+      SUM(CASE WHEN coa_ok IS NULL THEN 0 ELSE 1 END) AS tot_120
+    FROM (
+      SELECT coa_ok
+      FROM health_samples
+      ORDER BY id DESC
+      LIMIT 120
+    ) t");
+  $r5 = $q5->fetch(PDO::FETCH_ASSOC) ?: [];
+  $out['coa_probe_ok_120'] = (int)($r5['ok_120'] ?? 0);
+  $out['coa_probe_total_120'] = (int)($r5['tot_120'] ?? 0);
+
+  return $out;
+}

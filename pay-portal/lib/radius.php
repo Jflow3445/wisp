@@ -2,7 +2,6 @@
 declare(strict_types=1);
 require_once __DIR__.'/nister_pdo.php';
 require_once __DIR__ . '/common.php';
-require_once __DIR__.'/common.php';
 
 if (!function_exists("rdb_pdo")) {
 function rdb_pdo(): PDO {
@@ -48,7 +47,30 @@ function radius_set_user_group(PDO $r, string $user, string $group): void {
     ->execute([':u'=>$user, ':g'=>$group]);
 }
 
+function radius_normalize_legacy_nopaid(PDO $r): void {
+  static $done = false;
+  if ($done) return;
+  $done = true;
+  try {
+    $r->exec("INSERT INTO radusergroup (username, groupname, priority)
+              SELECT n.username, 'HS_NOPAID', COALESCE(MIN(n.priority), 0)
+              FROM radusergroup n
+              WHERE LOWER(n.groupname)='nopaid'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM radusergroup x
+                  WHERE x.username=n.username
+                    AND x.groupname='HS_NOPAID'
+                )
+              GROUP BY n.username");
+    $r->exec("DELETE FROM radusergroup WHERE LOWER(groupname)='nopaid'");
+  } catch (Throwable $e) {
+    // Non-fatal: callers should continue even if migration query cannot run.
+  }
+}
+
 function radius_user_groups(PDO $r, array $users): array {
+  radius_normalize_legacy_nopaid($r);
   if (!$users) return [];
   $ph = implode(",", array_fill(0, count($users), "?"));
   $st = $r->prepare("SELECT groupname, priority FROM radusergroup WHERE username IN ($ph) ORDER BY priority ASC, groupname ASC");
@@ -67,7 +89,6 @@ function radius_pick_plan_group(PDO $r, array $users): ?string {
   if (!$groups) return null;
   foreach ($groups as $g) {
     if (preg_match('/^hs_/i', $g)) continue;
-    if (strtolower($g) === 'nopaid') continue;
     return $g;
   }
   return null;
@@ -76,7 +97,12 @@ function radius_pick_plan_group(PDO $r, array $users): ?string {
 function radius_plan_code_from_reply(PDO $r, array $users): ?string {
   if (!$users) return null;
   $ph = implode(",", array_fill(0, count($users), "?"));
-  $st = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Nister-Plan-Code' LIMIT 1");
+  $st = $r->prepare("SELECT `value`
+                     FROM radreply
+                     WHERE username IN ($ph)
+                       AND attribute='Nister-Plan-Code'
+                     ORDER BY id DESC
+                     LIMIT 1");
   $st->execute($users);
   $val = $st->fetchColumn();
   $code = ($val !== false && $val !== null) ? trim((string)$val) : '';
@@ -86,7 +112,12 @@ function radius_plan_code_from_reply(PDO $r, array $users): ?string {
 function radius_plan_name_from_reply(PDO $r, array $users): ?string {
   if (!$users) return null;
   $ph = implode(",", array_fill(0, count($users), "?"));
-  $st = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Nister-Plan-Name' LIMIT 1");
+  $st = $r->prepare("SELECT `value`
+                     FROM radreply
+                     WHERE username IN ($ph)
+                       AND attribute='Nister-Plan-Name'
+                     ORDER BY id DESC
+                     LIMIT 1");
   $st->execute($users);
   $val = $st->fetchColumn();
   $name = ($val !== false && $val !== null) ? trim((string)$val) : '';
@@ -97,16 +128,31 @@ function nister_duration_days(PDO $r, array $users, ?string $group, int $default
   $days = null;
   if ($users) {
     $ph = implode(",", array_fill(0, count($users), "?"));
-    $st = $r->prepare("SELECT `value` FROM radreply WHERE username IN ($ph) AND attribute='Nister-Duration-Days' LIMIT 1");
+    $st = $r->prepare("SELECT `value`
+                       FROM radreply
+                       WHERE username IN ($ph)
+                         AND attribute='Nister-Duration-Days'
+                       ORDER BY id DESC
+                       LIMIT 1");
     $st->execute($users);
     $vd = $st->fetchColumn();
     if ($vd !== false && $vd !== null && $vd !== '') $days = (int)$vd;
   }
   if ($days === null && $group) {
-    $st = $r->prepare("SELECT `value` FROM radgroupreply WHERE groupname=:g AND attribute='Nister-Duration-Days' LIMIT 1");
+    $st = $r->prepare("SELECT `value`
+                       FROM radgroupreply
+                       WHERE groupname=:g
+                         AND attribute='Nister-Duration-Days'
+                       ORDER BY id DESC
+                       LIMIT 1");
     $st->execute([':g'=>$group]); $vd = $st->fetchColumn();
     if ($vd === false || $vd === null || $vd === '') {
-      $st = $r->prepare("SELECT `value` FROM radgroupcheck WHERE groupname=:g AND attribute='Nister-Duration-Days' LIMIT 1");
+      $st = $r->prepare("SELECT `value`
+                         FROM radgroupcheck
+                         WHERE groupname=:g
+                           AND attribute='Nister-Duration-Days'
+                         ORDER BY id DESC
+                         LIMIT 1");
       $st->execute([':g'=>$group]); $vd = $st->fetchColumn();
     }
     if ($vd !== false && $vd !== null && $vd !== '') $days = (int)$vd;
@@ -129,7 +175,12 @@ function nister_parse_expiry_datetime(?string $raw, DateTimeZone $tz): ?DateTime
 
 function nister_fetch_expiration(PDO $r, array $users, DateTimeZone $tz): ?DateTimeImmutable {
   if (!$users) return null;
-  $st = $r->prepare("SELECT `value` FROM radcheck WHERE username=? AND attribute='Expiration' LIMIT 1");
+  $st = $r->prepare("SELECT `value`
+                     FROM radcheck
+                     WHERE username=?
+                       AND attribute='Expiration'
+                     ORDER BY id DESC
+                     LIMIT 1");
   $best = null;
   foreach ($users as $u) {
     if ($u === '') continue;
@@ -146,7 +197,12 @@ function nister_fetch_expiration(PDO $r, array $users, DateTimeZone $tz): ?DateT
 
 function nister_fetch_window_start(PDO $r, array $users, DateTimeZone $tz): ?DateTimeImmutable {
   if (!$users) return null;
-  $st = $r->prepare("SELECT `value` FROM radreply WHERE username=? AND attribute='Nister-Window-Start' LIMIT 1");
+  $st = $r->prepare("SELECT `value`
+                     FROM radreply
+                     WHERE username=?
+                       AND attribute='Nister-Window-Start'
+                     ORDER BY id DESC
+                     LIMIT 1");
   $best = null;
   foreach ($users as $u) {
     if ($u === '') continue;
@@ -229,42 +285,19 @@ function radius_apply_plan__old(string $msisdn, array $plan, DateTimeImmutable $
  * - Enriches with plan info from radgroupreply/radgroupcheck (rate-limit, price, days).
  */
 /**
- * Sum octets across username variants in a window (handles 32-bit gigaword rollover).
+ * Sum octets across username variants in a fair window model:
+ * - Fully counts sessions entirely inside the window
+ * - Prorates overlap sessions by duration
+ * - Handles open sessions and 32-bit gigaword rollover
  */
-function nister_sum_used_bytes(PDO $r, array $users, DateTimeImmutable $startAt, ?DateTimeImmutable $endAt=null): int {
+function nister_sum_used_bytes_fair(PDO $r, array $users, DateTimeImmutable $startAt, ?DateTimeImmutable $endAt=null): int {
     if (empty($users)) return 0;
-    $ph = implode(",", array_fill(0, count($users), "?"));
-    $sql = "SELECT COALESCE(SUM(
-                COALESCE(acctinputoctets,0)+COALESCE(acctoutputoctets,0)
-                + 4294967296*(COALESCE(acctinputgigawords,0)+COALESCE(acctoutputgigawords,0))
-            ),0)
-            FROM radacct
-            WHERE username IN ($ph)
-              AND (
-                    (acctstarttime IS NOT NULL AND acctstarttime >= ?)
-                 OR (acctstoptime  IS NOT NULL AND acctstoptime  >= ?)
-                 OR (acctstoptime IS NULL AND acctstarttime IS NOT NULL AND acctstarttime >= ?)
-              )";
-    $params = $users;
-    $params[] = $startAt->format('Y-m-d H:i:s');
-    $params[] = $startAt->format('Y-m-d H:i:s');
-    $params[] = $startAt->format('Y-m-d H:i:s');
-    if ($endAt) { $sql .= " AND acctstarttime <= ?"; $params[] = $endAt->format('Y-m-d H:i:s'); }
-    $st = $r->prepare($sql);
-    $st->execute($params);
-    return (int)($st->fetchColumn() ?: 0);
-}
+    $tz = $startAt->getTimezone();
+    $windowEnd = $endAt instanceof DateTimeImmutable ? $endAt->setTimezone($tz) : new DateTimeImmutable('now', $tz);
+    if ($windowEnd <= $startAt) return 0;
 
-/**
- * Estimate usage within [startAt, endAt] even when a session started before startAt.
- * For overlap sessions we prorate octets by overlap duration as a practical approximation.
- * This is used only for carry-over math during plan apply to avoid over-crediting data.
- */
-function nister_sum_used_bytes_for_carry(PDO $r, array $users, DateTimeImmutable $startAt, DateTimeImmutable $endAt): int {
-    if (empty($users)) return 0;
-    if ($endAt <= $startAt) return 0;
     $ph = implode(",", array_fill(0, count($users), "?"));
-    $sql = "SELECT acctstarttime, acctstoptime,
+    $sql = "SELECT acctstarttime, acctstoptime, acctupdatetime,
                    COALESCE(acctinputoctets,0) AS in_oct,
                    COALESCE(acctoutputoctets,0) AS out_oct,
                    COALESCE(acctinputgigawords,0) AS in_gw,
@@ -273,36 +306,40 @@ function nister_sum_used_bytes_for_carry(PDO $r, array $users, DateTimeImmutable
             WHERE username IN ($ph)
               AND acctstarttime IS NOT NULL
               AND acctstarttime < ?
-              AND (acctstoptime IS NULL OR acctstoptime > ?)";
+              AND COALESCE(NULLIF(acctstoptime,'0000-00-00 00:00:00'), acctupdatetime, ?) > ?";
     $params = $users;
-    $params[] = $endAt->format('Y-m-d H:i:s');
+    $params[] = $windowEnd->format('Y-m-d H:i:s');
+    $params[] = $windowEnd->format('Y-m-d H:i:s');
     $params[] = $startAt->format('Y-m-d H:i:s');
     $st = $r->prepare($sql);
     $st->execute($params);
 
     $total = 0.0;
     while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
-        $startRaw = (string)($row['acctstarttime'] ?? '');
+        $startRaw = trim((string)($row['acctstarttime'] ?? ''));
         if ($startRaw === '') continue;
         try {
-            $sessStart = new DateTimeImmutable($startRaw, $startAt->getTimezone());
+            $sessStart = new DateTimeImmutable($startRaw, $tz);
         } catch (Throwable $e) {
             continue;
         }
+
         $stopRaw = trim((string)($row['acctstoptime'] ?? ''));
+        $updateRaw = trim((string)($row['acctupdatetime'] ?? ''));
+        $sessEnd = null;
         if ($stopRaw !== '' && $stopRaw !== '0000-00-00 00:00:00') {
-            try {
-                $sessEnd = new DateTimeImmutable($stopRaw, $startAt->getTimezone());
-            } catch (Throwable $e) {
-                $sessEnd = $endAt;
-            }
-        } else {
-            $sessEnd = $endAt;
+            try { $sessEnd = new DateTimeImmutable($stopRaw, $tz); } catch (Throwable $e) { $sessEnd = null; }
+        }
+        if (!($sessEnd instanceof DateTimeImmutable) && $updateRaw !== '') {
+            try { $sessEnd = new DateTimeImmutable($updateRaw, $tz); } catch (Throwable $e) { $sessEnd = null; }
+        }
+        if (!($sessEnd instanceof DateTimeImmutable)) {
+            $sessEnd = $windowEnd;
         }
 
         if ($sessEnd <= $sessStart) continue;
         $winStart = ($sessStart > $startAt) ? $sessStart : $startAt;
-        $winEnd = ($sessEnd < $endAt) ? $sessEnd : $endAt;
+        $winEnd = ($sessEnd < $windowEnd) ? $sessEnd : $windowEnd;
         if ($winEnd <= $winStart) continue;
 
         $dur = $sessEnd->getTimestamp() - $sessStart->getTimestamp();
@@ -315,7 +352,7 @@ function nister_sum_used_bytes_for_carry(PDO $r, array $users, DateTimeImmutable
         );
         if ($bytes <= 0) continue;
 
-        if ($sessStart >= $startAt && $sessEnd <= $endAt) {
+        if ($sessStart >= $startAt && $sessEnd <= $windowEnd) {
             $total += $bytes;
         } else {
             $ratio = $overlap / $dur;
@@ -326,6 +363,46 @@ function nister_sum_used_bytes_for_carry(PDO $r, array $users, DateTimeImmutable
     }
     if ($total <= 0) return 0;
     return (int)floor($total);
+}
+
+function nister_sum_used_bytes(PDO $r, array $users, DateTimeImmutable $startAt, ?DateTimeImmutable $endAt=null): int {
+    return nister_sum_used_bytes_fair($r, $users, $startAt, $endAt);
+}
+
+/**
+ * Backward-compatible alias used by carry-over logic.
+ * Uses the same fair overlap-prorated model as all other usage paths.
+ */
+function nister_sum_used_bytes_for_carry(PDO $r, array $users, DateTimeImmutable $startAt, DateTimeImmutable $endAt): int {
+    return nister_sum_used_bytes_fair($r, $users, $startAt, $endAt);
+}
+
+/**
+ * Sum currently active promo data bytes for the user variants.
+ * Returns 0 when promo table is absent or unreadable.
+ */
+function nister_active_data_promo_bytes(PDO $r, array $users, ?DateTimeImmutable $at=null): int {
+  if (empty($users)) return 0;
+  $ph = implode(",", array_fill(0, count($users), "?"));
+  $tz = new DateTimeZone(date_default_timezone_get());
+  $now = ($at instanceof DateTimeImmutable) ? $at->setTimezone($tz) : new DateTimeImmutable('now', $tz);
+  $nowUtc = $now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+
+  try {
+    $st = $r->prepare("SELECT COALESCE(SUM(grant_bytes),0)
+                       FROM nister_data_promos
+                       WHERE username IN ($ph)
+                         AND expires_at > ?");
+    $params = $users;
+    $params[] = $nowUtc;
+    $st->execute($params);
+    $v = $st->fetchColumn();
+    if ($v === false || $v === null || $v === '') return 0;
+    $n = (int)$v;
+    return ($n > 0) ? $n : 0;
+  } catch (Throwable $e) {
+    return 0;
+  }
 }
 
 /**
@@ -339,10 +416,15 @@ function nister_current_total_quota(PDO $r, array $users, ?string $group): ?int 
     $st = $r->prepare("SELECT attribute, `value`
                            FROM radreply
                            WHERE attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')
-                             AND username IN ($ph)");
+                             AND username IN ($ph)
+                           ORDER BY id DESC");
         $st->execute($users);
         $vals = [];
-        while ($row = $st->fetch()) { $vals[$row['attribute']] = $row['value']; }
+        while ($row = $st->fetch()) {
+            $a = (string)($row['attribute'] ?? '');
+            if ($a === '' || array_key_exists($a, $vals)) continue;
+            $vals[$a] = $row['value'];
+        }
         if (isset($vals['Nister-Quota-Bytes']) && $vals['Nister-Quota-Bytes'] !== '') {
             return (int)$vals['Nister-Quota-Bytes'];
         }
@@ -356,10 +438,15 @@ function nister_current_total_quota(PDO $r, array $users, ?string $group): ?int 
         foreach (['radgroupreply','radgroupcheck'] as $tbl) {
             $st = $r->prepare("SELECT attribute, `value` FROM {$tbl}
                                WHERE groupname=:g
-                                 AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')");
+                                 AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit-Gigawords','Mikrotik-Total-Limit')
+                               ORDER BY id DESC");
             $st->execute([':g'=>$group]);
             $vals = [];
-            while ($row = $st->fetch()) { $vals[$row['attribute']] = $row['value']; }
+            while ($row = $st->fetch()) {
+                $a = (string)($row['attribute'] ?? '');
+                if ($a === '' || array_key_exists($a, $vals)) continue;
+                $vals[$a] = $row['value'];
+            }
             if (isset($vals['Nister-Quota-Bytes']) && $vals['Nister-Quota-Bytes'] !== '') {
                 return (int)$vals['Nister-Quota-Bytes'];
             }
@@ -374,6 +461,20 @@ function nister_current_total_quota(PDO $r, array $users, ?string $group): ?int 
 }
 
 /**
+ * Effective quota = base plan quota + active promo data grants.
+ * Keeps base quota math unchanged for plan mutation paths.
+ */
+function nister_effective_total_quota(PDO $r, array $users, ?string $group, ?DateTimeImmutable $at=null): ?int {
+  $base = nister_current_total_quota($r, $users, $group);
+  $promo = nister_active_data_promo_bytes($r, $users, $at);
+  if ($base === null) {
+    return ($promo > 0) ? $promo : null;
+  }
+  $total = (int)$base + (int)$promo;
+  return ($total >= 0) ? $total : 0;
+}
+
+/**
  * Apply plan with ADDITIVE QUOTA semantics:
  * - Carry over remaining data from the current window, then add the new plan's quota
  * - Extend expiry from later of purchase time/current expiry (exact timestamp)
@@ -382,6 +483,7 @@ function nister_current_total_quota(PDO $r, array $users, ?string $group): ?int 
  */
 function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purchaseAt): void {
     $r = rdb_pdo();
+    radius_normalize_legacy_nopaid($r);
     $tz = new DateTimeZone(date_default_timezone_get());
     $now = $purchaseAt->setTimezone($tz);
     $targets = nister_username_variants($msisdn);
@@ -420,79 +522,79 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purch
     // DB enforces "DD Mon YYYY HH:MM:SS"
     $expStr = $expAt->format('d M Y H:i:s');
 
-    foreach ($targets as $u) {
-        if ($u === '') continue;
-        $planCode = (string)($plan['code'] ?? 'UNKNOWN');
-        $planName = (string)($plan['display_name'] ?? $plan['name'] ?? $planCode);
-        $addrList = (string)($plan['address_list'] ?? 'HS_ACTIVE');
-        $rateLimit = (string)($plan['rate_limit'] ?? '');
-        $capBytes = $combined;
+    $started = false;
+    if (!$r->inTransaction()) {
+      $r->beginTransaction();
+      $started = true;
+    }
+    try {
+      foreach ($targets as $u) {
+          if ($u === '') continue;
+          $planCode = (string)($plan['code'] ?? 'UNKNOWN');
+          $planName = (string)($plan['display_name'] ?? $plan['name'] ?? $planCode);
+          $addrList = (string)($plan['address_list'] ?? 'HS_ACTIVE');
+          $rateLimit = (string)($plan['rate_limit'] ?? '');
 
-        $started = false;
-        if (!$r->inTransaction()) {
-            $r->beginTransaction();
-            $started = true;
-        }
-        try {
-            $applied = false;
-            $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords') AND value='0'")->execute([':u'=>$u]);
-            try {
-                $call = $r->prepare("CALL nister_apply_topup(?, ?, ?, ?)");
-                // NOTE: stored procedure semantics can be additive; pass only NEW quota,
-                // then explicitly enforce final combined quota below.
-                $call->execute([$u, $newQuota, $durDays, $planCode]);
-                $call->closeCursor();
-                $applied = true;
-            } catch (Throwable $e) {
-                if (!nister_proc_missing($e)) throw $e;
-            }
+          $applied = false;
+          $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords') AND value='0'")->execute([':u'=>$u]);
+          try {
+              $call = $r->prepare("CALL nister_apply_topup(?, ?, ?, ?)");
+              // NOTE: stored procedure semantics can be additive; pass only NEW quota,
+              // then explicitly enforce final combined quota below.
+              $call->execute([$u, $newQuota, $durDays, $planCode]);
+              $call->closeCursor();
+              $applied = true;
+          } catch (Throwable $e) {
+              if (!nister_proc_missing($e)) throw $e;
+          }
 
-            if (!$applied) {
-                nister_apply_topup_fallback($r, $u, $combined, $expStr, $durDays, $planCode, $planCode);
-            }
-            radius_set_check($r, $u, 'Expiration', ':=', $expStr);
+          if (!$applied) {
+              nister_apply_topup_fallback($r, $u, $combined, $expStr, $durDays, $planCode, $planCode);
+          }
+          radius_set_check($r, $u, 'Expiration', ':=', $expStr);
+          // Defense-in-depth: keep hard session cap aligned even if group checks drift.
+          radius_set_check($r, $u, 'Simultaneous-Use', ':=', '3');
 
-            // Enforce final combined quota after proc (avoid accidental double-add).
-            $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")
-              ->execute([':u'=>$u]);
-            if ($combined > 0) {
-                radius_set_reply($r, $u, 'Nister-Quota-Bytes', ':=', (string)$combined);
-                $hi = intdiv($combined, 4294967296);
-                $lo = (int)($combined - ($hi * 4294967296));
-                radius_set_reply($r, $u, 'Mikrotik-Total-Limit', ':=', (string)$lo);
-                if ($hi > 0) {
-                    radius_set_reply($r, $u, 'Mikrotik-Total-Limit-Gigawords', ':=', (string)$hi);
-                }
-            }
+          // Enforce final combined quota after proc (avoid accidental double-add).
+          $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")
+            ->execute([':u'=>$u]);
+          if ($combined > 0) {
+              radius_set_reply($r, $u, 'Nister-Quota-Bytes', ':=', (string)$combined);
+              $hi = intdiv($combined, 4294967296);
+              $lo = (int)($combined - ($hi * 4294967296));
+              radius_set_reply($r, $u, 'Mikrotik-Total-Limit', ':=', (string)$lo);
+              if ($hi > 0) {
+                  radius_set_reply($r, $u, 'Mikrotik-Total-Limit-Gigawords', ':=', (string)$hi);
+              }
+          }
 
-            // Set per-user plan metadata (no PLAN_* groups)
-            radius_set_reply($r, $u, 'Nister-Plan-Code', ':=', $planCode);
-            radius_set_reply($r, $u, 'Nister-Plan-Name', ':=', $planName);
-            radius_set_reply($r, $u, 'Nister-Duration-Days', ':=', (string)$durDays);
+          // Set per-user plan metadata (no PLAN_* groups)
+          radius_set_reply($r, $u, 'Nister-Plan-Code', ':=', $planCode);
+          radius_set_reply($r, $u, 'Nister-Plan-Name', ':=', $planName);
+          radius_set_reply($r, $u, 'Nister-Duration-Days', ':=', (string)$durDays);
 
-            $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid')")->execute([':u'=>$u]);
-            $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
-                         SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
-                         WHERE NOT EXISTS (
-                           SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'
-                         )")->execute([':u'=>$u]);
-            $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Address-List','MT-Address-List')")->execute([':u'=>$u]);
-            // Start a fresh usage window on every successful purchase/top-up.
-            // This avoids immediate re-exhaustion when old usage is already at/above cap.
-            $windowStartStr = $now->format('Y-m-d H:i:s');
-            radius_set_reply($r, $u, 'Nister-Window-Start', ':=', $windowStartStr);
-            if ($addrList !== '') {
-                radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addrList);
-            }
-            if ($rateLimit !== '') {
-                radius_set_reply($r, $u, 'Mikrotik-Rate-Limit', ':=', $rateLimit);
-            }
-
-            if ($started && $r->inTransaction()) $r->commit();
-        } catch (Throwable $e) {
-            if ($started && $r->inTransaction()) $r->rollBack();
-            throw $e;
-        }
+          $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID')")->execute([':u'=>$u]);
+          $r->prepare("INSERT INTO radusergroup (username, groupname, priority)
+                       SELECT :u, 'HS_ACTIVE', 0 FROM DUAL
+                       WHERE NOT EXISTS (
+                         SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_ACTIVE'
+                       )")->execute([':u'=>$u]);
+          $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Address-List','MT-Address-List')")->execute([':u'=>$u]);
+          // Start a fresh usage window on every successful purchase/top-up.
+          // This avoids immediate re-exhaustion when old usage is already at/above cap.
+          $windowStartStr = $now->format('Y-m-d H:i:s');
+          radius_set_reply($r, $u, 'Nister-Window-Start', ':=', $windowStartStr);
+          if ($addrList !== '') {
+              radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addrList);
+          }
+          if ($rateLimit !== '') {
+              radius_set_reply($r, $u, 'Mikrotik-Rate-Limit', ':=', $rateLimit);
+          }
+      }
+      if ($started && $r->inTransaction()) $r->commit();
+    } catch (Throwable $e) {
+      if ($started && $r->inTransaction()) $r->rollBack();
+      throw $e;
     }
 }
 
@@ -502,6 +604,7 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purch
  */
 function radius_user_state_exact(string $msisdn, ?PDO $r=null): ?array {
   if (!$r) $r = rdb_pdo();
+  radius_normalize_legacy_nopaid($r);
   $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
   if (!$targets) return null;
   $ph = implode(",", array_fill(0, count($targets), "?"));
@@ -511,13 +614,12 @@ function radius_user_state_exact(string $msisdn, ?PDO $r=null): ?array {
     SELECT groupname
     FROM radusergroup
     WHERE username IN ($ph)
-      AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')
+      AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')
     ORDER BY
       CASE groupname
         WHEN 'HS_ACTIVE' THEN 1
         WHEN 'HS_LIMITED' THEN 2
         WHEN 'HS_NOPAID' THEN 3
-        WHEN 'nopaid' THEN 4
         ELSE 9
       END,
       priority ASC
@@ -538,53 +640,43 @@ function radius_user_state_exact(string $msisdn, ?PDO $r=null): ?array {
   $st->execute($targets);
   $rateLimit = trim((string)($st->fetchColumn() ?: ''));
 
-  $quotaBytes = null;
-  $st = $r->prepare("SELECT value FROM radreply WHERE attribute='Nister-Quota-Bytes' AND username IN ($ph) ORDER BY id DESC LIMIT 1");
-  $st->execute($targets);
-  $qv = $st->fetchColumn();
-  if ($qv !== false && $qv !== null && $qv !== '') {
-    $quotaBytes = (int)$qv;
-  } else {
-    $st = $r->prepare("SELECT value FROM radreply WHERE attribute='Mikrotik-Total-Limit-Gigawords' AND username IN ($ph) ORDER BY id DESC LIMIT 1");
-    $st->execute($targets);
-    $hiRaw = $st->fetchColumn();
-    $st = $r->prepare("SELECT value FROM radreply WHERE attribute='Mikrotik-Total-Limit' AND username IN ($ph) ORDER BY id DESC LIMIT 1");
-    $st->execute($targets);
-    $loRaw = $st->fetchColumn();
-    $hasHi = ($hiRaw !== false && $hiRaw !== null && $hiRaw !== '');
-    $hasLo = ($loRaw !== false && $loRaw !== null && $loRaw !== '');
-    if ($hasHi || $hasLo) {
-      $hi = (int)($hiRaw ?: 0);
-      $lo = (int)($loRaw ?: 0);
-      $quotaBytes = (int)($hi * 4294967296 + $lo);
+  $planGroup = radius_plan_code_from_reply($r, $targets) ?: radius_pick_plan_group($r, $targets);
+  $durDays = nister_duration_days($r, $targets, $planGroup, 30);
+  if ($durDays <= 0) $durDays = 30;
+  $quotaBytes = nister_effective_total_quota($r, $targets, $planGroup);
+
+  $tz = new DateTimeZone(date_default_timezone_get());
+  $now = new DateTimeImmutable('now', $tz);
+  $windowStartDt = null;
+  if ($windowStart !== '') {
+    $windowStartDt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $windowStart, $tz);
+    if (!$windowStartDt) {
+      try { $windowStartDt = new DateTimeImmutable($windowStart, $tz); } catch (Throwable $e) { $windowStartDt = null; }
     }
   }
-
-  $sqlUsed = "
-    SELECT COALESCE(SUM(
-      COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0) +
-      4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
-    ),0)
-    FROM radacct ra
-    WHERE ra.username IN ($ph)
-      AND ra.acctstarttime >= COALESCE(
-        (
-          SELECT ws.value
-          FROM radreply ws
-          WHERE ws.attribute='Nister-Window-Start'
-            AND ws.username IN ($ph)
-          ORDER BY ws.id DESC LIMIT 1
-        ),
-        DATE_SUB(NOW(), INTERVAL 30 DAY)
-      )
-  ";
-  $st = $r->prepare($sqlUsed);
-  $st->execute(array_merge($targets, $targets));
-  $usedBytes = (int)($st->fetchColumn() ?: 0);
+  if (!($windowStartDt instanceof DateTimeImmutable)) {
+    $expDt = nister_parse_expiry_datetime($expires, $tz);
+    if ($expDt instanceof DateTimeImmutable) {
+      $windowStartDt = $expDt->modify('-'.$durDays.' days');
+      if ($windowStartDt > $now) {
+        $windowStartDt = $now->modify('-'.$durDays.' days');
+      }
+    } else {
+      $stFirst = $r->prepare("SELECT DATE_FORMAT(MIN(acctstarttime),'%Y-%m-%d %H:%i:%s') FROM radacct WHERE username IN ($ph)");
+      $stFirst->execute($targets);
+      $firstSeen = trim((string)($stFirst->fetchColumn() ?: ''));
+      if ($firstSeen !== '') {
+        try { $windowStartDt = new DateTimeImmutable($firstSeen, $tz); } catch (Throwable $e) { $windowStartDt = null; }
+      }
+      if (!($windowStartDt instanceof DateTimeImmutable) || $windowStartDt > $now) {
+        $windowStartDt = $now->modify('-'.$durDays.' days');
+      }
+    }
+  }
+  $usedBytes = nister_sum_used_bytes_fair($r, $targets, $windowStartDt, $now);
 
   $expiredFlag = 0;
   if ($expires !== '') {
-    $tz = new DateTimeZone(date_default_timezone_get());
     $exp = nister_parse_expiry_datetime($expires, $tz);
     if ($exp instanceof DateTimeImmutable) {
       $expiredFlag = ($exp <= new DateTimeImmutable('now', $tz)) ? 1 : 0;
@@ -612,6 +704,7 @@ function radius_user_state_exact(string $msisdn, ?PDO $r=null): ?array {
 
 function radius_user_status(string $msisdn): array {
   $r = rdb_pdo();
+  radius_normalize_legacy_nopaid($r);
   $tz = new DateTimeZone(date_default_timezone_get());
   $now = new DateTimeImmutable('now', $tz);
   $targets = nister_username_variants($msisdn);
@@ -627,19 +720,30 @@ function radius_user_status(string $msisdn): array {
   foreach ($groups as $g) {
     $lg = strtolower($g);
     if ($lg === 'hs_nopaid') { $limitedGroup = true; $hsGroup = 'HS_NOPAID'; break; }
-    if ($lg === 'nopaid') { $limitedGroup = true; if ($hsGroup === null) $hsGroup = 'HS_NOPAID'; continue; }
     if ($lg === 'hs_limited') { $limitedGroup = true; $hsGroup = 'HS_LIMITED'; }
     if ($lg === 'hs_active' && $hsGroup === null) { $hsGroup = 'HS_ACTIVE'; }
   }
 
   $addrList = null;
   $ph = implode(",", array_fill(0, count($targets), "?"));
-  $st = $r->prepare("SELECT attribute, value FROM radreply WHERE username IN ($ph) AND attribute IN ('Mikrotik-Address-List','MT-Address-List')");
+  $st = $r->prepare("
+    SELECT value
+    FROM radreply
+    WHERE username IN ($ph)
+      AND attribute IN ('Mikrotik-Address-List','MT-Address-List')
+    ORDER BY
+      CASE UPPER(value)
+        WHEN 'HS_NOPAID' THEN 1
+        WHEN 'HS_LIMITED' THEN 2
+        WHEN 'HS_ACTIVE' THEN 3
+        ELSE 9
+      END,
+      id DESC
+    LIMIT 1
+  ");
   $st->execute($targets);
-  while ($row = $st->fetch()) {
-    $val = trim((string)($row['value'] ?? ''));
-    if ($val !== '') $addrList = $val;
-  }
+  $addrVal = trim((string)($st->fetchColumn() ?: ''));
+  if ($addrVal !== '') $addrList = $addrVal;
 
   if ($addrList === null && $hsGroup !== null) {
     $addrList = $hsGroup;
@@ -655,7 +759,7 @@ function radius_user_status(string $msisdn): array {
   $expired = ($expiry instanceof DateTimeImmutable) ? ($expiry <= $now) : false;
 
   $durDays = nister_duration_days($r, $targets, $planGroup, 30);
-  $quotaBytes = nister_current_total_quota($r, $targets, $planGroup);
+  $quotaBytes = nister_effective_total_quota($r, $targets, $planGroup, $now);
   $usedBytes = 0;
   $exhausted = false;
   if ($quotaBytes !== null) {
@@ -670,9 +774,12 @@ function radius_user_status(string $msisdn): array {
     $exhausted = ($usedBytes >= $quotaBytes);
   }
 
+  $noPaidMarker = ($hsGroup === 'HS_NOPAID');
+  if ($addrList !== null && strtoupper($addrList) === 'HS_NOPAID') $noPaidMarker = true;
+
   $paid = false;
-  if ($planGroup) $paid = true;
-  if (!$paid && ($expiry instanceof DateTimeImmutable || $quotaBytes !== null)) $paid = true;
+  if (!$noPaidMarker && $planGroup) $paid = true;
+  if (!$paid && !$noPaidMarker && $quotaBytes !== null && $quotaBytes > 0) $paid = true;
 
   $canBrowse = $paid && !$expired && !$exhausted && !$policyLimited;
 
@@ -691,6 +798,7 @@ function radius_user_status(string $msisdn): array {
 }
 function radius_get_active_plan(string $msisdn): ?array {
   $r = rdb_pdo();
+  radius_normalize_legacy_nopaid($r);
   $targets = nister_username_variants($msisdn);
   $ph = implode(",", array_fill(0, count($targets), "?"));
 
@@ -701,7 +809,6 @@ function radius_get_active_plan(string $msisdn): ?array {
     if ($groups) {
       foreach ($groups as $cand) {
         if (preg_match('/^hs_/i', $cand)) continue;
-        if (strtolower($cand) === 'nopaid') continue;
         $g = $cand;
         break;
       }
@@ -768,19 +875,71 @@ if (!function_exists('nister_username_variants')) {
   }
 }
 
+function radius_location_nas_ips(string $msisdn, ?int $locationId = null): array {
+  try {
+    if (!function_exists('location_nas_ips') || !function_exists('location_profile_get')) {
+      $locLib = __DIR__ . '/location.php';
+      if (is_file($locLib)) require_once $locLib;
+    }
+    $lid = ($locationId !== null && $locationId > 0) ? $locationId : null;
+    if ($lid === null && function_exists('location_profile_get')) {
+      $profile = location_profile_get($msisdn);
+      $pid = (int)($profile['location_id'] ?? 0);
+      if ($pid > 0) $lid = $pid;
+    }
+    if ($lid === null || $lid <= 0 || !function_exists('location_nas_ips')) return [];
+
+    $raw = location_nas_ips($lid);
+    if (!is_array($raw)) return [];
+
+    $out = [];
+    foreach ($raw as $ip) {
+      $ip = trim((string)$ip);
+      if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $out[$ip] = true;
+      }
+    }
+    return array_keys($out);
+  } catch (Throwable $e) {
+    return [];
+  }
+}
+
 
 /**
  * Best-effort CoA/Disconnect to force a hotspot user to re-auth so new RADIUS attrs apply.
  * Safe no-op if radclient/secret not configured.
  */
 
-function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
+function radius_try_disconnect(string $msisdn, array $ENV=[], ?int $locationId=null): void {
   $nasRaw = (string)($ENV['NAS_IPS'] ?? ($ENV['NAS_IP'] ?? ''));
   $nasIps = [];
   foreach (preg_split('/[,\s]+/', $nasRaw, -1, PREG_SPLIT_NO_EMPTY) as $ip) {
     $ip = trim($ip);
     if ($ip !== '') $nasIps[$ip] = true;
   }
+
+  $resolvedLocationId = $locationId;
+  if (($resolvedLocationId === null || $resolvedLocationId <= 0) && isset($ENV['LOCATION_ID']) && is_numeric($ENV['LOCATION_ID'])) {
+    $tmp = (int)$ENV['LOCATION_ID'];
+    if ($tmp > 0) $resolvedLocationId = $tmp;
+  }
+
+  $siteNas = radius_location_nas_ips($msisdn, $resolvedLocationId);
+  if ($siteNas) {
+    if ($nasIps) {
+      $intersect = array_intersect(array_keys($nasIps), $siteNas);
+      if ($intersect) {
+        $nasIps = array_fill_keys(array_values($intersect), true);
+      } else {
+        // Prefer user-site NAS over broad global set when they do not intersect.
+        $nasIps = array_fill_keys($siteNas, true);
+      }
+    } else {
+      $nasIps = array_fill_keys($siteNas, true);
+    }
+  }
+
   $nasIps = array_keys($nasIps);
   $port  = (int)($ENV['COA_PORT'] ?? 3799);
   if (!$nasIps || $port <= 0) return;
@@ -830,7 +989,15 @@ function radius_try_disconnect(string $msisdn, array $ENV=[]): void {
   $st = $pdo->prepare(
     "SELECT username, acctsessionid, framedipaddress, callingstationid, acctstarttime, nasipaddress
      FROM radacct
-     WHERE acctstoptime IS NULL
+     WHERE (
+       (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
+       OR (
+         acctstoptime IS NOT NULL
+         AND acctstoptime<>'0000-00-00 00:00:00'
+         AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
+         AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
+       )
+     )
        AND nasipaddress IN ($nasPlaceholders)
        AND username LIKE CONCAT('%', ?)
      ORDER BY acctstarttime DESC
@@ -972,8 +1139,21 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   elseif (function_exists('db_pdo')) $pdo = db_pdo($ENV);
   if (!$pdo instanceof PDO) return ['ok'=>false,'error'=>'db_unavailable'];
 
-  // Resolve NAS + username from active radacct session
-  $st = $pdo->prepare("SELECT username, nasipaddress FROM radacct WHERE framedipaddress=:ip AND acctstoptime IS NULL ORDER BY acctstarttime DESC LIMIT 1");
+  // Resolve NAS + username from active/logically-open radacct session.
+  $st = $pdo->prepare("SELECT username, nasipaddress
+                       FROM radacct
+                       WHERE framedipaddress=:ip
+                         AND (
+                           (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
+                           OR (
+                             acctstoptime IS NOT NULL
+                             AND acctstoptime<>'0000-00-00 00:00:00'
+                             AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
+                             AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
+                           )
+                         )
+                       ORDER BY acctstarttime DESC
+                       LIMIT 1");
   $st->execute([':ip'=>$ip]);
   $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
   $nas = trim((string)($row['nasipaddress'] ?? ''));

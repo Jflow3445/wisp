@@ -5,6 +5,7 @@ require_once __DIR__.'/../lib/common.php';
 require_once __DIR__.'/../lib/referrals.php';
 
 $ENV = app_boot();
+nister_require_cli_or_token($ENV);
 
 $limitReferrers = isset($argv[1]) && is_numeric($argv[1]) ? (int)$argv[1] : 300;
 $limitPerReferrer = isset($argv[2]) && is_numeric($argv[2]) ? (int)$argv[2] : 150;

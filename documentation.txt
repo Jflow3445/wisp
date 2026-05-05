@@ -1,0 +1,766 @@
+NISTER WISP PROJECT - END-TO-END DOCUMENTATION (PLAIN TERMS)
+==============================================================
+
+Last updated from current workspace state: 2026-04-26
+Project root: /Users/dolla/Documents/Projects/wisp
+
+
+1) WHAT THIS SYSTEM DOES
+------------------------
+
+This project runs a full hotspot internet business stack:
+
+- MikroTik router runs the captive portal and controls internet access.
+- FreeRADIUS + MySQL (radius DB) stores users, passwords, session/accounting, quotas, and policy groups.
+- PHP services handle signup, OTP, password changes, wallet, plan purchase, admin actions, health checks, alerts, and automation.
+- CoA disconnects force users to re-auth so new policy/quota applies immediately.
+- NetFlow collection provides traffic forensics/audit exports.
+
+In short:
+- Captive portal gets users online.
+- Pay portal handles money and plans.
+- RADIUS enforces policy.
+- Scripts + cron keep enforcement/health running.
+
+
+2) REPO LAYOUT (WHAT EACH FOLDER IS FOR)
+----------------------------------------
+
+Top-level directories/files you actually use:
+
+- pay-portal/
+  Main web app:
+  - user login/portal
+  - wallet + purchases
+  - admin dashboard + APIs
+  - hotspot status API
+  - cron jobs (health, auto-renew, referral release)
+
+- api/hotspot/
+  Public hotspot backend endpoints used by captive pages:
+  - signup
+  - OTP send/verify
+  - password change
+  - autopost bridge
+
+- hotspot/
+  Router-hosted captive portal files (HTML/CSS/JS):
+  - login.html
+  - signup.html
+  - status.html
+  - pay.html
+  - change-password.html
+  - config.js (loads safe public config)
+
+- wifi-portal/
+  Compatibility wrapper paths and daloradius subtree.
+  (Main active app paths are pay-portal + api/hotspot + hotspot.)
+
+- systemd/
+  Service/timer unit files for operations:
+  - health check
+  - tunnel watchdog
+  - radacct cleanup
+  - nfcapd (NetFlow collector)
+
+- nister_quota_enforce.sh
+  Main policy/quota enforcement loop and SMS warning automation.
+
+- nister_set_policy_and_kick.sh
+  Set user policy group and disconnect active sessions via CoA.
+
+- nister_user_admin.sh
+  CLI operations for single user quota/expiry/policy/kick.
+
+- nister_radacct_cleanup.sh
+  Cleans stale/duplicate open radacct sessions.
+
+- nister_tunnel_watchdog.sh
+  Keeps L2TP/IPsec tunnel route healthy; restarts services when needed.
+
+- nister_netflow_setup.sh
+  Installs/configures nfcapd + service + logrotate.
+
+
+3) CORE ARCHITECTURE (HOW COMPONENTS CONNECT)
+----------------------------------------------
+
+A) USER PATH
+
+1. Device joins Wi-Fi.
+2. MikroTik redirects HTTP to hotspot login page (hotspot/login.html).
+3. User can:
+   - Login (existing account)
+   - Signup (new user) with OTP
+   - Go to pay portal to buy data
+4. RADIUS auth accepts/rejects login.
+5. Router assigns address-list/rate policy from RADIUS reply.
+6. User gets internet according to policy.
+
+B) BILLING PATH
+
+1. User logs into pay portal (pay-portal/login.php).
+2. Wallet is credited from approved payment.
+3. User buys plan (purchase.php).
+4. Plan attributes are written to RADIUS tables:
+   - expiry
+   - quota
+   - speed/rate
+   - active group/address-list
+5. CoA disconnect is sent so router re-applies new policy instantly.
+
+C) ENFORCEMENT PATH
+
+1. Accounting updates usage into radacct.
+2. Usage/expiry checked by:
+   - realtime status logic
+   - nister_quota_enforce.sh
+3. If expired/exhausted/unpaid, user is moved to limited or nopaid policy.
+4. Optional CoA kick enforces immediately.
+
+D) OBSERVABILITY PATH
+
+1. health_check cron writes health samples/events.
+2. tunnel_watchdog timer monitors route/ping and recovers tunnel.
+3. radacct_cleanup timer closes stale/duplicate sessions.
+4. NetFlow collector stores flow files for forensic exports.
+
+
+4) DATA MODEL YOU RELY ON
+-------------------------
+
+RADIUS core tables (existing FreeRADIUS schema):
+
+- radcheck
+  Password/auth checks and user checks (Expiration, Simultaneous-Use, etc.)
+
+- radreply
+  User reply attrs (Mikrotik-Address-List, rate/quota attrs, plan metadata)
+
+- radusergroup
+  User policy groups (HS_ACTIVE, HS_LIMITED, HS_NOPAID, plus non-HS plan groups)
+
+- radgroupreply / radgroupcheck
+  Group-level plan definitions and defaults
+
+- radacct
+  Session/accounting records (used for usage totals and session discovery)
+
+Application tables (auto-created by app code when missing):
+
+- app_settings
+- accounts
+- ledger
+- payments
+- purchases
+- auto_renew_settings
+- admin_alerts
+- health_samples
+- health_events
+- locations
+- location_nas
+- location_router_discovery
+- location_plans
+- user_location_profiles
+- referral_profiles
+- referral_links
+- referral_rewards
+- signup_otp_challenges
+- signup_otp_sessions
+- wallet_promo_grants
+
+
+5) USER ACCOUNT + AUTH BEHAVIOR
+-------------------------------
+
+Phone number normalization:
+- Canonical user key is normalized MSISDN.
+- System handles both login variants:
+  - local form: 0XXXXXXXXX
+  - intl form: 233XXXXXXXXX
+
+Signup:
+- Endpoint: api/hotspot/signup.php
+- Requires valid OTP signup token.
+- Writes both username variants into RADIUS.
+- Sets:
+  - Cleartext-Password
+  - Expiration (long default for unpaid account)
+  - Simultaneous-Use = 3
+  - initial address list/group to unpaid policy
+
+Login:
+- Portal login checks supported password formats from radcheck.
+- Successful login regenerates session and updates stored user location context.
+- Login rate limiting exists per IP and per IP+user.
+
+Session cap / password sharing:
+- Simultaneous-Use is enforced as 3.
+- Both username variants are synced so 0/233 mismatch does not bypass limits.
+
+
+6) CAPTIVE PORTAL FILES (ROUTER SIDE)
+-------------------------------------
+
+Primary files:
+- hotspot/login.html
+- hotspot/signup.html
+- hotspot/change-password.html
+- hotspot/status.html
+- hotspot/pay.html
+- hotspot/config.js
+- hotspot/common.css
+- hotspot/md5.js
+
+Important behavior:
+
+- config.js fetches public config from pay.nister.org/config_public.php
+  and only accepts trusted HTTPS hosts for API and pay links.
+
+- login.html:
+  Handles MikroTik CHAP/PAP form flow and tries username variants.
+
+- signup.html:
+  Calls OTP endpoints then submits signup.
+
+- status.html:
+  Calls pay-portal/hotspot-api/status.php for source-of-truth plan/quota/expiry/policy state.
+
+- pay.html:
+  Redirect helper to pay portal with user context.
+
+
+7) HOTSPOT API ENDPOINTS (api/hotspot)
+--------------------------------------
+
+- /hotspot/otp_send.php
+  Sends signup OTP (origin allowlist enforced).
+
+- /hotspot/otp_verify.php
+  Verifies OTP and returns signup token.
+
+- /hotspot/signup.php
+  Creates user and baseline RADIUS records.
+
+- /hotspot/change_password.php
+  Verifies current password, updates new password for both number variants.
+
+- /hotspot/autopost.php
+  Controlled bridge for posting credentials back to router login endpoint.
+
+
+8) PAY PORTAL USER ENDPOINTS (pay-portal)
+-----------------------------------------
+
+Pages:
+- /index.php
+- /login.php
+- /portal.php
+- /logout.php
+
+APIs used by frontend:
+- /me.php
+  Returns wallet, active plan, plans, referral summary, auto-renew state.
+
+- /plans.php
+  Returns plan catalog (location-aware).
+
+- /purchase.php
+  Executes wallet debit + plan apply + optional CoA disconnect.
+
+- /deposit_request.php
+  Creates pending payment request.
+
+- /verify.php
+  Reads payment status for current user.
+
+- /auto_renew.php
+  Get/set per-user auto-renew preferences.
+
+- /location.php
+  Returns effective location context.
+
+- /status.php
+  Returns current user RADIUS status.
+
+- /hotspot-api/status.php
+  Hotspot-facing status endpoint; supports X-Status-Token gate.
+
+
+9) BILLING + PAYMENTS FLOW
+--------------------------
+
+Normal path:
+
+1. User requests top-up (deposit_request.php) -> payments row status=pending.
+2. Admin approves in dashboard/API.
+3. Approval credits accounts + ledger entry.
+4. User buys plan from wallet.
+5. purchase.php:
+   - checks/sanitizes plan + location
+   - acquires per-user lock
+   - prevents duplicate near-time purchases
+   - debits wallet
+   - inserts purchase record
+   - applies plan to RADIUS
+   - attempts CoA disconnect
+   - marks purchase applied
+6. SMS templates can notify pending/approved/declined/purchase.
+
+Idempotency and safety:
+- Ledger ref uniqueness + DB locks avoid duplicate credits/debits.
+- Transaction safety path can mark purchase state/refund if plan-apply fails.
+
+
+10) PLAN ENFORCEMENT LOGIC
+--------------------------
+
+Where plan data comes from:
+- Global catalog: RADIUS group attrs (radgroupreply/radgroupcheck)
+- Optional per-location override: location_plans
+
+When a plan is applied:
+- Expiration written in radcheck.
+- Simultaneous-Use enforced.
+- Quota attrs written (Nister-Quota-Bytes + MikroTik hi/lo total limit attrs).
+- Plan metadata attrs written (plan code/name/duration/window-start).
+- HS_LIMITED / HS_NOPAID removed.
+- HS_ACTIVE ensured.
+- Address list/rate limit set.
+
+Usage accounting:
+- Used bytes are computed from radacct using both upload and download octets
+  (input + output, including gigawords), with overlap-aware window math.
+
+Policy states:
+- HS_ACTIVE -> paid/active browsing.
+- HS_LIMITED -> limited path.
+- HS_NOPAID -> unpaid/no paid access.
+
+
+11) WHAT HAPPENS FOR EACH USER TYPE
+-----------------------------------
+
+New user:
+- Must OTP-verify and sign up.
+- Starts as unpaid policy until purchase.
+
+Existing paid user:
+- Login accepted if password + policy valid.
+- Internet allowed while not expired/exhausted/limited.
+
+Existing user with expired plan:
+- Marked expired from status logic.
+- Enforcement scripts can move to limited/nopaid and kick.
+
+Existing user with exhausted data:
+- Marked exhausted from usage vs quota.
+- Enforcement moves to limited state and can disconnect.
+
+Existing user with no purchase:
+- Remains unpaid policy (HS_NOPAID).
+
+Password sharing:
+- Simultaneous-Use = 3 limits concurrent sessions.
+- Accounting tracks sessions in radacct (subject to accounting availability).
+
+If RADIUS is down:
+- New auth and policy refresh are impacted.
+- Existing active sessions may continue until disconnect/reauth.
+- Accounting quality depends on router + radius accounting backup behavior.
+
+
+12) MULTI-SITE / LOCATION MODEL
+--------------------------------
+
+Location system supports multi-site WISP operation:
+
+- locations table: site definitions.
+- location_nas: maps NAS/exporter/router identity to site.
+- location_plans: site-specific plan overrides.
+- user_location_profiles: binds users to effective/sign-up locations.
+
+Location resolution uses:
+- explicit location_code hints
+- session-captured site
+- router discovery context
+- user profile fallback
+- default site fallback
+
+This lets plan availability, purchases, CoA targeting, and reports be site-aware.
+
+
+13) ADMIN SYSTEM
+----------------
+
+Auth:
+- /admin/login.php
+- Session cookie is separate from user session.
+- Requires APP_ADMIN_USER + APP_ADMIN_PASS_HASH.
+- CSRF token required for mutating admin API calls.
+
+Core admin endpoint:
+- /admin/api.php?fn=<action>
+- Actions include:
+  - settings read/write
+  - health/alerts/flow status
+  - locations/NAS/discovery mapping
+  - plans CRUD
+  - user lookup/reset/password/delete/purge
+  - force expire/exhaust/kick/quota/rate/group/address-list
+  - pending payment review and decisions
+  - wallet credit/debit/promo
+  - apply plan and disconnect user
+
+Legacy admin endpoints exist but are gated and disabled by default.
+
+
+14) REFERRAL + OTP SUBSYSTEM
+----------------------------
+
+Capabilities:
+- Invite code per user.
+- Link referred user to referrer.
+- Create pending rewards from purchases.
+- Release rewards under configured rules/caps/windows.
+- OTP send/verify/session tokens for safe signup.
+
+Config values are stored in app_settings with sane defaults auto-seeded.
+
+
+15) SMS SYSTEM
+--------------
+
+SMS settings source:
+- app_settings keys (MNOTIFY_*, SMS_* templates)
+
+Supported gateway styles:
+- PiloSMS style endpoint
+- mNotify quick API style endpoint
+
+Template-based messaging is used for:
+- OTP
+- payment pending/approved/declined
+- purchase confirmation
+- quota/expiry warnings
+- renewal reminders
+- back-online
+- inactive-user reminders
+
+
+16) AUTOMATION / CRON / SYSTEMD
+-------------------------------
+
+Systemd timers/services in this repo:
+
+- nister-health-check.timer -> every 30 min
+  Runs pay-portal/cron/health_check.php
+
+- nister-tunnel-watchdog.timer -> every 60 sec
+  Runs /usr/local/sbin/nister_tunnel_watchdog.sh
+
+- nister-radacct-cleanup.timer -> every 30 min
+  Runs /usr/local/sbin/nister_radacct_cleanup.sh
+
+- nister-nfcapd.service
+  NetFlow collector daemon
+
+Other scheduled PHP jobs expected:
+- pay-portal/cron/auto_renew.php
+- pay-portal/cron/referral_release.php
+
+Token gate:
+- HTTP-triggered cron endpoints require CRON_HTTP_TOKEN (X-Cron-Token or token param).
+
+
+17) HEALTH + ALERTING
+---------------------
+
+health_check.php collects and stores:
+- radius auth probe result/time
+- tunnel route and ping health
+- optional CoA probe success
+- optional download speed probe
+
+Data goes to:
+- health_samples
+- health_events (outage windows etc.)
+
+Alerts:
+- admin_alerts table
+- alerts_hook endpoint can ingest external script/system alerts
+- shell scripts can post alert messages to ADMIN_ALERT_URL
+
+
+18) FORENSICS / NETFLOW
+-----------------------
+
+Collector:
+- nfcapd via systemd service
+- default port 2055
+- data dir /var/log/netflow
+
+MikroTik exporter setup command reference is in:
+- netflow_mikrotik_setup.md
+
+Forensic exports:
+- admin/traffic_export.php
+- uses nfdump and radacct session mapping (optionally location-scoped).
+
+
+19) ROUTER (MIKROTIK) REQUIRED CONFIG (CONCEPTUAL)
+---------------------------------------------------
+
+Required for this design:
+
+- Hotspot enabled and using router-hosted HTML files from hotspot/ folder.
+- RADIUS configured for hotspot/login/ppp as needed.
+- RADIUS secret matches server secret.
+- CoA (disconnect) reachable from server to NAS IP(s).
+- Accurate time sync (NTP).
+- Traffic-Flow enabled if using NetFlow forensics.
+- Session/accounting settings should avoid accounting gaps.
+
+Key behavior dependency:
+- The server disconnects users by sending RADIUS Disconnect-Request (CoA) to router NAS addresses.
+
+
+20) SECURITY MODEL
+------------------
+
+Implemented controls:
+
+- Separate user/admin sessions.
+- HttpOnly cookies + SameSite settings.
+- CSRF check for admin mutating requests.
+- Bearer token protection for admin decision/pending and legacy endpoints.
+- Optional mandatory token for hotspot status API (HOTSPOT_STATUS_TOKEN).
+- Origin checks on hotspot OTP endpoints and hotspot status API.
+- Request rate limiting for login/password-change/status endpoints.
+- Trusted proxy CIDR handling for real client IP extraction.
+- Shell usage uses validation + escaping for CoA/script paths.
+
+Operational caution:
+- Keep secrets only in secure env/config files.
+- Do not expose legacy endpoints unless absolutely required.
+- Rotate secrets and verify both router and server are updated together.
+
+
+21) IMPORTANT ENV / SECRET SETTINGS
+-----------------------------------
+
+Critical runtime secrets:
+
+- HOTSPOT_STATUS_TOKEN
+- CRON_HTTP_TOKEN
+- APP_SECRET
+- APP_ADMIN_USER
+- APP_ADMIN_PASS_HASH
+- ADMIN_ALERT_SECRET
+- ADMIN_DEPOSIT_SECRET
+- MANUAL_SUBMIT_TOKEN (or APP_SECRET fallback)
+
+Legacy toggles:
+
+- ALLOW_LEGACY_MANUAL_SUBMIT
+- ALLOW_LEGACY_ADMIN_ENDPOINTS
+
+DB connectivity:
+
+- PAY_DB_DSN / PAY_DB_HOST / PAY_DB_NAME / PAY_DB_USER / PAY_DB_PASS
+- or DB_* / MYSQL_* / RADIUS_* fallbacks
+- /etc/nister/radius_db.php fallback file
+
+RADIUS/CoA/health:
+
+- NAS_IP / NAS_IPS
+- COA_HOST / COA_PORT / COA_SECRET_FILE
+- HEALTH_RADIUS_USER / HEALTH_RADIUS_PASS / HEALTH_RADIUS_SECRET_FILE
+- HEALTH_TUNNEL_HOST / HEALTH_TUNNEL_DEV
+- HEALTH_COA_USER
+- HEALTH_SPEED_URL (or HEALTH_SPEED_GDRIVE)
+
+Hotspot API controls:
+
+- HOTSPOT_OTP_ALLOWED_ORIGINS
+- HOTSPOT_TRUST_PROXY
+- HOTSPOT_STATUS_ALLOWED_ORIGINS
+
+Wallet and business settings:
+
+- WALLET_AUTO_CREATE
+- TOPUP_* keys
+- MNOTIFY_* keys
+- SMS_* template/settings keys
+- referral/OTP settings in app_settings
+
+
+22) DEPLOYMENT CHECKLIST (SERVER)
+---------------------------------
+
+A) Code placement
+- Deploy pay-portal, api/hotspot, hotspot files to expected web roots.
+- Ensure api/hotspot/_paylib.php can locate pay-portal/lib in your layout.
+
+B) PHP/web
+- Verify PHP can read env files:
+  - /etc/pay.env
+  - pay-portal/.env (if used)
+- Ensure DB credentials are valid.
+
+C) Services
+- Install script files to /usr/local/sbin if using systemd units.
+- Install unit files from systemd/ and enable timers/services.
+
+D) Dependencies
+- radclient
+- mysql client
+- php extensions needed by app
+- nfdump/nfcapd for forensics
+
+E) Permissions
+- Script files executable.
+- Secret files 0600.
+- NetFlow dir ownership and mode match service/user needs.
+
+
+23) DEPLOYMENT CHECKLIST (MIKROTIK HOTSPOT FILES)
+--------------------------------------------------
+
+A) Upload/update hotspot files:
+- login.html
+- signup.html
+- status.html
+- pay.html
+- change-password.html
+- common.css
+- config.js
+- md5.js
+- any images used by templates
+
+B) Confirm router hotspot points to these files.
+
+C) Validate on live captive portal:
+- login success path
+- signup + OTP path
+- pay redirect path
+- status page fetch path
+
+D) Validate RADIUS + CoA:
+- authentication works
+- purchase triggers policy update
+- disconnect occurs and user reauth picks new policy
+
+
+24) OPERATIONS RUNBOOK (COMMON TASKS)
+-------------------------------------
+
+A) Force user to limited/nopaid and kick now:
+- Use nister_set_policy_and_kick.sh or admin API user_force_* actions.
+
+B) Adjust one user quota/expiry/policy:
+- Use nister_user_admin.sh.
+
+C) Clean broken/stale accounting sessions:
+- Run nister_radacct_cleanup.sh.
+
+D) If tunnel route is unstable:
+- Check nister_tunnel_watchdog logs and strongSwan/xl2tpd status.
+
+E) If plan purchase not applying:
+- Check purchase record status.
+- Check RADIUS write success.
+- Check CoA secret/NAS target and radclient availability.
+
+F) If hotspot status page fails:
+- Check HOTSPOT_STATUS_TOKEN header config.
+- Check origin allowlist and API host.
+- Check rate limiting responses.
+
+
+25) TROUBLESHOOTING MATRIX
+--------------------------
+
+Symptom: User paid but still no internet
+- Check purchase status in DB.
+- Check user group/address-list in radusergroup/radreply.
+- Check CoA ACK/NAK logs.
+- Force disconnect and retry login.
+
+Symptom: Only one plan visible
+- Check global plan definitions in radgroupreply/radgroupcheck.
+- Check location_plans override rows.
+- Check user/site location resolution.
+- Check plans endpoint output for user location.
+
+Symptom: OTP not sending
+- Check HOTSPOT_OTP_ALLOWED_ORIGINS.
+- Check SMS gateway settings (MNOTIFY_* or provider base).
+- Check OTP rate limit thresholds.
+
+Symptom: Health shows tunnel fail
+- Verify route device matches required device(s).
+- Verify ping target reachable.
+- Check tunnel watchdog and VPN services.
+
+Symptom: Accounting gaps
+- Check router RADIUS accounting backup behavior and timeout settings.
+- Check radacct cleanup activity.
+- Check whether sessions are closing/stopping correctly.
+
+
+26) WHAT IS LEGACY VS PRIMARY
+-----------------------------
+
+Primary active stack:
+- pay-portal/*
+- api/hotspot/*
+- hotspot/*
+- nister_*.sh + systemd/*
+
+Legacy/compat:
+- wifi-portal/* wrappers
+- legacy admin/manual endpoints (token gated and usually disabled)
+
+
+27) QUICK END-TO-END TEST PLAN (PRODUCTION VERIFICATION)
+---------------------------------------------------------
+
+1. New user signup:
+- Captive portal signup -> OTP send -> OTP verify -> account create.
+
+2. New user login without purchase:
+- Should authenticate but remain unpaid policy (restricted internet).
+
+3. Payment + approval:
+- Submit deposit request -> approve in admin -> wallet updates.
+
+4. Purchase plan:
+- Wallet debited, purchase applied, CoA disconnect, re-login gets paid access.
+
+5. Usage/exhaust test:
+- Simulate or consume quota; user transitions to limited/exhausted behavior.
+
+6. Expiry test:
+- Set short expiry and verify transition post-expiry.
+
+7. Session-sharing limit:
+- Try more than 3 concurrent sessions for same user.
+
+8. Admin user operations:
+- reset password, force expire/exhaust, disconnect, assign location.
+
+9. Health + forensics:
+- health sample updates.
+- NetFlow file generation and traffic export works.
+
+
+28) FINAL NOTES
+---------------
+
+- This system is heavily RADIUS-centered: if DB, RADIUS, or CoA breaks, user experience breaks.
+- Keep router + server secrets synchronized.
+- Keep location mapping accurate for multi-site correctness.
+- Keep legacy endpoints disabled unless there is a strict migration need.
+- Always validate full flow after updates: hotspot -> auth -> payment -> purchase -> CoA -> internet access.
+

@@ -6,29 +6,68 @@ require_once __DIR__.'/../lib/referrals.php';
 
 $ENV = app_boot();
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Vary: Origin');
 
-$cbRaw = (string)($_GET['callback'] ?? '');
-$callback = '';
-if ($cbRaw !== '' && preg_match('/^[A-Za-z_$][0-9A-Za-z_$]{0,63}$/', $cbRaw)) {
-  $callback = $cbRaw;
+function status_origin_allowed(string $origin, array $env): bool {
+  $origin = trim($origin);
+  if ($origin === '') return false;
+  $parts = parse_url($origin);
+  if (!is_array($parts)) return false;
+  $scheme = strtolower((string)($parts['scheme'] ?? ''));
+  $host = strtolower((string)($parts['host'] ?? ''));
+  if (!in_array($scheme, ['http', 'https'], true) || $host === '') return false;
+
+  if (preg_match('/(^|\\.)nister\\.org$/', $host) === 1) return true;
+  if (in_array($host, ['192.168.88.1', '192.168.80.1', '10.10.20.2'], true)) return true;
+
+  $extra = trim((string)($env['HOTSPOT_STATUS_ALLOWED_ORIGINS'] ?? ''));
+  if ($extra === '') return false;
+  foreach (preg_split('/[,\s]+/', $extra, -1, PREG_SPLIT_NO_EMPTY) as $item) {
+    $item = trim((string)$item);
+    if ($item === '') continue;
+    if (strpos($item, '://') !== false) {
+      $ep = parse_url($item);
+      $es = strtolower((string)($ep['scheme'] ?? ''));
+      $eh = strtolower((string)($ep['host'] ?? ''));
+      if ($es !== '' && $eh !== '' && $es === $scheme && $eh === $host) return true;
+      continue;
+    }
+    if (strtolower($item) === $host) return true;
+  }
+  return false;
 }
 
-if ($callback !== '') {
-  header('Content-Type: application/javascript; charset=utf-8');
-} else {
-  header('Content-Type: application/json; charset=utf-8');
+$origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+$trustedOrigin = status_origin_allowed($origin, $ENV);
+if ($trustedOrigin) {
+  header('Access-Control-Allow-Origin: ' . $origin);
+  header('Access-Control-Allow-Methods: GET, OPTIONS');
+  header('Access-Control-Allow-Headers: X-Status-Token, Content-Type');
+}
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+  http_response_code(204);
+  exit;
+}
+header('Content-Type: application/json; charset=utf-8');
+
+if ($origin !== '' && !$trustedOrigin) {
+  json_out_simple(['ok'=>false,'error'=>'forbidden'], 403);
 }
 
 function json_out_simple(array $data, int $code=200): void {
-  global $callback;
   http_response_code($code);
   $json = json_encode($data, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-  if ($callback !== '') {
-    echo $callback . '(' . $json . ');';
-  } else {
-    echo $json;
-  }
+  echo $json;
   exit;
+}
+
+$statusToken = trim((string)($ENV['HOTSPOT_STATUS_TOKEN'] ?? getenv('HOTSPOT_STATUS_TOKEN') ?: ''));
+if ($statusToken !== '') {
+  $provided = trim((string)($_SERVER['HTTP_X_STATUS_TOKEN'] ?? ''));
+  $tokenOk = ($provided !== '' && hash_equals($statusToken, $provided));
+  if (!$tokenOk) {
+    json_out_simple(['ok'=>false,'error'=>'forbidden'], 403);
+  }
 }
 
 $raw = (string)($_GET['username'] ?? $_GET['user'] ?? $_GET['msisdn'] ?? '');
@@ -37,7 +76,17 @@ if (trim($raw) === '') json_out_simple(['ok'=>false,'error'=>'username required'
 $msisdn = normalize_msisdn($raw);
 if ($msisdn === '') json_out_simple(['ok'=>false,'error'=>'invalid_username'], 400);
 
-$diag = isset($_GET['diag']) && $_GET['diag'] !== '0';
+$clientIp = nister_client_ip($ENV);
+if ($clientIp === '') $clientIp = 'unknown';
+$ipGate = nister_rate_limit_hit('hotspot_status_ip', $clientIp, 180, 60, 120);
+if (!($ipGate['allowed'] ?? false)) {
+  json_out_simple(['ok'=>false,'error'=>'rate_limited'], 429);
+}
+$userGate = nister_rate_limit_hit('hotspot_status_user', $clientIp . '|' . strtolower($msisdn), 40, 60, 120);
+if (!($userGate['allowed'] ?? false)) {
+  json_out_simple(['ok'=>false,'error'=>'rate_limited'], 429);
+}
+
 $tz = new DateTimeZone(date_default_timezone_get());
 $now = new DateTimeImmutable('now', $tz);
 
@@ -61,9 +110,10 @@ try {
       $status['policy_limited'] = true;
     }
     $policyLimited = !empty($status['policy_limited']);
-    $paid = array_key_exists('paid', $status)
-      ? (bool)$status['paid']
-      : (!empty($status['group']) || !empty($status['expires_at']) || (($status['quota_bytes'] ?? null) !== null));
+    $addr = strtoupper((string)($status['addrlist'] ?? ''));
+    $isNoPaid = in_array($g, ['HS_NOPAID','NOPAID'], true) || $addr === 'HS_NOPAID';
+    $paid = (bool)($status['paid'] ?? false);
+    if ($isNoPaid) $paid = false;
     $status['paid'] = $paid;
     $status['can_browse'] = $paid && !$status['expired'] && !$status['exhausted'] && !$policyLimited;
   }
@@ -139,21 +189,7 @@ try {
     'referral' => $referral,
   ];
 
-  if ($diag) {
-    $out['diag'] = [
-      'u1' => nister_username_variants($msisdn)[0] ?? null,
-      'u2' => nister_username_variants($msisdn)[1] ?? null,
-      'group_resolved' => $group,
-      'expiry_raw' => $expiryStr,
-      'expired' => (bool)($status['expired'] ?? false),
-      'exhausted' => (bool)($status['exhausted'] ?? false),
-      'db_cfg_loaded' => true,
-      'db_host' => 'radius',
-      'time_utc' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('c'),
-    ];
-  }
-
   json_out_simple($out);
 } catch (Throwable $e) {
-  json_out_simple(['ok'=>false,'error'=>'server_error','detail'=>$e->getMessage()], 500);
+  json_out_simple(['ok'=>false,'error'=>'server_error'], 500);
 }

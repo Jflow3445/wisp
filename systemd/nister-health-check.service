@@ -1,0 +1,14 @@
+[Unit]
+Description=NISTER health sample collector
+After=network-online.target mariadb.service freeradius.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/tmp /var/tmp /var/log/nister
+ExecStart=/usr/bin/php /srv/nister-wisp-repo/pay-portal/cron/health_check.php
+

@@ -306,10 +306,18 @@ function user_auth($params) {
         );
     }
 
+    $secret_value = trim($params['secret']);
+    if (empty($secret_value) || $secret_value === "testing123") {
+        return array(
+            "error" => true,
+            "output" => "RADIUS client secret is required and cannot be 'testing123'",
+        );
+    }
+
     // Validate other parameters
     $command = in_array($params['command'], $valid_commands) ? $params['command'] : "auth";
     $port = ($params['port'] >= 1 && $params['port'] <= 65535) ? $params['port'] : 1812;
-    $secret = !empty(trim($params['secret'])) ? escapeshellarg(trim($params['secret'])) : "testing123";
+    $secret = escapeshellarg($secret_value);
 
     // Set radclient options
     $params = radclient_common_options($params);

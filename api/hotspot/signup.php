@@ -13,6 +13,7 @@ require_once __DIR__ . '/_db.php';
 require_once __DIR__ . '/_paylib.php';
 try {
   hotspot_include_paylib('settings.php');
+  hotspot_include_paylib('location.php');
   hotspot_require_paylib('referrals.php');
 } catch (Throwable $e) {
   error_log('Signup bootstrap error: ' . $e->getMessage());
@@ -21,9 +22,14 @@ try {
 function portal_base_from_link(string $link, string $fallback): string {
   $u = parse_url($link);
   if (!$u || empty($u['scheme']) || empty($u['host'])) return $fallback;
+  $scheme = strtolower((string)$u['scheme']);
   $host = strtolower((string)$u['host']);
-  if (!in_array($host, ['wifi.nister.org', '192.168.88.1'], true)) return $fallback;
-  $base = $u['scheme'] . '://' . $u['host'];
+  $allowed = [
+    'wifi.nister.org' => ['https'],
+    '192.168.88.1' => ['http', 'https'],
+  ];
+  if (!isset($allowed[$host]) || !in_array($scheme, $allowed[$host], true)) return $fallback;
+  $base = $scheme . '://' . $u['host'];
   if (!empty($u['port'])) $base .= ':' . $u['port'];
   return $base;
 }
@@ -35,10 +41,29 @@ $password = (string)($_POST['password'] ?? '');
 $dst      = (string)($_POST['dst'] ?? '');
 $otpToken = trim((string)($_POST['otp_token'] ?? ''));
 $referralCode = trim((string)($_POST['referral_code'] ?? ''));
+$locationCodeRaw = trim((string)($_POST['location_code'] ?? $_POST['site_code'] ?? ''));
 
-$defaultLogin = 'http://wifi.nister.org/login';
-$linkLoginOnly = (string)($_REQUEST['link_login_only'] ?? $defaultLogin);
-$PORTAL_BASE = portal_base_from_link($linkLoginOnly, 'http://wifi.nister.org');
+$defaultLogin = 'https://wifi.nister.org/login';
+$linkLoginOnly = (string)($_POST['link_login_only'] ?? $defaultLogin);
+$PORTAL_BASE = portal_base_from_link($linkLoginOnly, 'https://wifi.nister.org');
+
+if ($locationCodeRaw === '' && function_exists('location_resolve_from_router_context')) {
+  try {
+    $autoLoc = location_resolve_from_router_context([
+      'link_login_only' => $linkLoginOnly,
+      'link_login' => (string)($_POST['link_login'] ?? ''),
+      'remote_addr' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+      'x_forwarded_for' => (string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''),
+      'router_ip' => (string)($_POST['router_ip'] ?? ''),
+      'router_id' => (string)($_POST['router_id'] ?? $_POST['identity'] ?? $_POST['nas_id'] ?? ''),
+    ]);
+    if ($autoLoc && !empty($autoLoc['code'])) {
+      $locationCodeRaw = (string)$autoLoc['code'];
+    }
+  } catch (Throwable $e) {
+    // non-fatal: location fallback remains default
+  }
+}
 
 // ---- config ----
 $LOGIN_URL       = $PORTAL_BASE . '/login.html';
@@ -46,6 +71,7 @@ $GROUP_ON_CREATE = 'HS_NOPAID';
 $ADDR_LIST       = 'HS_NOPAID';
 $ENFORCE_UNIQUE  = true;
 $DEFAULT_EXP_DAYS = 3650; // keep unpaid accounts from auto-expiring
+$SIMULTANEOUS_USE = 3;
 // --------------
 
 function username_variants(string $u): array {
@@ -57,12 +83,13 @@ function username_variants(string $u): array {
 }
 
 function fail(string $code, string $username = '', string $dst = '', string $name = ''): void {
-  global $PORTAL_BASE;
+  global $PORTAL_BASE, $locationCodeRaw;
   $back = $PORTAL_BASE . '/signup.html';
   $params = ['err' => $code];
   if ($username !== '') { $params['username'] = $username; }
   if ($name !== '')     { $params['name'] = $name; }
   if ($dst !== '')      { $params['dst'] = $dst; }
+  if (!empty($locationCodeRaw)) { $params['location_code'] = (string)$locationCodeRaw; }
   $url = $back . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 
   header('Cache-Control: no-store');
@@ -177,6 +204,11 @@ function sms_send_gateway(string $to, string $message): void {
   @file_get_contents($url, false, stream_context_create($opts));
 }
 
+$reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+if ($reqMethod !== 'POST') {
+  fail('method_not_allowed', $username, $dst, $name);
+}
+
 // Minimal safety
 if ($name === '' || $username === '' || $password === '') {
   fail('missing_fields', $username, $dst, $name);
@@ -196,11 +228,8 @@ if (strlen($password) < 6) {
 if ($otpToken === '') {
   fail('otp_required', $username, $dst, $name);
 }
-if (!function_exists('referrals_signup_token_valid')) {
+if (!function_exists('referrals_consume_signup_token')) {
   fail('server_error', $username, $dst, $name);
-}
-if (!referrals_signup_token_valid($username, $otpToken)) {
-  fail('otp_invalid_or_expired', $username, $dst, $name);
 }
 
 $ignoreSelfReferral = false;
@@ -225,7 +254,15 @@ header('Cache-Control: no-store');
 
 try {
   $pdo = hotspot_radius_pdo();
+  $GLOBALS['PDO'] = $pdo;
+  if (function_exists('referrals_bootstrap_tables')) {
+    referrals_bootstrap_tables();
+  }
   $pdo->beginTransaction();
+  if (!referrals_consume_signup_token($username, $otpToken)) {
+    if ($pdo->inTransaction()) { $pdo->rollBack(); }
+    fail('otp_invalid_or_expired', $username, $dst, $name);
+  }
 
   $targets = array_values(array_unique(array_filter(array_merge([$username], username_variants($username)))));
 
@@ -253,6 +290,10 @@ try {
     "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Expiration', ':=', ?)
      ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
   );
+  $simUseUpsert = $pdo->prepare(
+    "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Simultaneous-Use', ':=', ?)
+     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
+  );
   $addrUpsert = $pdo->prepare(
     "INSERT INTO radreply (username, attribute, op, value) VALUES (?, 'Mikrotik-Address-List', ':=', ?)
      ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
@@ -268,6 +309,7 @@ try {
   foreach ($targets as $u) {
     $passUpsert->execute([$u, $password]);
     $expUpsert->execute([$u, $expStr]);
+    $simUseUpsert->execute([$u, (string)$SIMULTANEOUS_USE]);
     $addrUpsert->execute([$u, $ADDR_LIST]);
     if ($GROUP_ON_CREATE !== '') {
       $groupUpsert->execute([$u, $GROUP_ON_CREATE]);
@@ -298,8 +340,15 @@ if (function_exists('referrals_ensure_profile')) {
   }
 }
 
-if (!function_exists('referrals_consume_signup_token') || !referrals_consume_signup_token($username, $otpToken)) {
-  error_log('Signup OTP consume failed for '.$username);
+if (function_exists('location_resolve_for_user')) {
+  try {
+    $canonUser = function_exists('normalize_msisdn') ? normalize_msisdn($username) : $username;
+    if ($canonUser !== '') {
+      location_resolve_for_user($canonUser, $locationCodeRaw !== '' ? $locationCodeRaw : null, true, 'signup');
+    }
+  } catch (Throwable $e) {
+    error_log('Signup location profile error for '.$username.': '.$e->getMessage());
+  }
 }
 
 if ($referralCode !== '' && !$ignoreSelfReferral && function_exists('referrals_bind_referral')) {

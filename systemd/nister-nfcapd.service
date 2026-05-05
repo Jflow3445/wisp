@@ -10,6 +10,10 @@ Environment=NETFLOW_WEB_GROUP=www-data
 Environment=NETFLOW_PORT=2055
 Environment=NETFLOW_INTERVAL=300
 EnvironmentFile=-/etc/default/nister-netflow
+ExecStartPre=/bin/sh -ec 'case "${NETFLOW_DIR}" in (/*) ;; (*) exit 1 ;; esac'
+ExecStartPre=/bin/sh -ec 'case "${NETFLOW_WEB_GROUP}" in (""|*[!A-Za-z0-9_-]*) exit 1 ;; (*) ;; esac'
+ExecStartPre=/bin/sh -ec 'case "${NETFLOW_PORT}" in (""|*[!0-9]*) exit 1 ;; (*) [ "${NETFLOW_PORT}" -ge 1 ] && [ "${NETFLOW_PORT}" -le 65535 ] ;; esac'
+ExecStartPre=/bin/sh -ec 'case "${NETFLOW_INTERVAL}" in (""|*[!0-9]*) exit 1 ;; (*) [ "${NETFLOW_INTERVAL}" -ge 1 ] ;; esac'
 ExecStartPre=/usr/bin/install -d -o root -g ${NETFLOW_WEB_GROUP} -m 0750 ${NETFLOW_DIR}
 ExecStart=/usr/bin/nfcapd -l ${NETFLOW_DIR} -p ${NETFLOW_PORT} -t ${NETFLOW_INTERVAL}
 Restart=on-failure

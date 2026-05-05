@@ -32,6 +32,17 @@ if ($err !== null || !$from || !$to) {
   exit;
 }
 
+$scope = location_scope_from_input($_GET, true);
+if (!($scope['ok'] ?? false)) {
+  http_response_code(400);
+  header('Content-Type: text/plain; charset=utf-8');
+  echo "bad request: ".(string)($scope['error'] ?? 'invalid_location')."\n";
+  exit;
+}
+$locationId = isset($scope['location_id']) ? (int)($scope['location_id'] ?? 0) : 0;
+if ($locationId <= 0) $locationId = null;
+$locationCode = ($scope['location']['code'] ?? '') ? (string)$scope['location']['code'] : '';
+
 $userRaw = trim((string)($_GET['msisdn'] ?? ''));
 $userCanon = null;
 if ($userRaw !== '') {
@@ -53,6 +64,9 @@ $baseName = [
 if ($userCanon !== null) {
   $baseName[] = forensics_msisdn_localish($userCanon);
 }
+if ($locationCode !== '') {
+  $baseName[] = $locationCode;
+}
 $filename = implode('_', $baseName).'.csv';
 
 header('Content-Type: text/csv; charset=utf-8');
@@ -71,10 +85,10 @@ if (!$out) {
 $summary = null;
 try {
   if ($mode === 'raw') {
-    $summary = forensics_stream_raw_csv($out, $ENV, $from, $to);
+    $summary = forensics_stream_raw_csv($out, $ENV, $from, $to, $locationId);
   } else {
     $r = rdb_pdo();
-    $summary = forensics_stream_mapped_csv($out, $ENV, $r, $from, $to, $userCanon);
+    $summary = forensics_stream_mapped_csv($out, $ENV, $r, $from, $to, $userCanon, $locationId);
   }
 } catch (ForensicsExportLimitReached $e) {
   // Keep CSV valid and indicate truncation to browser/clients.

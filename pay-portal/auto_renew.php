@@ -14,8 +14,16 @@ user_boot();
 user_require_login(true);
 $msisdn = normalize_msisdn(user_msisdn());
 if ($msisdn === '') { http_response_code(401); echo json_encode(['ok'=>false,'error'=>'unauthorized']); exit; }
+$loc = location_resolve_for_user($msisdn, location_session_get_code());
+$locId = (int)($loc['id'] ?? 0);
+if ($locId <= 0) $locId = location_default_id();
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+if ($method === 'POST' && !nister_is_same_origin_request()) {
+  http_response_code(403);
+  echo json_encode(['ok'=>false,'error'=>'origin_not_allowed'], JSON_UNESCAPED_SLASHES);
+  exit;
+}
 
 // Merge JSON into $_POST for convenience
 if ($method === 'POST') {
@@ -32,12 +40,26 @@ if ($method === 'POST') {
 }
 
 if ($method !== 'POST') {
-  $auto = auto_renew_get($msisdn);
+  $auto = auto_renew_get($msisdn, $locId);
   $plan = null;
+  $planSource = null;
   if (!empty($auto['plan_code'])) {
-    $plan = radius_find_plan((string)$auto['plan_code']);
+    $plan = radius_find_plan((string)$auto['plan_code'], $locId, true);
+    if ($plan) {
+      $planSource = 'location';
+    } else {
+      $plan = radius_find_plan((string)$auto['plan_code'], $locId, false);
+      if ($plan) $planSource = 'global_fallback';
+    }
   }
-  echo json_encode(['ok'=>true,'auto_renew'=>$auto,'plan'=>$plan], JSON_UNESCAPED_SLASHES);
+  echo json_encode([
+    'ok'=>true,
+    'location_id'=>$locId,
+    'location_code'=>(string)($loc['code'] ?? ''),
+    'auto_renew'=>$auto,
+    'plan'=>$plan,
+    'plan_source'=>$planSource,
+  ], JSON_UNESCAPED_SLASHES);
   exit;
 }
 
@@ -65,7 +87,12 @@ if ($enabled) {
     echo json_encode(['ok'=>false,'error'=>'plan_required'], JSON_UNESCAPED_SLASHES);
     exit;
   }
-  $plan = radius_find_plan($planCode);
+  $plan = radius_find_plan($planCode, $locId, true);
+  $planSource = 'location';
+  if (!$plan) {
+    $plan = radius_find_plan($planCode, $locId, false);
+    if ($plan) $planSource = 'global_fallback';
+  }
   if (!$plan) {
     http_response_code(422);
     echo json_encode(['ok'=>false,'error'=>'invalid_plan'], JSON_UNESCAPED_SLASHES);
@@ -73,7 +100,24 @@ if ($enabled) {
   }
 }
 
-$auto = auto_renew_set($msisdn, $enabled, $planCode !== '' ? $planCode : null);
-$plan = (!empty($auto['plan_code'])) ? radius_find_plan((string)$auto['plan_code']) : null;
+$auto = auto_renew_set($msisdn, $enabled, $planCode !== '' ? $planCode : null, $locId);
+$plan = null;
+$planSource = null;
+if (!empty($auto['plan_code'])) {
+  $plan = radius_find_plan((string)$auto['plan_code'], $locId, true);
+  if ($plan) {
+    $planSource = 'location';
+  } else {
+    $plan = radius_find_plan((string)$auto['plan_code'], $locId, false);
+    if ($plan) $planSource = 'global_fallback';
+  }
+}
 
-echo json_encode(['ok'=>true,'auto_renew'=>$auto,'plan'=>$plan], JSON_UNESCAPED_SLASHES);
+echo json_encode([
+  'ok'=>true,
+  'location_id'=>$locId,
+  'location_code'=>(string)($loc['code'] ?? ''),
+  'auto_renew'=>$auto,
+  'plan'=>$plan,
+  'plan_source'=>$planSource,
+], JSON_UNESCAPED_SLASHES);

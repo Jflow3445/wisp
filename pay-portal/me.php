@@ -17,6 +17,9 @@ try {
   user_require_login(true);
   $msisdn = normalize_msisdn(user_msisdn());
   if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'], 401);
+  $loc = location_resolve_for_user($msisdn, location_session_get_code());
+  $locId = (int)($loc['id'] ?? 0);
+  if ($locId <= 0) $locId = location_default_id();
 
   $walletOk = true;
   $walletErr = null;
@@ -35,7 +38,7 @@ try {
   }
 
   $plans = [];
-  try { $plans = array_values(radius_fetch_plans()); }
+  try { $plans = array_values(radius_fetch_plans(false, $locId, true)); }
   catch (Throwable $e) { $plans = []; }
 
   // Active plan from FreeRADIUS
@@ -46,8 +49,18 @@ try {
   // (Optional) fallback to local purchases if FR had nothing
   if (!$active) {
     try {
-      $st = $PDO->prepare("SELECT plan_code,expires_at FROM purchases WHERE msisdn=:m AND status='applied' AND (expires_at IS NULL OR expires_at>=NOW()) ORDER BY id DESC LIMIT 1");
-      $st->execute([':m'=>$msisdn]);
+      $hasLocation = false;
+      try {
+        $chk = $PDO->query("SHOW COLUMNS FROM purchases LIKE 'location_id'");
+        $hasLocation = (bool)$chk->fetchColumn();
+      } catch (Throwable $e2) { $hasLocation = false; }
+      if ($hasLocation && $locId > 0) {
+        $st = $PDO->prepare("SELECT plan_code,expires_at FROM purchases WHERE msisdn=:m AND location_id=:l AND status='applied' AND (expires_at IS NULL OR expires_at>=NOW()) ORDER BY id DESC LIMIT 1");
+        $st->execute([':m'=>$msisdn, ':l'=>$locId]);
+      } else {
+        $st = $PDO->prepare("SELECT plan_code,expires_at FROM purchases WHERE msisdn=:m AND status='applied' AND (expires_at IS NULL OR expires_at>=NOW()) ORDER BY id DESC LIMIT 1");
+        $st->execute([':m'=>$msisdn]);
+      }
       $row = $st->fetch();
       if ($row) $active = ['plan_code'=>$row['plan_code'],'expires_at'=>$row['expires_at']];
     } catch (Throwable $e) {
@@ -74,10 +87,10 @@ try {
     'last_error'=>null,
   ];
   try {
-    $auto = auto_renew_get($msisdn);
+    $auto = auto_renew_get($msisdn, $locId);
     $planInfo = null;
     if (!empty($auto['plan_code'])) {
-      $planInfo = radius_find_plan((string)$auto['plan_code']);
+      $planInfo = radius_find_plan((string)$auto['plan_code'], $locId, true);
     }
     $autoRenew = [
       'enabled'=>(bool)($auto['enabled'] ?? false),
@@ -94,6 +107,9 @@ try {
   json_out([
     'ok'=>true,
     'msisdn'=>msisdn_display($msisdn), "msisdn_canonical"=>$msisdn,
+    'location_id'=>$locId,
+    'location_code'=>(string)($loc['code'] ?? ''),
+    'location_name'=>(string)($loc['name'] ?? ''),
     'balance_cents'=>$bal,
     'balance_ghs'=>round($bal/100,2),
     'wallet_ok'=>$walletOk,
@@ -105,9 +121,10 @@ try {
     'ledger'=>$ledger
   ]);
 } catch (Throwable $e) {
+  error_log('[me.php] ' . $e->getMessage());
   http_response_code(500);
   echo json_encode(
-    ['ok'=>false,'error'=>'server_error','detail'=>$e->getMessage()],
+    ['ok'=>false,'error'=>'server_error'],
     JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE
   );
 }

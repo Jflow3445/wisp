@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/../lib/admin_auth.php';
 $ENV = admin_boot();
 admin_require_login();
+$ADMIN_CSRF = admin_csrf_token();
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -37,6 +38,27 @@ admin_require_login();
   .brand{font-family:var(--font-display);font-size:1.9rem;margin:0}
   .muted{color:var(--muted)}
   .actions{display:flex;gap:10px;flex-wrap:wrap}
+  .site-switch{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    min-width:200px;
+  }
+  .site-switch label{
+    font-size:.76rem;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:.06em;
+  }
+  .site-switch select{
+    width:100%;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#fff;
+    font-family:var(--font-body);
+    font-size:.92rem;
+  }
   .btn{
     appearance:none;border:1px solid var(--line);border-radius:12px;
     padding:10px 14px;background:#fff;color:var(--ink);cursor:pointer;text-decoration:none;
@@ -151,6 +173,12 @@ admin_require_login();
       <div class="muted" id="whoami">...</div>
     </div>
     <div class="actions">
+      <div class="site-switch">
+        <label for="site_selector">Site Scope</label>
+        <select id="site_selector">
+          <option value="all">All sites</option>
+        </select>
+      </div>
       <button class="btn" id="refresh_btn" type="button">Refresh</button>
       <a class="btn" href="/admin/index.php?logout=1">Logout</a>
     </div>
@@ -238,6 +266,42 @@ admin_require_login();
       <div class="kpi compact">
         <div class="label">Download speed</div>
         <div class="value" id="health_speed">-</div>
+      </div>
+    </div>
+    <div class="section-head" style="margin-top:14px">
+      <h3>Enforcement Health</h3>
+      <div class="muted">Policy/application truth from accounting + enforcement signals.</div>
+    </div>
+    <div class="grid" id="enforcement_grid">
+      <div class="kpi compact">
+        <div class="label">Accounting freshness</div>
+        <div class="value" id="enf_last_acct_age">-</div>
+        <div class="muted" id="enf_last_acct_ts">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Open sessions</div>
+        <div class="value" id="enf_open_sessions">-</div>
+        <div class="muted" id="enf_open_meta">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Recent HS_ACTIVE sessions</div>
+        <div class="value" id="enf_active_recent">-</div>
+        <div class="muted" id="enf_active_recent_meta">last 15 minutes</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Auto-limited events</div>
+        <div class="value" id="enf_limit_events">-</div>
+        <div class="muted" id="enf_limit_meta">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">CoA probe ACK</div>
+        <div class="value" id="enf_coa_probe">-</div>
+        <div class="muted" id="enf_coa_probe_meta">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">CoA alert flow</div>
+        <div class="value" id="enf_coa_alerts">-</div>
+        <div class="muted" id="enf_coa_alerts_meta">-</div>
       </div>
     </div>
   </div>
@@ -392,6 +456,95 @@ admin_require_login();
     <div class="note" id="settings_status">Settings load on refresh.</div>
   </div>
 
+  <div class="card" data-section="settings">
+    <div class="section-head">
+      <h2>Sites & Routers</h2>
+      <div class="muted">Define locations and map each hEXS/router once by IP/exporter.</div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="site_code_new">Site code</label>
+        <input id="site_code_new" type="text" placeholder="KUMASI_HEXS_1">
+      </div>
+      <div class="field">
+        <label for="site_name_new">Site name</label>
+        <input id="site_name_new" type="text" placeholder="Kumasi Branch">
+      </div>
+      <div class="field">
+        <label for="site_timezone_new">Timezone</label>
+        <input id="site_timezone_new" type="text" placeholder="Africa/Accra">
+      </div>
+      <label class="check">
+        <input id="site_active_new" type="checkbox" checked>
+        <span>Site active</span>
+      </label>
+    </div>
+    <div class="tool-actions">
+      <button class="btn approve" id="site_save_btn" type="button">Save Site</button>
+    </div>
+    <div class="note" id="site_admin_status">Create or update site records.</div>
+
+    <div class="form-grid" style="margin-top:14px">
+      <div class="field">
+        <label for="map_location_id">Site</label>
+        <select id="map_location_id"></select>
+      </div>
+      <div class="field">
+        <label for="map_nas_ip">Router IP (optional, static NAS-IP / server-address)</label>
+        <input id="map_nas_ip" type="text" placeholder="41.x.x.x">
+      </div>
+      <div class="field">
+        <label for="map_exporter_ip">Exporter IP (optional, if stable)</label>
+        <input id="map_exporter_ip" type="text" placeholder="192.168.1.21">
+      </div>
+      <div class="field">
+        <label for="map_exporter_id">Router identity / Exporter ID (recommended for dynamic IP)</label>
+        <input id="map_exporter_id" type="text" placeholder="hEXS-KUMASI-01">
+      </div>
+      <div class="field">
+        <label for="map_label">Label</label>
+        <input id="map_label" type="text" placeholder="hEXS Main Gateway">
+      </div>
+      <label class="check">
+        <input id="map_active" type="checkbox" checked>
+        <span>Mapping active</span>
+      </label>
+    </div>
+    <div class="tool-actions">
+      <button class="btn approve" id="map_save_btn" type="button">Save Router Map</button>
+      <button class="btn" id="map_reload_btn" type="button">Reload Maps</button>
+    </div>
+    <div class="note" id="map_admin_status">Map each router once. For dynamic WAN IP, use Exporter ID as the stable key. New signups auto-detect location from this map.</div>
+    <div class="table-wrap" style="margin-top:10px">
+      <table class="table" id="map_tbl">
+        <thead>
+          <tr>
+            <th>ID</th><th>Site</th><th>NAS IP</th><th>Exporter IP</th><th>Exporter ID</th><th>Label</th><th>Active</th><th></th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="8" class="muted">No mappings.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="section-head" style="margin-top:14px">
+      <h3>Detected Routers (Unassigned)</h3>
+      <div class="muted">Auto-detected from hotspot/router requests. Assign each to a site.</div>
+    </div>
+    <div class="tool-actions">
+      <button class="btn" id="detected_reload_btn" type="button">Reload Detected</button>
+    </div>
+    <div class="note" id="detected_admin_status">Unassigned router fingerprints will appear here automatically.</div>
+    <div class="table-wrap" style="margin-top:10px">
+      <table class="table" id="detected_tbl">
+        <thead>
+          <tr>
+            <th>ID</th><th>Last Seen</th><th>Seen</th><th>NAS IP</th><th>Exporter IP</th><th>Exporter ID</th><th>Source</th><th></th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="8" class="muted">No unassigned routers detected.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Payments</h2>
@@ -544,10 +697,10 @@ admin_require_login();
       <table class="table small" id="alerts_tbl">
         <thead>
           <tr>
-            <th>When</th><th>Type</th><th>User</th><th>Message</th><th>From</th><th>Action</th>
+            <th>When</th><th>Type</th><th>User</th><th>Site</th><th>Message</th><th>From</th><th>Action</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="7" class="muted">Loading...</td></tr></tbody>
       </table>
     </div>
     <div class="section-head" style="margin-top:14px">
@@ -668,11 +821,16 @@ admin_require_login();
             <label for="tool_group">Plan group</label>
             <input id="tool_group" type="text" placeholder="HS_ACTIVE / HS_LIMITED / HS_NOPAID">
           </div>
+          <div class="field">
+            <label for="tool_location_id">Assign site</label>
+            <select id="tool_location_id"></select>
+          </div>
         </div>
         <div class="tool-actions">
           <button class="btn" id="tool_lookup" type="button">Lookup</button>
           <button class="btn" id="tool_reset_login" type="button">Reset Login</button>
           <button class="btn approve" id="tool_credit" type="button">Credit Wallet</button>
+          <button class="btn decline" id="tool_debit" type="button">Deduct Wallet</button>
           <button class="btn" id="tool_apply" type="button">Apply Plan</button>
           <button class="btn decline" id="tool_disconnect" type="button">Disconnect</button>
           <button class="btn decline" id="tool_force_kick_ip" type="button">Force Kick by IP</button>
@@ -688,6 +846,7 @@ admin_require_login();
           <button class="btn" id="tool_set_addr" type="button">Set Address List</button>
           <button class="btn" id="tool_set_rate" type="button">Set Rate</button>
           <button class="btn" id="tool_set_group" type="button">Set Group</button>
+          <button class="btn" id="tool_assign_location" type="button">Assign User to Site</button>
           <button class="btn decline" id="tool_reset_nopaid" type="button">Reset to HS_NOPAID</button>
         </div>
         <div class="note" id="tool_status">No user loaded.</div>
@@ -707,6 +866,61 @@ admin_require_login();
         </div>
       </div>
     </div>
+  </div>
+  <div class="card" data-section="users">
+    <div class="section-head">
+      <h2>Promo Runner</h2>
+      <div class="muted">Grant expiring promo wallet credit or bonus data by audience.</div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="promo_kind">Promo type</label>
+        <select id="promo_kind">
+          <option value="wallet">Wallet credit</option>
+          <option value="data">Data bundle</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="promo_scope">Audience</label>
+        <select id="promo_scope">
+          <option value="all">All users</option>
+          <option value="group">User group</option>
+          <option value="recent">Registered in last X days</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="promo_group">Group (for group audience)</label>
+        <input id="promo_group" type="text" placeholder="HS_ACTIVE">
+      </div>
+      <div class="field">
+        <label for="promo_recent_days">Recent days (for recent audience)</label>
+        <input id="promo_recent_days" type="text" placeholder="7">
+      </div>
+      <div class="field">
+        <label for="promo_amount">Wallet amount (GHS)</label>
+        <input id="promo_amount" type="text" placeholder="5.00">
+      </div>
+      <div class="field">
+        <label for="promo_data_gb">Data bundle (GB)</label>
+        <input id="promo_data_gb" type="text" placeholder="1">
+      </div>
+      <div class="field">
+        <label for="promo_expires_at">Expiry date (YYYY-MM-DD HH:MM:SS)</label>
+        <input id="promo_expires_at" type="text" placeholder="2026-04-30 23:59:59">
+      </div>
+      <div class="field">
+        <label for="promo_days">Expiry + days</label>
+        <input id="promo_days" type="text" placeholder="14">
+      </div>
+      <div class="field">
+        <label for="promo_notes">Notes</label>
+        <input id="promo_notes" type="text" placeholder="April promo">
+      </div>
+    </div>
+    <div class="tool-actions">
+      <button class="btn approve" id="promo_run" type="button">Run Promo</button>
+    </div>
+    <div class="note" id="promo_status">No promo run yet.</div>
   </div>
   <div class="card" data-section="forensics">
     <div class="section-head">
@@ -801,11 +1015,66 @@ admin_require_login();
 </div>
 
 <script>
+const ADMIN_CSRF = <?= json_encode((string)$ADMIN_CSRF, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;
+let adminLocations = [];
+let adminPlansByCode = {};
+let alertsAutoRetryRunning = false;
+let adminMapEditId = 0;
+let adminDetectedRouters = [];
+
+function currentSiteValue(){
+  const sel = document.getElementById('site_selector');
+  const v = sel ? String(sel.value || 'all') : 'all';
+  if (v === '') return 'all';
+  return v;
+}
+
+function currentSiteId(){
+  const v = currentSiteValue();
+  if (v === 'all' || v === '0') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.trunc(n);
+}
+
+function currentSiteName(){
+  const sel = document.getElementById('site_selector');
+  if (!sel) return 'All sites';
+  const opt = sel.selectedOptions && sel.selectedOptions[0] ? sel.selectedOptions[0] : null;
+  return opt ? String(opt.textContent || 'All sites') : 'All sites';
+}
+
+function locationNameById(id){
+  const n = Number(id || 0);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const found = adminLocations.find((x)=>Number(x.id || 0) === n);
+  if (!found) return '';
+  const code = String(found.code || '');
+  const name = String(found.name || code || `Site ${n}`);
+  return code ? `${name} [${code}]` : name;
+}
+
 async function api(fn, body){
-  const opts = body ? { method:'POST',
-                        headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify(body) } : {};
-  const r = await fetch(`/admin/api.php?fn=${encodeURIComponent(fn)}`, opts);
+  const q = new URLSearchParams();
+  q.set('fn', fn);
+  const siteVal = currentSiteValue();
+  const exempt = new Set(['whoami', 'locations_list', 'location_discovery_list']);
+  const scoped = !exempt.has(fn);
+  if (scoped) q.set('location_id', siteVal);
+
+  let payload = body;
+  if (body && scoped && !Object.prototype.hasOwnProperty.call(body, 'location_id')) {
+    payload = { ...body, location_id: siteVal };
+  }
+  const opts = payload ? {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'X-CSRF-Token': ADMIN_CSRF
+    },
+    body: JSON.stringify(payload)
+  } : {};
+  const r = await fetch(`/admin/api.php?${q.toString()}`, opts);
   return r.json();
 }
 
@@ -917,6 +1186,15 @@ function fmtMpbs(v){
   if (!isFinite(n)) return '-';
   return `${n.toFixed(2)} Mbps`;
 }
+function fmtAgeSec(v){
+  if (v === null || v === undefined || v === '') return '-';
+  const n = Number(v);
+  if (!isFinite(n) || n < 0) return '-';
+  if (n < 60) return `${Math.round(n)}s ago`;
+  if (n < 3600) return `${Math.round(n / 60)}m ago`;
+  if (n < 86400) return `${Math.round(n / 3600)}h ago`;
+  return `${(n / 86400).toFixed(1)}d ago`;
+}
 
 function setFlowStatusNote(msg, state){
   const el = document.getElementById('flow_status_note');
@@ -958,15 +1236,373 @@ function initFlowWindowDefaults(){
   toEl.value = toDatetimeLocalValue(now);
 }
 
-let adminPlansByCode = {};
-let alertsAutoRetryRunning = false;
-
 async function loadWho(){
   const j = await api('whoami');
   if(j.ok){
     const at = j.since ? new Date(j.since*1000).toLocaleString() : '-';
-    document.getElementById('whoami').textContent = `Logged in as ${j.user} | since ${at} | IP ${j.ip}`;
+    document.getElementById('whoami').textContent = `Logged in as ${j.user} | since ${at} | IP ${j.ip} | scope: ${currentSiteName()}`;
   }
+}
+
+async function loadLocations(){
+  const sel = document.getElementById('site_selector');
+  if (!sel) return;
+  let prev = String(sel.value || 'all');
+  try { prev = String(localStorage.getItem('admin_location_id') || prev || 'all'); } catch (e) {}
+  const j = await api('locations_list');
+  if (!j.ok) return;
+  adminLocations = Array.isArray(j.locations) ? j.locations : [];
+
+  const options = ['<option value="all">All sites</option>'];
+  adminLocations.forEach((loc)=>{
+    const id = Number(loc.id || 0);
+    if (!Number.isFinite(id) || id <= 0) return;
+    const code = String(loc.code || '');
+    const name = String(loc.name || code || `Site ${id}`);
+    const inactive = Number(loc.active || 0) === 0 ? ' (inactive)' : '';
+    options.push(`<option value="${id}">${safe(name)} [${safe(code)}]${inactive}</option>`);
+  });
+  sel.innerHTML = options.join('');
+
+  const available = new Set(['all', ...adminLocations.map((x)=>String(x.id))]);
+  const choose = available.has(prev) ? prev : 'all';
+  sel.value = choose;
+  try { localStorage.setItem('admin_location_id', choose); } catch (e) {}
+
+  const mapSel = document.getElementById('map_location_id');
+  if (mapSel) {
+    const prevMap = String(mapSel.value || '');
+    const opts = [];
+    adminLocations.forEach((loc)=>{
+      const id = Number(loc.id || 0);
+      if (!Number.isFinite(id) || id <= 0) return;
+      const code = String(loc.code || '');
+      const name = String(loc.name || code || `Site ${id}`);
+      opts.push(`<option value="${id}">${safe(name)} [${safe(code)}]</option>`);
+    });
+    mapSel.innerHTML = opts.length ? opts.join('') : '<option value="">No sites</option>';
+    if (!opts.length) return;
+
+    const fromSiteSelector = currentSiteId();
+    const availableMap = new Set(adminLocations.map((x)=>String(x.id)));
+    let preferred = fromSiteSelector ? String(fromSiteSelector) : '';
+    if (!preferred && availableMap.has(prevMap)) preferred = prevMap;
+    if (!preferred) preferred = String(adminLocations[0].id || '');
+    if (preferred && availableMap.has(preferred)) mapSel.value = preferred;
+  }
+
+  const toolLocSel = document.getElementById('tool_location_id');
+  if (toolLocSel) {
+    const prevToolLoc = String(toolLocSel.value || '');
+    const opts = [];
+    adminLocations.forEach((loc)=>{
+      const id = Number(loc.id || 0);
+      if (!Number.isFinite(id) || id <= 0) return;
+      const code = String(loc.code || '');
+      const name = String(loc.name || code || `Site ${id}`);
+      opts.push(`<option value="${id}">${safe(name)} [${safe(code)}]</option>`);
+    });
+    toolLocSel.innerHTML = opts.length ? opts.join('') : '<option value="">No sites</option>';
+    if (opts.length) {
+      const availableTool = new Set(adminLocations.map((x)=>String(x.id)));
+      let preferred = currentSiteId() ? String(currentSiteId()) : '';
+      if (!preferred && availableTool.has(prevToolLoc)) preferred = prevToolLoc;
+      if (!preferred) preferred = String(adminLocations[0].id || '');
+      if (preferred && availableTool.has(preferred)) toolLocSel.value = preferred;
+    }
+  }
+}
+
+function setSiteAdminStatus(msg, state){
+  const el = document.getElementById('site_admin_status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error','success');
+  if (state === 'error') el.classList.add('error');
+  if (state === 'success') el.classList.add('success');
+}
+
+function setMapAdminStatus(msg, state){
+  const el = document.getElementById('map_admin_status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error','success');
+  if (state === 'error') el.classList.add('error');
+  if (state === 'success') el.classList.add('success');
+}
+
+function setDetectedAdminStatus(msg, state){
+  const el = document.getElementById('detected_admin_status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error','success');
+  if (state === 'error') el.classList.add('error');
+  if (state === 'success') el.classList.add('success');
+}
+
+function mapFieldValue(id){
+  const el = document.getElementById(id);
+  return el ? String(el.value || '').trim() : '';
+}
+
+function renderDetectedRouters(items){
+  const tb = document.querySelector('#detected_tbl tbody');
+  if (!tb) return;
+  if (!Array.isArray(items) || items.length === 0) {
+    tb.innerHTML = '<tr><td colspan="8" class="muted">No unassigned routers detected.</td></tr>';
+    return;
+  }
+  tb.innerHTML = items.map((row)=>{
+    const id = Number(row.id || 0);
+    return `<tr>
+      <td>${safe(id || '')}</td>
+      <td>${safe(row.last_seen_at || row.first_seen_at || '-')}</td>
+      <td>${safe(row.seen_count || 0)}</td>
+      <td>${safe(row.nas_ip || '-')}</td>
+      <td>${safe(row.exporter_ip || '-')}</td>
+      <td>${safe(row.exporter_id || row.router_id || '-')}</td>
+      <td>${safe(row.source || '-')}</td>
+      <td>
+        <button class="btn small approve" data-det-assign="${safe(id || '')}">Assign</button>
+        <button class="btn small" data-det-use="${safe(id || '')}">Use In Map</button>
+        <button class="btn small decline" data-det-ignore="${safe(id || '')}">Ignore</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function useDetectedRouter(row){
+  if (!row || typeof row !== 'object') return;
+  const set = (id, val)=>{ const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('map_nas_ip', row.nas_ip || '');
+  set('map_exporter_ip', row.exporter_ip || '');
+  set('map_exporter_id', row.exporter_id || row.router_id || '');
+  if (!mapFieldValue('map_label')) {
+    set('map_label', row.router_id || row.exporter_id || row.nas_ip || row.exporter_ip || '');
+  }
+  const mapLoc = document.getElementById('map_location_id');
+  if (mapLoc && row.location_id) {
+    const sid = String(row.location_id);
+    if ([...mapLoc.options].some((o)=>String(o.value) === sid)) mapLoc.value = sid;
+  }
+  adminMapEditId = 0;
+  setMapAdminStatus('Detected router loaded into map form. Select site and click Save Router Map.', 'success');
+}
+
+async function loadDetectedRouters(){
+  const j = await api('location_discovery_list', { only_unassigned: 1, limit: 200, location_id: 'all' });
+  if (!j.ok){
+    setDetectedAdminStatus(j.error || 'Failed to load detected routers.', 'error');
+    renderDetectedRouters([]);
+    return;
+  }
+  adminDetectedRouters = Array.isArray(j.items) ? j.items : [];
+  renderDetectedRouters(adminDetectedRouters);
+  setDetectedAdminStatus(`Loaded ${adminDetectedRouters.length} unassigned router(s).`);
+}
+
+function selectedMapLocationId(){
+  const mapLoc = document.getElementById('map_location_id');
+  const raw = mapLoc ? String(mapLoc.value || '') : '';
+  const n = Number(raw || 0);
+  if (Number.isFinite(n) && n > 0) return Math.trunc(n);
+  return null;
+}
+
+async function assignDetectedRouter(id){
+  const row = adminDetectedRouters.find((x)=>Number(x.id || 0) === Number(id || 0));
+  if (!row) {
+    setDetectedAdminStatus('Detected router not found. Reload and retry.', 'error');
+    return;
+  }
+  const locationId = selectedMapLocationId() || currentSiteId();
+  if (!locationId) {
+    setDetectedAdminStatus('Select a site first (Site selector or Site field in map form).', 'error');
+    return;
+  }
+  setDetectedAdminStatus(`Assigning detected router #${id} to ${locationNameById(locationId) || `site ${locationId}`}...`);
+  const j = await api('location_discovery_assign', { id, location_id: locationId });
+  if (!j.ok) {
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Assignment failed.');
+    setDetectedAdminStatus(msg, 'error');
+    return;
+  }
+  await loadLocationMaps();
+  await loadDetectedRouters();
+  setDetectedAdminStatus(`Detected router #${id} assigned to ${locationNameById(locationId) || `site ${locationId}`}.`, 'success');
+}
+
+async function ignoreDetectedRouter(id){
+  const row = adminDetectedRouters.find((x)=>Number(x.id || 0) === Number(id || 0));
+  if (!row) {
+    setDetectedAdminStatus('Detected router not found. Reload and retry.', 'error');
+    return;
+  }
+  setDetectedAdminStatus(`Ignoring detected router #${id}...`);
+  const j = await api('location_discovery_ignore', { id, note: 'Ignored from admin detected routers' });
+  if (!j.ok) {
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Ignore failed.');
+    setDetectedAdminStatus(msg, 'error');
+    return;
+  }
+  await loadDetectedRouters();
+  setDetectedAdminStatus(`Detected router #${id} ignored.`, 'success');
+}
+
+function resetMapEditor(){
+  adminMapEditId = 0;
+  const ids = ['map_nas_ip','map_exporter_ip','map_exporter_id','map_label'];
+  ids.forEach((id)=>{
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const mapActive = document.getElementById('map_active');
+  if (mapActive) mapActive.checked = true;
+}
+
+function fillMapEditor(row){
+  adminMapEditId = Number(row.id || 0);
+  const mapLoc = document.getElementById('map_location_id');
+  if (mapLoc && row.location_id) mapLoc.value = String(row.location_id);
+  const set = (id, val)=>{ const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('map_nas_ip', row.nas_ip || '');
+  set('map_exporter_ip', row.exporter_ip || '');
+  set('map_exporter_id', row.exporter_id || '');
+  set('map_label', row.label || '');
+  const mapActive = document.getElementById('map_active');
+  if (mapActive) mapActive.checked = Number(row.active || 0) === 1;
+}
+
+function renderLocationMaps(items){
+  const tb = document.querySelector('#map_tbl tbody');
+  if (!tb) return;
+  if (!Array.isArray(items) || items.length === 0) {
+    tb.innerHTML = '<tr><td colspan="8" class="muted">No mappings.</td></tr>';
+    return;
+  }
+  tb.innerHTML = items.map((row)=>{
+    const active = Number(row.active || 0) === 1 ? 'yes' : 'no';
+    return `<tr>
+      <td>${safe(row.id || '')}</td>
+      <td>${safe(row.location_name || row.location_code || '')}</td>
+      <td>${safe(row.nas_ip || '-')}</td>
+      <td>${safe(row.exporter_ip || '-')}</td>
+      <td>${safe(row.exporter_id || '-')}</td>
+      <td>${safe(row.label || '-')}</td>
+      <td>${safe(active)}</td>
+      <td>
+        <button class="btn small" data-map-edit="${safe(row.id || '')}">Edit</button>
+        <button class="btn small decline" data-map-del="${safe(row.id || '')}">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadLocationMaps(){
+  const j = await api('location_nas_list');
+  if (!j.ok){
+    setMapAdminStatus(j.error || 'Failed to load router mappings.', 'error');
+    renderLocationMaps([]);
+    return;
+  }
+  const items = Array.isArray(j.items) ? j.items : [];
+  renderLocationMaps(items);
+  const siteName = currentSiteName();
+  const mode = currentSiteId() ? `for ${siteName}` : 'for all sites';
+  setMapAdminStatus(`Loaded ${items.length} mapping(s) ${mode}.`);
+}
+
+async function saveSiteAdmin(){
+  const code = mapFieldValue('site_code_new');
+  const name = mapFieldValue('site_name_new');
+  const timezone = mapFieldValue('site_timezone_new') || 'Africa/Accra';
+  const active = document.getElementById('site_active_new')?.checked ? 1 : 0;
+  if (!code || !name){
+    setSiteAdminStatus('Site code and site name are required.', 'error');
+    return;
+  }
+  setSiteAdminStatus('Saving site...');
+  const j = await api('location_save', { code, name, timezone, active });
+  if (!j.ok){
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Site save failed.');
+    setSiteAdminStatus(msg, 'error');
+    return;
+  }
+  const loc = j.location || {};
+  const savedId = Number(loc.id || 0);
+  await loadLocations();
+  if (savedId > 0) {
+    const siteSel = document.getElementById('site_selector');
+    if (siteSel) {
+      siteSel.value = String(savedId);
+      try { localStorage.setItem('admin_location_id', String(savedId)); } catch (e) {}
+    }
+    const mapSel = document.getElementById('map_location_id');
+    if (mapSel) mapSel.value = String(savedId);
+  }
+  await loadPlans();
+  await loadLocationMaps();
+  setSiteAdminStatus(`Site saved: ${loc.name || name} [${loc.code || code}]`, 'success');
+}
+
+async function saveLocationMap(){
+  const locIdRaw = mapFieldValue('map_location_id');
+  const location_id = Number(locIdRaw || 0);
+  const nas_ip = mapFieldValue('map_nas_ip');
+  const exporter_ip = mapFieldValue('map_exporter_ip');
+  const exporter_id = mapFieldValue('map_exporter_id');
+  const label = mapFieldValue('map_label');
+  const active = document.getElementById('map_active')?.checked ? 1 : 0;
+
+  if (!location_id || !Number.isFinite(location_id)) {
+    setMapAdminStatus('Select a site for this router mapping.', 'error');
+    return;
+  }
+  if (!nas_ip && !exporter_ip && !exporter_id) {
+    setMapAdminStatus('Provide at least one identity: Exporter ID (recommended), NAS IP, or exporter IP.', 'error');
+    return;
+  }
+
+  setMapAdminStatus(adminMapEditId > 0 ? 'Updating router mapping...' : 'Saving router mapping...');
+  const body = {
+    id: adminMapEditId > 0 ? adminMapEditId : 0,
+    location_id,
+    nas_ip,
+    exporter_ip,
+    exporter_id,
+    label,
+    active
+  };
+  const j = await api('location_nas_save', body);
+  if (!j.ok){
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Router mapping save failed.');
+    setMapAdminStatus(msg, 'error');
+    return;
+  }
+  resetMapEditor();
+  await loadLocationMaps();
+  await loadDetectedRouters();
+  if (exporter_id) {
+    setMapAdminStatus('Router mapping saved (identity-based). Dynamic IP changes will still resolve by Exporter ID.', 'success');
+  } else {
+    setMapAdminStatus('Router mapping saved (IP-based). If this site uses dynamic IP, add Exporter ID for stable matching.', 'success');
+  }
+}
+
+async function deleteLocationMap(id){
+  const mappingId = Number(id || 0);
+  if (!mappingId) return;
+  if (!confirm('Delete this router mapping?')) return;
+  setMapAdminStatus('Deleting router mapping...');
+  const j = await api('location_nas_delete', { id: mappingId });
+  if (!j.ok){
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Delete failed.');
+    setMapAdminStatus(msg, 'error');
+    return;
+  }
+  if (adminMapEditId === mappingId) resetMapEditor();
+  await loadLocationMaps();
+  setMapAdminStatus('Router mapping deleted.', 'success');
 }
 
 async function loadStats(){
@@ -1032,6 +1668,7 @@ function renderHealth(j){
   const latency = latest ? fmtMs(latest.ping_ms) : '-';
   const loss = latest ? fmtLoss(latest.loss_pct) : '-';
   const speed = latest ? fmtMpbs(latest.speed_mbps) : '-';
+  const enf = (j && typeof j.enforcement === 'object' && j.enforcement) ? j.enforcement : null;
 
   const updEl = document.getElementById('health_updated');
   if (updEl) updEl.textContent = `Last check: ${updated}`;
@@ -1055,6 +1692,64 @@ function renderHealth(j){
   if (lossEl) lossEl.textContent = loss;
   const sEl = document.getElementById('health_speed');
   if (sEl) sEl.textContent = speed;
+
+  const enfAcctAgeEl = document.getElementById('enf_last_acct_age');
+  const enfAcctTsEl = document.getElementById('enf_last_acct_ts');
+  const enfOpenEl = document.getElementById('enf_open_sessions');
+  const enfOpenMetaEl = document.getElementById('enf_open_meta');
+  const enfActiveEl = document.getElementById('enf_active_recent');
+  const enfActiveMetaEl = document.getElementById('enf_active_recent_meta');
+  const enfLimitEl = document.getElementById('enf_limit_events');
+  const enfLimitMetaEl = document.getElementById('enf_limit_meta');
+  const enfCoaProbeEl = document.getElementById('enf_coa_probe');
+  const enfCoaProbeMetaEl = document.getElementById('enf_coa_probe_meta');
+  const enfCoaAlertsEl = document.getElementById('enf_coa_alerts');
+  const enfCoaAlertsMetaEl = document.getElementById('enf_coa_alerts_meta');
+
+  if (enfAcctAgeEl && enfAcctTsEl && enfOpenEl && enfOpenMetaEl && enfActiveEl && enfActiveMetaEl &&
+      enfLimitEl && enfLimitMetaEl && enfCoaProbeEl && enfCoaProbeMetaEl && enfCoaAlertsEl && enfCoaAlertsMetaEl) {
+    if (!enf) {
+      enfAcctAgeEl.textContent = '-';
+      enfAcctTsEl.textContent = '-';
+      enfOpenEl.textContent = '-';
+      enfOpenMetaEl.textContent = '-';
+      enfActiveEl.textContent = '-';
+      enfActiveMetaEl.textContent = 'last 15 minutes';
+      enfLimitEl.textContent = '-';
+      enfLimitMetaEl.textContent = '-';
+      enfCoaProbeEl.textContent = '-';
+      enfCoaProbeMetaEl.textContent = '-';
+      enfCoaAlertsEl.textContent = '-';
+      enfCoaAlertsMetaEl.textContent = '-';
+    } else {
+      const openTotal = Number(enf.open_sessions_total ?? 0);
+      const openRecent = Number(enf.open_sessions_recent_15m ?? 0);
+      const stale15 = Number(enf.open_sessions_stale_15m ?? 0);
+      const stale60 = Number(enf.open_sessions_stale_60m ?? 0);
+      const activeRecent = Number(enf.active_recent_hs_sessions_15m ?? 0);
+      const lim15 = Number(enf.limit_events_15m ?? 0);
+      const lim60 = Number(enf.limit_events_60m ?? 0);
+      const probeOk15 = Number(enf.coa_probe_ok_15m ?? 0);
+      const probeTot15 = Number(enf.coa_probe_total_15m ?? 0);
+      const probeOk120 = Number(enf.coa_probe_ok_120 ?? 0);
+      const probeTot120 = Number(enf.coa_probe_total_120 ?? 0);
+      const coaFail60 = Number(enf.coa_fail_events_60m ?? 0);
+      const coaRetry60 = Number(enf.coa_retry_events_60m ?? 0);
+
+      enfAcctAgeEl.textContent = fmtAgeSec(enf.acct_last_update_age_sec);
+      enfAcctTsEl.textContent = enf.acct_last_update_utc ? `${enf.acct_last_update_utc} UTC` : 'no accounting updates';
+      enfOpenEl.textContent = isFinite(openTotal) ? String(openTotal) : '-';
+      enfOpenMetaEl.textContent = `recent15m: ${isFinite(openRecent) ? openRecent : 0} | stale15m: ${isFinite(stale15) ? stale15 : 0} | stale60m: ${isFinite(stale60) ? stale60 : 0}`;
+      enfActiveEl.textContent = isFinite(activeRecent) ? String(activeRecent) : '-';
+      enfActiveMetaEl.textContent = 'distinct HS_ACTIVE sessions with accounting in last 15m';
+      enfLimitEl.textContent = isFinite(lim15) ? String(lim15) : '-';
+      enfLimitMetaEl.textContent = `15m: ${isFinite(lim15) ? lim15 : 0} | 60m: ${isFinite(lim60) ? lim60 : 0}`;
+      enfCoaProbeEl.textContent = probeTot120 > 0 ? `${probeOk120}/${probeTot120}` : 'No samples';
+      enfCoaProbeMetaEl.textContent = `15m: ${probeOk15}/${probeTot15} | window120: ${probeOk120}/${probeTot120}`;
+      enfCoaAlertsEl.textContent = String(isFinite(coaFail60) ? coaFail60 : 0);
+      enfCoaAlertsMetaEl.textContent = `fails60m: ${isFinite(coaFail60) ? coaFail60 : 0} | retries60m: ${isFinite(coaRetry60) ? coaRetry60 : 0}`;
+    }
+  }
 
   const tbl = document.getElementById('health_downtime_tbl');
   if (!tbl) return;
@@ -1124,7 +1819,7 @@ async function loadFlowStatus(){
   filesMetaEl.textContent = `non-empty: ${f.nonempty_files_last_60m ?? 0}`;
 
   if (!running) {
-    setFlowStatusNote('Collector is not running. Start nfcapd service before exporting.', 'error');
+    setFlowStatusNote('Collector is not running. Start nister-nfcapd service before exporting.', 'error');
   } else if (!receiving) {
     setFlowStatusNote('Collector is running but receiving no live flows. MikroTik Traffic-Flow export is likely off/misconfigured.', 'error');
   } else {
@@ -1143,6 +1838,7 @@ function exportTraffic(mode, requireUser){
   params.set('mode', mode);
   params.set('from', from);
   params.set('to', to);
+  params.set('location_id', currentSiteValue());
 
   const rawMsisdn = toolValue('flow_msisdn');
   const canon = flowMsisdnCanonical(rawMsisdn);
@@ -1219,13 +1915,14 @@ function renderAlerts(rows){
   const tb = document.querySelector('#alerts_tbl tbody');
   if (!tb) return;
   if (!rows || rows.length === 0) {
-    tb.innerHTML = '<tr><td colspan="6" class="muted">No alerts.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" class="muted">No alerts.</td></tr>';
     return;
   }
   tb.innerHTML = rows.map(r => `<tr>
     <td>${safe(r.created_at || r.ts || '')}</td>
     <td>${safe(r.type || '')}</td>
     <td>${safe(r.username || '')}</td>
+    <td>${safe(r.location_name || r.location_code || '-')}</td>
     <td>${safe(r.msg || '')}</td>
     <td>${safe(r.remote_addr || '')}</td>
     <td>
@@ -1402,6 +2099,49 @@ function renderPlans(plans){
   }).join('');
 }
 
+function renderPlansBySite(groups){
+  const tb = document.querySelector('#plans_tbl tbody');
+  if (!tb) return 0;
+  adminPlansByCode = {};
+  if (!Array.isArray(groups) || groups.length === 0){
+    tb.innerHTML = '<tr><td colspan="9" class="muted">No plans configured for any site.</td></tr>';
+    return 0;
+  }
+  let total = 0;
+  const rows = [];
+  groups.forEach((site)=>{
+    const locationId = Number(site?.location_id || 0);
+    const code = String(site?.location_code || '');
+    const name = String(site?.location_name || code || (locationId > 0 ? `Site ${locationId}` : 'Site'));
+    const siteLabel = code ? `${name} [${code}]` : name;
+    rows.push(`<tr><td colspan="9"><strong>${safe(siteLabel)}</strong></td></tr>`);
+    const plans = Array.isArray(site?.plans) ? site.plans : [];
+    if (!plans.length) {
+      rows.push('<tr><td colspan="9" class="muted">No plans for this site.</td></tr>');
+      return;
+    }
+    plans.forEach((p)=>{
+      total += 1;
+      const qv = (p.quota_bytes !== null && p.quota_bytes !== undefined) ? Number(p.quota_bytes) : null;
+      const quota = (qv && qv > 0) ? fmtBytes(qv) : 'Unlimited';
+      const status = (p.active === false) ? 'Inactive' : 'Active';
+      rows.push(`<tr class="${p.active === false ? 'row-inactive' : ''}">
+        <td>${safe(p.code || '')}</td>
+        <td>${safe(p.name || p.code || '')}</td>
+        <td>${p.price_cents !== null && p.price_cents !== undefined ? centsToGHS(p.price_cents) : '-'}</td>
+        <td>${safe(p.duration_days ?? '-')}</td>
+        <td>${safe(quota)}</td>
+        <td>${safe(p.rate_limit || '-')}</td>
+        <td>${safe(p.address_list || '-')}</td>
+        <td>${safe(status)}</td>
+        <td><span class="muted">Select site to edit</span></td>
+      </tr>`);
+    });
+  });
+  tb.innerHTML = rows.join('');
+  return total;
+}
+
 async function loadPlans(){
   const j = await api('plans');
   if (!j.ok){
@@ -1409,7 +2149,14 @@ async function loadPlans(){
     renderPlans([]);
     return;
   }
+  if (!currentSiteId()){
+    const groups = Array.isArray(j.plans_by_site) ? j.plans_by_site : [];
+    const total = renderPlansBySite(groups);
+    setPlanStatus(`Showing ${total} plan(s) across ${groups.length} site(s). Select a specific site to edit plan catalog.`);
+    return;
+  }
   renderPlans(j.plans || []);
+  setPlanStatus(`Loaded ${(Array.isArray(j.plans) ? j.plans.length : 0)} plan(s) for ${currentSiteName()}.`);
 }
 
 function setSettingsStatus(msg, state){
@@ -1519,6 +2266,11 @@ async function saveSettings(){
 }
 
 async function savePlan(){
+  const siteId = currentSiteId();
+  if (!siteId){
+    setPlanStatus('Select a specific site (not All sites) before saving a plan.', 'error');
+    return;
+  }
   const code = toolValue('plan_code');
   const price = toolValue('plan_price');
   const days = toolValue('plan_days');
@@ -1535,6 +2287,7 @@ async function savePlan(){
     return;
   }
   const body = {
+    location_id: siteId,
     plan_code: code,
     display_name: toolValue('plan_name'),
     price: price,
@@ -1555,10 +2308,15 @@ async function savePlan(){
 }
 
 async function deletePlan(code){
+  const siteId = currentSiteId();
+  if (!siteId){
+    setPlanStatus('Select a specific site (not All sites) before deleting a plan.', 'error');
+    return;
+  }
   if (!code) return;
   if (!confirm(`Delete plan ${code}? This removes it from the storefront.`)) return;
   setPlanStatus('Removing plan...');
-  const j = await api('plan_delete', { plan_code: code });
+  const j = await api('plan_delete', { plan_code: code, location_id: siteId });
   if (!j.ok){
     setPlanStatus(j.error || 'Plan delete failed.', 'error');
     return;
@@ -1628,7 +2386,15 @@ async function loadUserStates(){
   const expired_only = !!document.getElementById('state_expired')?.checked;
   const exhausted_only = !!document.getElementById('state_exhausted')?.checked;
   const j = await api('user_state_list', { limit: 300, search, group, expired_only, exhausted_only });
-  if (!j.ok){ console.warn(j); return; }
+  if (!j.ok){
+    console.warn(j);
+    const tb = document.querySelector('#user_states_tbl tbody');
+    if (tb) {
+      const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'user_state_list_failed');
+      tb.innerHTML = `<tr><td colspan="10" class="muted">Failed to load users: ${safe(msg)}</td></tr>`;
+    }
+    return;
+  }
   renderUserStates(j.users || []);
 }
 
@@ -1825,6 +2591,11 @@ async function lookupUser(){
     }
   }
   renderUserSnapshot(merged);
+  const toolLoc = document.getElementById('tool_location_id');
+  const userLoc = Number(merged.location_id || j.location_id || 0);
+  if (toolLoc && Number.isFinite(userLoc) && userLoc > 0) {
+    toolLoc.value = String(userLoc);
+  }
   setToolStatus(`Loaded ${j.msisdn || msisdn}.`, 'success');
 }
 
@@ -1850,6 +2621,92 @@ async function creditWallet(){
   await loadStats();
   await lookupUser();
   setToolStatus(`Credited ${centsToGHS(cents)}.`, 'success');
+}
+
+async function debitWallet(){
+  const msisdn = toolValue('tool_msisdn');
+  const amount = toolValue('tool_amount');
+  const notes = toolValue('tool_notes') || 'Admin debit';
+  if (!msisdn || !amount){
+    setToolStatus('MSISDN and amount are required.', 'error');
+    return;
+  }
+  const cents = parseAmountCents(amount);
+  if (!cents){
+    setToolStatus('Amount must be greater than 0.', 'error');
+    return;
+  }
+  if (!confirm(`Deduct ${centsToGHS(cents)} from ${msisdn}?`)) return;
+  setToolStatus('Deducting wallet...');
+  const j = await api('debit_wallet', { msisdn, amount, notes });
+  if (!j.ok){
+    setToolStatus(j.error || 'Wallet deduction failed.', 'error');
+    return;
+  }
+  await loadStats();
+  await lookupUser();
+  setToolStatus(`Deducted ${centsToGHS(cents)}.`, 'success');
+}
+
+function setPromoStatus(msg, kind){
+  const el = document.getElementById('promo_status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error', 'success');
+  if (kind === 'error') el.classList.add('error');
+  if (kind === 'success') el.classList.add('success');
+}
+
+async function runPromo(){
+  const siteVal = currentSiteValue();
+  const kind = toolValue('promo_kind') || 'wallet';
+  const scope = toolValue('promo_scope') || 'all';
+  const group = toolValue('promo_group');
+  const recent_days = toolValue('promo_recent_days');
+  const amount = toolValue('promo_amount');
+  const data_gb = toolValue('promo_data_gb');
+  const expires_at = toolValue('promo_expires_at');
+  const days = toolValue('promo_days');
+  const notes = toolValue('promo_notes') || 'Admin promo';
+
+  if (scope === 'group' && !group){
+    setPromoStatus('Provide a group for group audience.', 'error');
+    return;
+  }
+  if (scope === 'recent' && !recent_days){
+    setPromoStatus('Provide recent days for recent audience.', 'error');
+    return;
+  }
+  if (!expires_at && !days){
+    setPromoStatus('Provide expiry date or expiry days.', 'error');
+    return;
+  }
+  if (kind === 'wallet') {
+    if (!parseAmountCents(amount)) {
+      setPromoStatus('Wallet promo requires amount > 0.', 'error');
+      return;
+    }
+  } else {
+    const gb = Number((data_gb || '').replace(/[^\d.]/g, ''));
+    if (!isFinite(gb) || gb <= 0) {
+      setPromoStatus('Data promo requires data GB > 0.', 'error');
+      return;
+    }
+  }
+
+  const confirmText = `Run ${kind} promo for scope "${scope}" on ${currentSiteName()} now?`;
+  if (!confirm(confirmText)) return;
+
+  setPromoStatus('Running promo...');
+  const body = { kind, scope, group, recent_days, amount, data_gb, expires_at, days, notes, location_id: siteVal };
+  const j = await api('promo_run', body);
+  if (!j.ok){
+    setPromoStatus(j.error || 'Promo run failed.', 'error');
+    return;
+  }
+  await loadStats();
+  const msg = `Promo done for ${currentSiteName()}. Targets: ${j.total_targets || 0}, created: ${j.created || 0}, failed: ${j.failed || 0}.`;
+  setPromoStatus(msg, 'success');
 }
 
 async function applyPlan(){
@@ -2032,6 +2889,37 @@ async function setGroup(){
   setToolStatus('Group updated.', 'success');
 }
 
+async function assignUserLocation(){
+  const msisdn = toolValue('tool_msisdn');
+  if (!msisdn){
+    setToolStatus('MSISDN is required.', 'error');
+    return;
+  }
+  let locationId = Number(toolValue('tool_location_id') || 0);
+  if (!Number.isFinite(locationId) || locationId <= 0) {
+    const fromScope = currentSiteId();
+    locationId = fromScope && fromScope > 0 ? Number(fromScope) : 0;
+  }
+  if (!locationId) {
+    setToolStatus('Select a site to assign.', 'error');
+    return;
+  }
+  const siteLabel = locationNameById(locationId) || `Site ${locationId}`;
+  if (!confirm(`Assign ${msisdn} to ${siteLabel}?`)) return;
+
+  setToolStatus('Assigning user to site...');
+  const j = await api('user_assign_location', { msisdn, location_id: locationId });
+  if (!j.ok){
+    const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'Assign location failed.');
+    setToolStatus(msg, 'error');
+    return;
+  }
+  await loadUserStates();
+  await lookupUser();
+  const done = `Assigned ${msisdn} to ${j.location_name || siteLabel}.`;
+  setToolStatus(done, 'success');
+}
+
 async function resetNoPaid(){
   const msisdn = toolValue('tool_msisdn');
   if (!msisdn){
@@ -2085,17 +2973,21 @@ async function resetLogin(){
     window.alert('Reset Login failed: passwords do not match.');
     return;
   }
+  if (!password){
+    setToolStatus('A new password is required for reset login.', 'error');
+    window.alert('Reset Login failed: enter a new password first.');
+    return;
+  }
   if (!window.confirm(`Reset login for ${msisdn}? This will rewrite hotspot password attributes.`)) return;
   setToolStatus('Repairing login...');
-  const body = { msisdn };
-  if (password) body.password = password;
+  const body = { msisdn, password };
   const j = await api('user_reset_login', body);
   if (!j.ok){
     setToolStatus(j.error || 'Login reset failed.', 'error');
     window.alert(`Reset Login failed for ${msisdn}: ${j.error || 'unknown error'}`);
     return;
   }
-  const finalPass = j.password || password || '';
+  const finalPass = password || '';
   if (finalPass) {
     const p1 = document.getElementById('tool_new_password');
     const p2 = document.getElementById('tool_new_password2');
@@ -2103,14 +2995,8 @@ async function resetLogin(){
     if (p2) p2.value = finalPass;
   }
   await lookupUser();
-  let doneMsg = '';
-  if (j.generated_password && j.password) {
-    doneMsg = `Login reset complete for ${msisdn}. Temporary password: ${j.password}`;
-    setToolStatus(doneMsg, 'success');
-  } else {
-    doneMsg = `Login reset complete for ${msisdn}.`;
-    setToolStatus(doneMsg, 'success');
-  }
+  const doneMsg = `Login reset complete for ${msisdn}.`;
+  setToolStatus(doneMsg, 'success');
   window.alert(doneMsg);
 }
 
@@ -2184,6 +3070,10 @@ async function sendSms(){
   const j = await api('sms_send', body);
   if (!j.ok){
     let msg = j.error || 'SMS failed.';
+    if (j.error === 'no_recipients_in_scope') {
+      const site = currentSiteName();
+      msg = `No recipients in selected site (${site}).`;
+    }
     if (j.detail) msg = `${j.error}: ${j.detail}`;
     else if (j.response) {
       if (j.response.message) msg = `${j.error}: ${j.response.message}`;
@@ -2193,12 +3083,18 @@ async function sendSms(){
     setSmsStatus(msg, 'error');
     return;
   }
-  setSmsStatus(`SMS sent to ${j.recipients || 0} recipients.`, 'success');
+  const outOfScope = Number(j.out_of_scope || 0);
+  const siteNote = currentSiteId() ? ` in ${currentSiteName()}` : '';
+  const extra = outOfScope > 0 ? ` (${outOfScope} out of scope)` : '';
+  setSmsStatus(`SMS sent to ${j.recipients || 0} recipients${siteNote}${extra}.`, 'success');
 }
 
 async function refreshAll(){
   const btn = document.getElementById('refresh_btn');
   if (btn) btn.disabled = true;
+  await loadLocations();
+  await loadLocationMaps();
+  await loadDetectedRouters();
   await loadWho();
   await loadStats();
   await loadHealth();
@@ -2211,12 +3107,19 @@ async function refreshAll(){
   if (btn) btn.disabled = false;
 }
 
-document.addEventListener('DOMContentLoaded', ()=>{
+document.addEventListener('DOMContentLoaded', async ()=>{
   initMenu();
   initFlowWindowDefaults();
-  refreshAll();
+  await refreshAll();
   const btn = document.getElementById('refresh_btn');
   if (btn) btn.addEventListener('click', refreshAll);
+  const siteSel = document.getElementById('site_selector');
+  if (siteSel) {
+    siteSel.addEventListener('change', async ()=>{
+      try { localStorage.setItem('admin_location_id', String(siteSel.value || 'all')); } catch (e) {}
+      await refreshAll();
+    });
+  }
   const flowRefreshBtn = document.getElementById('flow_refresh');
   if (flowRefreshBtn) flowRefreshBtn.addEventListener('click', loadFlowStatus);
   const flowAllBtn = document.getElementById('flow_export_all');
@@ -2231,6 +3134,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (resetLoginBtn) resetLoginBtn.addEventListener('click', resetLogin);
   const creditBtn = document.getElementById('tool_credit');
   if (creditBtn) creditBtn.addEventListener('click', creditWallet);
+  const debitBtn = document.getElementById('tool_debit');
+  if (debitBtn) debitBtn.addEventListener('click', debitWallet);
   const applyBtn = document.getElementById('tool_apply');
   if (applyBtn) applyBtn.addEventListener('click', applyPlan);
   const disconnectBtn = document.getElementById('tool_disconnect');
@@ -2251,6 +3156,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (setRateBtn) setRateBtn.addEventListener('click', setRate);
   const setGroupBtn = document.getElementById('tool_set_group');
   if (setGroupBtn) setGroupBtn.addEventListener('click', setGroup);
+  const assignLocBtn = document.getElementById('tool_assign_location');
+  if (assignLocBtn) assignLocBtn.addEventListener('click', assignUserLocation);
   const resetBtn = document.getElementById('tool_reset_nopaid');
   if (resetBtn) resetBtn.addEventListener('click', resetNoPaid);
   const setPassBtn = document.getElementById('tool_set_password');
@@ -2259,6 +3166,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (delUserBtn) delUserBtn.addEventListener('click', deleteUser);
   const purgeBtn = document.getElementById('tool_purge_user');
   if (purgeBtn) purgeBtn.addEventListener('click', purgeUser);
+  const promoRunBtn = document.getElementById('promo_run');
+  if (promoRunBtn) promoRunBtn.addEventListener('click', runPromo);
 
   const stateSearch = document.getElementById('state_search');
   if (stateSearch) stateSearch.addEventListener('input', loadUserStates);
@@ -2277,6 +3186,70 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if (settingsSave) settingsSave.addEventListener('click', saveSettings);
   const settingsReload = document.getElementById('settings_reload');
   if (settingsReload) settingsReload.addEventListener('click', loadSettings);
+  const siteSaveBtn = document.getElementById('site_save_btn');
+  if (siteSaveBtn) siteSaveBtn.addEventListener('click', saveSiteAdmin);
+  const mapSaveBtn = document.getElementById('map_save_btn');
+  if (mapSaveBtn) mapSaveBtn.addEventListener('click', saveLocationMap);
+  const mapReloadBtn = document.getElementById('map_reload_btn');
+  if (mapReloadBtn) mapReloadBtn.addEventListener('click', async ()=>{
+    await loadLocationMaps();
+    await loadDetectedRouters();
+  });
+  const detectedReloadBtn = document.getElementById('detected_reload_btn');
+  if (detectedReloadBtn) detectedReloadBtn.addEventListener('click', loadDetectedRouters);
+  const mapTable = document.getElementById('map_tbl');
+  if (mapTable && mapTable.dataset.bound !== '1') {
+    mapTable.addEventListener('click', (e)=>{
+      const editBtn = e.target.closest('[data-map-edit]');
+      if (editBtn) {
+        const id = Number(editBtn.getAttribute('data-map-edit') || 0);
+        if (!id) return;
+        api('location_nas_list').then((res)=>{
+          if (!res || !res.ok || !Array.isArray(res.items)) return;
+          const row = res.items.find((x)=>Number(x.id || 0) === id);
+          if (!row) return;
+          fillMapEditor(row);
+          setMapAdminStatus(`Editing mapping #${id}.`);
+        });
+        return;
+      }
+      const delBtn = e.target.closest('[data-map-del]');
+      if (delBtn) {
+        const id = Number(delBtn.getAttribute('data-map-del') || 0);
+        if (!id) return;
+        deleteLocationMap(id);
+      }
+    });
+    mapTable.dataset.bound = '1';
+  }
+  const detectedTable = document.getElementById('detected_tbl');
+  if (detectedTable && detectedTable.dataset.bound !== '1') {
+    detectedTable.addEventListener('click', async (e)=>{
+      const assignBtn = e.target.closest('[data-det-assign]');
+      if (assignBtn) {
+        const id = Number(assignBtn.getAttribute('data-det-assign') || 0);
+        if (!id) return;
+        await assignDetectedRouter(id);
+        return;
+      }
+      const useBtn = e.target.closest('[data-det-use]');
+      if (useBtn) {
+        const id = Number(useBtn.getAttribute('data-det-use') || 0);
+        if (!id) return;
+        const row = adminDetectedRouters.find((x)=>Number(x.id || 0) === id);
+        if (!row) return;
+        useDetectedRouter(row);
+        return;
+      }
+      const ignoreBtn = e.target.closest('[data-det-ignore]');
+      if (ignoreBtn) {
+        const id = Number(ignoreBtn.getAttribute('data-det-ignore') || 0);
+        if (!id) return;
+        await ignoreDetectedRouter(id);
+      }
+    });
+    detectedTable.dataset.bound = '1';
+  }
 
   const smsAudience = document.getElementById('sms_audience');
   if (smsAudience) smsAudience.addEventListener('change', updateSmsAudience);

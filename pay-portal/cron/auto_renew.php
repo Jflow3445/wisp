@@ -9,9 +9,12 @@ require_once __DIR__.'/../lib/radius.php';
 require_once __DIR__.'/../lib/plans_radius.php';
 require_once __DIR__.'/../lib/referrals.php';
 require_once __DIR__.'/../lib/auto_renew.php';
+require_once __DIR__.'/../lib/transaction_safety.php';
 require_once __DIR__.'/../lib/sms.php';
+require_once __DIR__.'/../lib/location.php';
 
 $ENV = app_boot();
+nister_require_cli_or_token($ENV);
 auto_renew_bootstrap();
 
 $limit = isset($argv[1]) && is_numeric($argv[1]) ? (int)$argv[1] : 200;
@@ -22,6 +25,15 @@ $attemptCooldownMin = max(1, min(1440, $attemptCooldownMin));
 function table_exists(PDO $pdo, string $table): bool {
   $qt = $pdo->quote($table);
   $st = $pdo->query("SHOW TABLES LIKE {$qt}");
+  return (bool)$st->fetchColumn();
+}
+
+function column_exists(PDO $pdo, string $table, string $column): bool {
+  $st = $pdo->prepare(
+    "SELECT 1 FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c LIMIT 1"
+  );
+  $st->execute([':t'=>$table, ':c'=>$column]);
   return (bool)$st->fetchColumn();
 }
 
@@ -85,21 +97,33 @@ function auto_renew_min_gap_seconds(array $plan, array $thresholds): int {
   return max(3600, min($durationSecs, $leadSecs));
 }
 
-function recent_purchase_exists(PDO $pdo, string $msisdn, string $planCode, int $minutes): bool {
+function recent_purchase_exists(PDO $pdo, string $msisdn, string $planCode, int $minutes, ?int $locationId = null): bool {
   if (!table_exists($pdo, 'purchases')) return false;
   $mins = max(1, min(1440, $minutes));
-  $st = $pdo->prepare(
-    "SELECT id FROM purchases
-     WHERE msisdn=:m AND plan_code=:c
-       AND created_at >= (NOW() - INTERVAL {$mins} MINUTE)
-       AND status IN ('pending','applied')
-     ORDER BY id DESC LIMIT 1"
-  );
-  $st->execute([':m'=>$msisdn, ':c'=>$planCode]);
+  $hasLocation = column_exists($pdo, 'purchases', 'location_id');
+  if ($hasLocation && $locationId !== null && $locationId > 0) {
+    $st = $pdo->prepare(
+      "SELECT id FROM purchases
+       WHERE msisdn=:m AND location_id=:l AND plan_code=:c
+         AND created_at >= (NOW() - INTERVAL {$mins} MINUTE)
+         AND status IN ('pending','applied')
+       ORDER BY id DESC LIMIT 1"
+    );
+    $st->execute([':m'=>$msisdn, ':l'=>$locationId, ':c'=>$planCode]);
+  } else {
+    $st = $pdo->prepare(
+      "SELECT id FROM purchases
+       WHERE msisdn=:m AND plan_code=:c
+         AND created_at >= (NOW() - INTERVAL {$mins} MINUTE)
+         AND status IN ('pending','applied')
+       ORDER BY id DESC LIMIT 1"
+    );
+    $st->execute([':m'=>$msisdn, ':c'=>$planCode]);
+  }
   return (bool)$st->fetchColumn();
 }
 
-function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $purchaseAt): array {
+function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $purchaseAt, ?int $locationId = null): array {
   global $PDO, $ENV;
 
   $price = (int)($plan['price_cents'] ?? 0);
@@ -107,7 +131,7 @@ function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $pur
   $code = (string)($plan['code'] ?? '');
   if ($code === '') return ['ok'=>false,'error'=>'invalid_plan'];
 
-  if (recent_purchase_exists($PDO, $msisdn, $code, 120)) {
+  if (recent_purchase_exists($PDO, $msisdn, $code, 120, $locationId)) {
     return ['ok'=>false,'error'=>'recent_purchase'];
   }
 
@@ -124,11 +148,18 @@ function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $pur
   if (!$debited) return ['ok'=>false,'error'=>'insufficient_funds'];
 
   $pid = null;
+  $planApplied = false;
   try {
     if (table_exists($PDO, 'purchases')) {
-      $PDO->prepare("INSERT INTO purchases(msisdn,plan_code,price_cents,status)
-                     VALUES(:m,:c,:p,'pending')")
-          ->execute([':m'=>$msisdn, ':c'=>$code, ':p'=>$price]);
+      if (column_exists($PDO, 'purchases', 'location_id') && $locationId !== null && $locationId > 0) {
+        $PDO->prepare("INSERT INTO purchases(msisdn,location_id,plan_code,price_cents,status)
+                       VALUES(:m,:l,:c,:p,'pending')")
+            ->execute([':m'=>$msisdn, ':l'=>$locationId, ':c'=>$code, ':p'=>$price]);
+      } else {
+        $PDO->prepare("INSERT INTO purchases(msisdn,plan_code,price_cents,status)
+                       VALUES(:m,:c,:p,'pending')")
+            ->execute([':m'=>$msisdn, ':c'=>$code, ':p'=>$price]);
+      }
       $pid = (int)$PDO->lastInsertId();
     }
 
@@ -136,7 +167,7 @@ function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $pur
     if ($days <= 0) $days = 30;
     $renewAddr = trim((string)($plan['address_list'] ?? 'HS_ACTIVE'));
     $renewAddrUp = strtoupper($renewAddr);
-    if ($renewAddr === '' || in_array($renewAddrUp, ['HS_LIMITED','HS_NOPAID','NOPAID'], true)) {
+    if ($renewAddr === '' || in_array($renewAddrUp, ['HS_LIMITED','HS_NOPAID'], true)) {
       $renewAddr = 'HS_ACTIVE';
     }
     $applyPlan = [
@@ -149,6 +180,7 @@ function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $pur
     ];
 
     radius_apply_plan($msisdn, $applyPlan, $purchaseAt);
+    $planApplied = true;
 
     // Ensure renewal immediately restores browse policy, even if user was previously limited.
     try {
@@ -167,7 +199,7 @@ function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $pur
     } catch (Throwable $e) { /* ignore */ }
 
     if (function_exists('radius_try_disconnect')) {
-      try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
+      try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : [], $locationId); } catch (Throwable $e) { /* ignore */ }
     }
 
     $actualExpires = $purchaseAt->modify('+'.$days.' days');
@@ -198,7 +230,7 @@ function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $pur
       $tpl = trim((string)(sms_setting('SMS_PURCHASE_CONFIRM_TEXT', '') ?? ''));
       if ($tpl !== '') {
         $loginUrl = trim((string)(sms_setting('SMS_LOGIN_URL', '') ?? ''));
-        if ($loginUrl === '') $loginUrl = 'http://wifi.nister.org/login.html';
+        if ($loginUrl === '') $loginUrl = 'https://wifi.nister.org/login.html';
         $msg = sms_template($tpl, [
           'NAME' => '',
           'MSISDN' => sms_normalize_local($msisdn),
@@ -225,11 +257,28 @@ function auto_renew_purchase(string $msisdn, array $plan, DateTimeImmutable $pur
 
     return ['ok'=>true,'purchase_id'=>$pid,'expires_at'=>$expiresStr,'ref'=>$ref];
   } catch (Throwable $e) {
-    wallet_credit($msisdn, $price, $ref.'-REFUND', 'Auto-refund: auto-renew failed');
-    if ($pid) {
-      $PDO->prepare("UPDATE purchases SET status='failed' WHERE id=:id")->execute([':id'=>$pid]);
+    $resolution = nister_apply_failure_resolution($planApplied);
+    $refundErr = null;
+    if (!empty($resolution['should_refund'])) {
+      try {
+        wallet_credit($msisdn, $price, $ref.'-REFUND', 'Auto-refund: auto-renew failed');
+      } catch (Throwable $re) {
+        $refundErr = $re->getMessage();
+        error_log('[cron/auto_renew.php] refund_failed msisdn=' . $msisdn . ' ref=' . $ref . ' err=' . $refundErr);
+      }
     }
-    return ['ok'=>false,'error'=>'apply_failed','detail'=>$e->getMessage()];
+    if ($pid) {
+      $PDO->prepare("UPDATE purchases SET status=:s WHERE id=:id")
+        ->execute([':s'=>(string)($resolution['purchase_status'] ?? 'failed'), ':id'=>$pid]);
+    }
+    if ($refundErr !== null) {
+      return ['ok'=>false,'error'=>'apply_failed','detail'=>'refund_manual_check_required'];
+    }
+    return [
+      'ok'=>false,
+      'error'=>(string)($resolution['error'] ?? 'apply_failed'),
+      'detail'=>$e->getMessage(),
+    ];
   }
 }
 
@@ -238,7 +287,7 @@ $now = new DateTimeImmutable('now', $tz);
 $thresholds = fetch_thresholds();
 
 $st = $PDO->prepare(
-  "SELECT msisdn, plan_code, enabled, last_attempt_at, last_renew_at, last_error
+  "SELECT msisdn, location_id, plan_code, enabled, last_attempt_at, last_renew_at, last_error
    FROM auto_renew_settings
    WHERE enabled=1
    ORDER BY updated_at ASC
@@ -258,6 +307,8 @@ $details = [];
 foreach ($rows as $row) {
   $summary['processed']++;
   $msisdn = normalize_msisdn((string)($row['msisdn'] ?? ''));
+  $locationId = (int)($row['location_id'] ?? 0);
+  if ($locationId <= 0) $locationId = location_default_id();
   if ($msisdn === '') {
     $summary['errors']++;
     continue;
@@ -293,7 +344,17 @@ foreach ($rows as $row) {
       continue;
     }
 
-    $plan = radius_find_plan($planCode);
+    $plan = radius_find_plan($planCode, $locationId, true);
+    $planSource = 'location';
+    if (!$plan) {
+      // Hotfix: keep legacy renewals alive during location rollout.
+      // If site catalog is missing, fall back to global plan definition
+      // so paid users do not lapse into router auth rejects on expiration.
+      $plan = radius_find_plan($planCode, $locationId, false);
+      if ($plan) {
+        $planSource = 'global_fallback';
+      }
+    }
     if (!$plan) {
       auto_renew_mark_attempt($msisdn, 'plan_invalid');
       $summary['errors']++;
@@ -358,7 +419,7 @@ foreach ($rows as $row) {
       continue;
     }
 
-    $res = auto_renew_purchase($msisdn, $plan, $now);
+    $res = auto_renew_purchase($msisdn, $plan, $now, $locationId);
     if (!($res['ok'] ?? false)) {
       auto_renew_mark_attempt($msisdn, (string)($res['error'] ?? 'renew_failed'));
       $summary['errors']++;
@@ -368,7 +429,11 @@ foreach ($rows as $row) {
 
     auto_renew_mark_success($msisdn);
     $summary['renewed']++;
-    $details[] = ['msisdn'=>$msisdn,'purchase_id'=>$res['purchase_id'] ?? null];
+    $details[] = [
+      'msisdn'=>$msisdn,
+      'purchase_id'=>$res['purchase_id'] ?? null,
+      'plan_source'=>$planSource,
+    ];
   } finally {
     if ($lockHeld) {
       try { auto_renew_release_lock($PDO, $msisdn); } catch (Throwable $e) { /* ignore */ }

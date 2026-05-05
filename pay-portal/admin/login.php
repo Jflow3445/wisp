@@ -16,7 +16,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } elseif (admin_do_login($u, $p, $ENV)) {
     header('Location: /admin/index.php'); exit;
   } else {
-    $err = 'Invalid credentials.';
+    $gate = admin_login_rate_limit_allow($u);
+    if (!($gate['allowed'] ?? false)) {
+      $retry = (int)($gate['retry_after'] ?? 0);
+      $err = $retry > 0
+        ? 'Too many attempts. Try again in ' . $retry . ' seconds.'
+        : 'Too many attempts. Try again shortly.';
+    } else {
+      $err = 'Invalid credentials.';
+    }
   }
 }
 ?>

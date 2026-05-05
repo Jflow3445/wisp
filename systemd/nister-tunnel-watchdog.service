@@ -1,0 +1,23 @@
+[Unit]
+Description=NISTER tunnel watchdog (L2TP/IPsec auto-recovery)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=TARGET_IP=10.10.20.2
+Environment=REQUIRED_DEVS=ppp0,ppp1
+Environment=REQUIRE_PING=1
+Environment=STILL_DOWN_EXIT_CODE=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/run /var/log/nister
+ExecStart=/usr/bin/flock -n /run/nister_tunnel_watchdog.lock /usr/local/sbin/nister_tunnel_watchdog.sh
+SuccessExitStatus=1

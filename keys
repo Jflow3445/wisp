@@ -1,0 +1,19 @@
+RADIUS shared secret (active)
+1d46e5890fe8ec3ba562c03c3a252ee9ee075911d3cfc6f0cdf9844f06ef638b
+Source: rotated_radius_secret_20260424T094659Z.txt (line 1)
+
+L2TP client credential (active)
+User: mtk-l2tp
+Password: 9affa10704fdb6023c3f11037cbebc1ea85ae678
+Source: rotated_l2tp_ipsec_secret_20260424T110854Z.txt (line 2)
+
+L2TP/IPsec PSK (active)
+0e4ef38a998488deb43b1105b02e583ebec6dc12e3df0ce0fcf6fbfc
+Source: rotated_l2tp_ipsec_secret_20260424T110854Z.txt (line 4)
+
+
+Keys set:
+
+HOTSPOT_STATUS_TOKEN=e54465210d96e897f228437a08ca6a038757d45faa29c96785484b0491bf9400
+CRON_HTTP_TOKEN=f7202911dbd175a10483073e67b5c31bd0860e72df1978619c874e94b832eac6
+ALLOW_LEGACY_MANUAL_SUBMIT=1 (explicitly kept enabled)

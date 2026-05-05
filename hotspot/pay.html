@@ -9,17 +9,21 @@
 <link rel="stylesheet" href="common.css">
 <script>
 const DEFAULT_PAY_BASE = 'https://pay.nister.org';
+const PAY_HOST_ALLOWLIST = {'pay.nister.org': true};
 function normalizePayBase(base){
   if (!base) return DEFAULT_PAY_BASE;
   base = String(base).trim();
   try {
-    var u = new URL(base);
+    var u = new URL(base, window.location.href);
+    if (u.protocol !== 'https:') return DEFAULT_PAY_BASE;
+    var host = String(u.hostname || '').toLowerCase();
+    if (!PAY_HOST_ALLOWLIST[host]) return DEFAULT_PAY_BASE;
     if (/\/checkout\/?$/i.test(u.pathname || '')) {
       u.pathname = '';
     }
     return u.origin + (u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/+$/,'') : '');
   } catch(e) {
-    return base.replace(/\/checkout\/?$/i,'').replace(/\/+$/,'');
+    return DEFAULT_PAY_BASE;
   }
 }
 function payBase(){
@@ -33,21 +37,14 @@ function go(){
   const username = qs.get('username') || '$(username)';
   const mac = '$(mac)';
   const ip = '$(ip)';
-  const loggedIn = '$(logged-in)';
-  const canAutologin = (
-    loggedIn &&
-    loggedIn.indexOf('$(') === -1 &&
-    String(loggedIn).toLowerCase() === 'yes'
-  );
   const base = payBase();
   const params = {username, mac, ip};
-  if (canAutologin) params.autologin = '1';
   const url = base.replace(/\/+$/,'') + '/login.php?' + new URLSearchParams(params).toString();
   location.href = url;
 }
 </script>
 </head>
-<body onload="go()">
+<body>
 <div class="container">
   <div class="card">
     <div class="logo"><div class="dot"></div><div class="name">NISTER Wi-Fi</div><span class="tag">payments</span></div>
@@ -60,6 +57,24 @@ function go(){
     <div class="footer">Need help? Return to <a class="link" href="login.html">login</a>.</div>
   </div>
 </div>
-</body>
 <script src="config.js"></script>
+<script>
+(function(){
+  var launched = false;
+  function launch(){
+    if (launched) return;
+    launched = true;
+    go();
+  }
+  window.addEventListener('nister-config-ready', launch, { once: true });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(launch, 0); }, { once: true });
+  } else {
+    setTimeout(launch, 0);
+  }
+  // Avoid hanging forever if config fetch stalls.
+  setTimeout(launch, 1200);
+})();
+</script>
+</body>
 </html>

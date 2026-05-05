@@ -384,41 +384,54 @@ function referrals_otp_verify(string $rawMsisdn, string $code): array {
   $code = preg_replace('/\D+/', '', trim($code));
   $len = referrals_cfg_int('OTP_CODE_LENGTH', 6, 4, 8);
   if (strlen((string)$code) !== $len) return ['ok'=>false, 'error'=>'invalid_code_format'];
-
-  $st = $PDO->prepare(
-    "SELECT id, otp_hash, expires_at, attempts_left
-     FROM signup_otp_challenges
-     WHERE msisdn=:m AND used_at IS NULL
-     ORDER BY id DESC LIMIT 1"
-  );
-  $st->execute([':m'=>$msisdn]);
-  $row = $st->fetch(PDO::FETCH_ASSOC);
-  if (!$row) return ['ok'=>false, 'error'=>'otp_not_requested'];
-
   $now = referrals_now();
-  $expiresAt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', (string)$row['expires_at'], $now->getTimezone());
-  if (!($expiresAt instanceof DateTimeImmutable) || $expiresAt < $now) {
-    return ['ok'=>false, 'error'=>'otp_expired'];
-  }
-
-  $attemptsLeft = (int)($row['attempts_left'] ?? 0);
-  if ($attemptsLeft <= 0) return ['ok'=>false, 'error'=>'otp_locked'];
-
-  $valid = password_verify((string)$code, (string)$row['otp_hash']);
-  if (!$valid) {
-    $newAttempts = max(0, $attemptsLeft - 1);
-    $upd = $PDO->prepare("UPDATE signup_otp_challenges SET attempts_left=:a WHERE id=:id");
-    $upd->execute([':a'=>$newAttempts, ':id'=>(int)$row['id']]);
-    if ($newAttempts <= 0) return ['ok'=>false, 'error'=>'otp_locked'];
-    return ['ok'=>false, 'error'=>'otp_invalid', 'attempts_left'=>$newAttempts];
-  }
-
-  $token = bin2hex(random_bytes(32));
-  $sessionTtl = referrals_cfg_int('OTP_SESSION_TTL_SECONDS', 900, 60, 3600);
-  $sessionExp = $now->modify("+{$sessionTtl} seconds");
-
   $PDO->beginTransaction();
   try {
+    $st = $PDO->prepare(
+      "SELECT id, otp_hash, expires_at, attempts_left
+       FROM signup_otp_challenges
+       WHERE msisdn=:m AND used_at IS NULL
+       ORDER BY id DESC LIMIT 1 FOR UPDATE"
+    );
+    $st->execute([':m'=>$msisdn]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+      $PDO->rollBack();
+      return ['ok'=>false, 'error'=>'otp_not_requested'];
+    }
+
+    $expiresAt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', (string)$row['expires_at'], $now->getTimezone());
+    if (!($expiresAt instanceof DateTimeImmutable) || $expiresAt < $now) {
+      $PDO->rollBack();
+      return ['ok'=>false, 'error'=>'otp_expired'];
+    }
+
+    $attemptsLeft = (int)($row['attempts_left'] ?? 0);
+    if ($attemptsLeft <= 0) {
+      $PDO->rollBack();
+      return ['ok'=>false, 'error'=>'otp_locked'];
+    }
+
+    $valid = password_verify((string)$code, (string)$row['otp_hash']);
+    if (!$valid) {
+      $dec = $PDO->prepare(
+        "UPDATE signup_otp_challenges
+         SET attempts_left = GREATEST(attempts_left - 1, 0)
+         WHERE id=:id AND attempts_left > 0"
+      );
+      $dec->execute([':id'=>(int)$row['id']]);
+      $leftSt = $PDO->prepare("SELECT attempts_left FROM signup_otp_challenges WHERE id=:id");
+      $leftSt->execute([':id'=>(int)$row['id']]);
+      $newAttempts = (int)($leftSt->fetchColumn() ?: 0);
+      $PDO->commit();
+      if ($newAttempts <= 0) return ['ok'=>false, 'error'=>'otp_locked'];
+      return ['ok'=>false, 'error'=>'otp_invalid', 'attempts_left'=>$newAttempts];
+    }
+
+    $token = bin2hex(random_bytes(32));
+    $sessionTtl = referrals_cfg_int('OTP_SESSION_TTL_SECONDS', 900, 60, 3600);
+    $sessionExp = $now->modify("+{$sessionTtl} seconds");
+
     $consume = $PDO->prepare("UPDATE signup_otp_challenges SET used_at=:now WHERE id=:id AND used_at IS NULL");
     $consume->execute([':now'=>$now->format('Y-m-d H:i:s'), ':id'=>(int)$row['id']]);
     if ($consume->rowCount() < 1) {
@@ -436,12 +449,11 @@ function referrals_otp_verify(string $rawMsisdn, string $code): array {
       ':e'=>$sessionExp->format('Y-m-d H:i:s'),
     ]);
     $PDO->commit();
+    return ['ok'=>true, 'signup_token'=>$token, 'token_expires_seconds'=>$sessionTtl];
   } catch (Throwable $e) {
     if ($PDO->inTransaction()) $PDO->rollBack();
     throw $e;
   }
-
-  return ['ok'=>true, 'signup_token'=>$token, 'token_expires_seconds'=>$sessionTtl];
 }
 
 function referrals_signup_token_valid(string $rawMsisdn, string $token): bool {

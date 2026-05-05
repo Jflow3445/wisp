@@ -32,6 +32,14 @@
   </style>
   <script>
     function qs(k){ return new URLSearchParams(location.search).get(k) || ''; }
+    function detectSiteCode(){
+      var q = (qs('location_code') || qs('site_code') || '').trim();
+      if (q) return q;
+      if (typeof window !== 'undefined' && window.NISTER_SITE_CODE) {
+        return String(window.NISTER_SITE_CODE).trim();
+      }
+      return '';
+    }
     function showBanner(kind, text){
       var box = document.getElementById('banner');
       var span = document.getElementById('banner-text');
@@ -177,6 +185,15 @@
     document.addEventListener('DOMContentLoaded', function () {
       // Optional redirect target captured for the server, not used for auto-login.
       document.getElementById('dst').value = qs('dst');
+      var siteCode = detectSiteCode();
+      var lc = document.getElementById('location_code');
+      if (lc) lc.value = siteCode;
+      var loginLink = document.getElementById('login_link');
+      if (loginLink) {
+        var href = 'login.html';
+        if (siteCode) href += '?location_code=' + encodeURIComponent(siteCode);
+        loginLink.setAttribute('href', href);
+      }
 
       // Optional prefill from querystring
       var preUser = qs('username');
@@ -269,13 +286,17 @@
       <input type="hidden" id="mac" name="mac" value="$(mac)">
       <input type="hidden" id="dst" name="dst" value="">
       <input type="hidden" id="otp_token" name="otp_token" value="">
+      <input type="hidden" id="location_code" name="location_code" value="">
+      <input type="hidden" id="router_ip" name="router_ip" value="$(server-address)">
+      <input type="hidden" id="router_id" name="router_id" value="$(identity)">
       <input type="hidden" id="link_login_only" name="link_login_only" value="$(link-login-only)">
+      <input type="hidden" id="link_login" name="link_login" value="$(link-login)">
 
       <button class="btn btn-primary btn-full" type="submit">Create account</button>
     </form>
 
     <hr>
-    <div class="center small">Already have an account? <a class="link" href="login.html">Log in</a></div>
+    <div class="center small">Already have an account? <a class="link" id="login_link" href="login.html">Log in</a></div>
     <div class="support">
       <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
       <span class="note">Need help signing up? Chat with us.</span>

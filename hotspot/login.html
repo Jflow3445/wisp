@@ -35,6 +35,14 @@
       try { return new URLSearchParams(location.search).get(key) || ''; }
       catch(e){ return ''; }
     }
+    function detectSiteCode(){
+      var q = (qs('location_code') || qs('site_code') || '').trim();
+      if (q) return q;
+      if (typeof window !== 'undefined' && window.NISTER_SITE_CODE) {
+        return String(window.NISTER_SITE_CODE).trim();
+      }
+      return '';
+    }
 
     function showBanner(kind, text){
       var box = document.getElementById('banner');
@@ -49,6 +57,58 @@
     var loginTimer = null;
     var loginBtnText = '';
     var authFrame = null;
+    var loginCandidates = [];
+    var loginAttempts = [];
+    var loginAttempt = 0;
+    var loginRawPassword = '';
+
+    function usernameCandidates(raw){
+      var base = (raw || '').trim();
+      if (!base) return [];
+      var out = [base];
+      var d = String(base).replace(/\D+/g, '');
+      if (/^0\d{9}$/.test(d)) {
+        out.push('233' + d.slice(1));
+      } else if (/^233\d{9}$/.test(d)) {
+        out.push('0' + d.slice(3));
+      }
+      var uniq = [];
+      for (var i = 0; i < out.length; i++){
+        var v = String(out[i] || '').trim();
+        if (!v) continue;
+        if (uniq.indexOf(v) !== -1) continue;
+        uniq.push(v);
+      }
+      return uniq;
+    }
+
+    function chapContext(){
+      var chapId   = '$(chap-id)';
+      var chapChal = '$(chap-challenge)';
+      var chapPresent = (
+        chapId !== '' && chapId.indexOf('$(') === -1 &&
+        chapChal !== '' && chapChal.indexOf('$(') === -1
+      );
+      return {
+        id: chapId,
+        challenge: chapChal,
+        present: chapPresent,
+        md5Ready: (typeof hexMD5 === 'function')
+      };
+    }
+
+    function buildLoginAttempts(candidates){
+      var out = [];
+      var chap = chapContext();
+      for (var i = 0; i < candidates.length; i++){
+        var u = String(candidates[i] || '').trim();
+        if (!u) continue;
+        // Try CHAP first when available, then PAP fallback for HTTPS/PAP profiles.
+        if (chap.present && chap.md5Ready) out.push({ username: u, mode: 'chap' });
+        out.push({ username: u, mode: 'pap' });
+      }
+      return out;
+    }
 
     function redirectToStatus(){
       // Send user to status page in THIS tab, avoiding MikroTik interstitial
@@ -77,7 +137,20 @@
       loginPending = false;
       clearTimeout(loginTimer);
       setLoginPending(false);
+      loginCandidates = [];
+      loginAttempts = [];
+      loginAttempt = 0;
+      loginRawPassword = '';
       showBanner('err', text || 'Phone number or password is incorrect. Please try again.');
+    }
+
+    function maybeTryNextCandidate(){
+      if (!loginPending) return false;
+      if (!Array.isArray(loginAttempts) || loginAttempts.length <= 1) return false;
+      if (loginAttempt >= loginAttempts.length - 1) return false;
+      loginAttempt += 1;
+      submitLoginAttempt();
+      return true;
     }
 
     function readAuthFrameResult(){
@@ -119,7 +192,6 @@
 
     function checkLoginState(){
       if (!loginPending) return;
-      var elapsed = Date.now() - loginStartAt;
       var xhr = new XMLHttpRequest();
       xhr.open('GET', 'api.json?_t=' + Date.now(), true);
       xhr.timeout = 4000;
@@ -134,7 +206,11 @@
             }
           }catch(_){}
         }
-        if (elapsed > 15000){
+        var elapsed = Date.now() - loginStartAt;
+        if (elapsed > 6000 && maybeTryNextCandidate()){
+          return;
+        }
+        if (elapsed > 18000){
           handleLoginError('We could not verify your login. Please try again.');
         } else {
           scheduleLoginCheck();
@@ -142,19 +218,56 @@
       };
       xhr.ontimeout = function(){
         var elapsed = Date.now() - loginStartAt;
-        if (elapsed > 15000){ handleLoginError('We could not verify your login. Please try again.'); }
+        if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
+        if (elapsed > 18000){ handleLoginError('We could not verify your login. Please try again.'); }
         else { scheduleLoginCheck(); }
       };
       xhr.onerror = function(){
         var elapsed = Date.now() - loginStartAt;
-        if (elapsed > 15000){ handleLoginError('We could not verify your login. Please try again.'); }
+        if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
+        if (elapsed > 18000){ handleLoginError('We could not verify your login. Please try again.'); }
         else { scheduleLoginCheck(); }
       };
       try { xhr.send(); } catch(_){
         var elapsed = Date.now() - loginStartAt;
-        if (elapsed > 15000){ handleLoginError('We could not verify your login. Please try again.'); }
+        if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
+        if (elapsed > 18000){ handleLoginError('We could not verify your login. Please try again.'); }
         else { scheduleLoginCheck(); }
       }
+    }
+
+    function submitLoginAttempt(){
+      var f = document.forms['miklogin'];  // hidden form posts into hidden iframe
+      if (!f) { handleLoginError('Login form is not available. Please refresh and try again.'); return; }
+      var attempt = loginAttempts[loginAttempt] || null;
+      var u = attempt && attempt.username ? attempt.username : '';
+      if (!u) { handleLoginError('Please enter both username and password.'); return; }
+      f.username.value = u;
+
+      var chap = chapContext();
+      var mode = attempt && attempt.mode ? attempt.mode : 'pap';
+      if (mode === 'chap') {
+        try{
+          if (!chap.present || !chap.md5Ready) throw new Error('chap_unavailable');
+          f.password.value = hexMD5(chap.id + loginRawPassword + chap.challenge);
+        }catch(err){
+          if (maybeTryNextCandidate()) return;
+          handleLoginError('Secure login failed. Please refresh and try again.');
+          return;
+        }
+      } else {
+        f.password.value = loginRawPassword;
+      }
+
+      if (loginAttempt > 0 && mode === 'pap') {
+        showBanner('success','Retrying login using secure HTTPS password mode...');
+      } else if (loginAttempt > 0) {
+        showBanner('success','Trying another login variant...');
+      } else {
+        showBanner('success','Signing you in...');
+      }
+      scheduleLoginCheck();
+      f.submit();
     }
 
     function initAuthFrame(){
@@ -165,6 +278,7 @@
         if (!loginPending) return;
         var res = readAuthFrameResult();
         if (res && res.status === 'error'){
+          if (maybeTryNextCandidate()) return;
           handleLoginError(res.message);
           return;
         }
@@ -193,28 +307,17 @@
       initAuthFrame();
       loginStartAt = Date.now();
       setLoginPending(true);
-
-      var f = document.forms['miklogin'];  // hidden form posts into hidden iframe
-      f.username.value = u;
-
-      // CHAP if available, else PAP
-      var chapId   = '$(chap-id)';
-      var chapChal = '$(chap-challenge)';
-      var chapOk = (chapId !== '' && chapId.indexOf('$(') === -1 && typeof hexMD5 === 'function');
-
-      try{
-        f.password.value = chapOk ? hexMD5(chapId + p + chapChal) : p;
-      }catch(err){
-        f.password.value = p;
+      loginCandidates = usernameCandidates(u);
+      loginAttempts = buildLoginAttempts(loginCandidates);
+      loginAttempt = 0;
+      loginRawPassword = p;
+      if (!loginCandidates.length || !loginAttempts.length) {
+        handleLoginError('Please enter a valid phone number.');
+        return false;
       }
 
-      // Keep this tab on your UI while the iframe posts to the router
-      showBanner('success','Signing you in...');
-      scheduleLoginCheck();
-
-      persistRemember(u, p);
-
-      f.submit(); // actual POST happens via hidden iframe
+      persistRemember(u);
+      submitLoginAttempt(); // actual POST happens via hidden iframe
       return false;
     }
 
@@ -234,29 +337,28 @@
       try{
         var remember = localStorage.getItem('nister.remember') === '1';
         var u = localStorage.getItem('nister.username') || '';
-        var p = localStorage.getItem('nister.password') || '';
         var box = document.getElementById('remember');
         if (box) box.checked = remember;
         if (remember){
           if (u) document.getElementById('user').value = u;
-          if (p) document.getElementById('pass').value = p;
         }
+        // Cleanup legacy plaintext password storage from older builds.
+        localStorage.removeItem('nister.password');
       }catch(_){}
     }
 
-    function persistRemember(u, p){
+    function persistRemember(u){
       try{
         var box = document.getElementById('remember');
         if (!box) return;
         if (box.checked){
           localStorage.setItem('nister.remember','1');
           localStorage.setItem('nister.username', u || '');
-          localStorage.setItem('nister.password', p || '');
         } else {
           localStorage.removeItem('nister.remember');
           localStorage.removeItem('nister.username');
-          localStorage.removeItem('nister.password');
         }
+        localStorage.removeItem('nister.password');
       }catch(_){}
     }
 
@@ -296,8 +398,10 @@
       if (pre && pre.indexOf('$(') === -1) { document.getElementById('user').value = pre; }
 
       // Show MikroTik-provided error if any, else friendly message from ?msg=
-      if ('$(error)' != '') {
-        showBanner('err','$(error)');
+      var mkErrEl = document.getElementById('mk-error');
+      var mkErr = mkErrEl ? String(mkErrEl.getAttribute('data-error') || '').trim() : '';
+      if (mkErr && mkErr.indexOf('$(') === -1) {
+        showBanner('err', mkErr);
       } else {
         var m = qs('msg');
         if (m) { showBanner('success', m); }
@@ -307,6 +411,13 @@
       var f = document.forms['miklogin'];
       f.elements['dst'].value   = '$(link-orig)';
       f.elements['popup'].value = 'false';
+      var siteCode = detectSiteCode();
+      var signupHref = 'signup.html?dst=' + encodeURIComponent('$(link-orig)');
+      if (siteCode) signupHref += '&location_code=' + encodeURIComponent(siteCode);
+      var signupLinks = document.querySelectorAll('[data-signup-link]');
+      for (var i = 0; i < signupLinks.length; i++) {
+        signupLinks[i].setAttribute('href', signupHref);
+      }
 
       // Enter on password triggers login
       document.getElementById('pass').addEventListener('keydown', function(ev){
@@ -329,7 +440,7 @@
       </div>
 
       <h2 class="h">Welcome back</h2>
-      <p class="sub">Sign in to get online. New here? <a class="link" href="signup.html?dst=$(link-orig)">Create an account</a>.</p>
+      <p class="sub">Sign in to get online. New here? <a class="link" data-signup-link href="signup.html?dst=$(link-orig)">Create an account</a>.</p>
 
       <!-- One banner used for success OR error -->
       <div id="banner" class="banner"><span id="banner-text"></span></div>
@@ -375,7 +486,7 @@
       <hr>
 
       <div class="row">
-        <a class="btn btn-ghost" href="signup.html?dst=$(link-orig)">Create account</a>
+        <a class="btn btn-ghost" data-signup-link href="signup.html?dst=$(link-orig)">Create account</a>
         <a class="btn btn-ghost" id="buy_link" href="pay.html" target="_top">Buy data</a>
       </div>
       <div style="height:10px"></div>

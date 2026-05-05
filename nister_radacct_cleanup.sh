@@ -65,9 +65,9 @@ mysql_run(){
   mysql --defaults-extra-file="$CNF" --batch --skip-column-names "$@"
 }
 
-open_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NULL;" 2>/dev/null || echo 0)"
-dups_before="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE acctstoptime IS NULL AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY nasipaddress,acctsessionid HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
-stale_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NULL AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);" 2>/dev/null || echo 0)"
+open_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00');" 2>/dev/null || echo 0)"
+dups_before="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY nasipaddress,acctsessionid HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
+stale_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);" 2>/dev/null || echo 0)"
 
 log "INFO open_before=$open_before dup_groups_before=$dups_before stale_before=$stale_before stale_minutes=$STALE_MINUTES"
 
@@ -83,7 +83,7 @@ JOIN (
            ',', 1
          ) AS UNSIGNED) AS keep_id
   FROM radacct
-  WHERE acctstoptime IS NULL
+  WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
     AND acctsessionid IS NOT NULL
     AND acctsessionid <> ''
   GROUP BY nasipaddress, acctsessionid
@@ -94,7 +94,7 @@ JOIN (
 SET ra.acctstoptime = COALESCE(ra.acctupdatetime, UTC_TIMESTAMP()),
     ra.acctsessiontime = GREATEST(0, TIMESTAMPDIFF(SECOND, ra.acctstarttime, COALESCE(ra.acctupdatetime, UTC_TIMESTAMP()))),
     ra.acctterminatecause = 'Cleanup-Duplicate'
-WHERE ra.acctstoptime IS NULL
+WHERE (ra.acctstoptime IS NULL OR ra.acctstoptime='0000-00-00 00:00:00')
   AND ra.radacctid <> d.keep_id;
 SELECT ROW_COUNT();
 SQL
@@ -108,14 +108,14 @@ UPDATE radacct
 SET acctstoptime = COALESCE(acctupdatetime, UTC_TIMESTAMP()),
     acctsessiontime = GREATEST(0, TIMESTAMPDIFF(SECOND, acctstarttime, COALESCE(acctupdatetime, UTC_TIMESTAMP()))),
     acctterminatecause = 'Cleanup-Stale'
-WHERE acctstoptime IS NULL
+WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
   AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);
 SELECT ROW_COUNT();
 " 2>/dev/null | tail -n1 || echo 0)"
 
-  open_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NULL;" 2>/dev/null || echo 0)"
-  dups_after="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE acctstoptime IS NULL AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY nasipaddress,acctsessionid HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
-  stale_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NULL AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);" 2>/dev/null || echo 0)"
+  open_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00');" 2>/dev/null || echo 0)"
+  dups_after="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY nasipaddress,acctsessionid HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
+  stale_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);" 2>/dev/null || echo 0)"
 
   log "INFO dup_closed=$dup_closed dup_groups_after=$dups_after stale_closed=$stale_closed open_after=$open_after stale_after=$stale_after"
 fi
