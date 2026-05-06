@@ -61,6 +61,7 @@
     var loginAttempts = [];
     var loginAttempt = 0;
     var loginRawPassword = '';
+    var topLevelFallbackTried = false;
 
     function usernameCandidates(raw){
       var base = (raw || '').trim();
@@ -144,6 +145,40 @@
       showBanner('err', text || 'Phone number or password is incorrect. Please try again.');
     }
 
+    function tryTopLevelLoginFallback(){
+      if (topLevelFallbackTried) return false;
+      topLevelFallbackTried = true;
+      var attempt = loginAttempts[loginAttempt] || null;
+      if (!attempt || !attempt.username) return false;
+      var action = '$(link-login-only)';
+      if (!action || action.indexOf('$(') !== -1) return false;
+      try{
+        var form = document.createElement('form');
+        form.method = 'post';
+        form.action = action;
+        form.target = '_top';
+        form.style.display = 'none';
+
+        var add = function(name, value){
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = String(value || '');
+          form.appendChild(input);
+        };
+        add('username', attempt.username);
+        add('password', loginRawPassword); // PAP/HTTPS fallback for strict captive agents
+        add('dst', '$(link-orig)');
+        add('popup', 'false');
+        document.body.appendChild(form);
+        showBanner('success','Finishing login using router fallback...');
+        form.submit();
+        return true;
+      }catch(_){
+        return false;
+      }
+    }
+
     function maybeTryNextCandidate(){
       if (!loginPending) return false;
       if (!Array.isArray(loginAttempts) || loginAttempts.length <= 1) return false;
@@ -211,6 +246,7 @@
           return;
         }
         if (elapsed > 18000){
+          if (tryTopLevelLoginFallback()) return;
           handleLoginError('We could not verify your login. Please try again.');
         } else {
           scheduleLoginCheck();
@@ -219,19 +255,28 @@
       xhr.ontimeout = function(){
         var elapsed = Date.now() - loginStartAt;
         if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
-        if (elapsed > 18000){ handleLoginError('We could not verify your login. Please try again.'); }
+        if (elapsed > 18000){
+          if (tryTopLevelLoginFallback()) return;
+          handleLoginError('We could not verify your login. Please try again.');
+        }
         else { scheduleLoginCheck(); }
       };
       xhr.onerror = function(){
         var elapsed = Date.now() - loginStartAt;
         if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
-        if (elapsed > 18000){ handleLoginError('We could not verify your login. Please try again.'); }
+        if (elapsed > 18000){
+          if (tryTopLevelLoginFallback()) return;
+          handleLoginError('We could not verify your login. Please try again.');
+        }
         else { scheduleLoginCheck(); }
       };
       try { xhr.send(); } catch(_){
         var elapsed = Date.now() - loginStartAt;
         if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
-        if (elapsed > 18000){ handleLoginError('We could not verify your login. Please try again.'); }
+        if (elapsed > 18000){
+          if (tryTopLevelLoginFallback()) return;
+          handleLoginError('We could not verify your login. Please try again.');
+        }
         else { scheduleLoginCheck(); }
       }
     }
@@ -311,6 +356,7 @@
       loginAttempts = buildLoginAttempts(loginCandidates);
       loginAttempt = 0;
       loginRawPassword = p;
+      topLevelFallbackTried = false;
       if (!loginCandidates.length || !loginAttempts.length) {
         handleLoginError('Please enter a valid phone number.');
         return false;
