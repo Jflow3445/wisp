@@ -16,7 +16,7 @@ ExecStartPre=/bin/sh -ec 'case "${NETFLOW_PORT}" in (""|*[!0-9]*) exit 1 ;; (*) 
 ExecStartPre=/bin/sh -ec 'case "${NETFLOW_INTERVAL}" in (""|*[!0-9]*) exit 1 ;; (*) [ "${NETFLOW_INTERVAL}" -ge 1 ] ;; esac'
 ExecStartPre=/usr/bin/install -d -o root -g ${NETFLOW_WEB_GROUP} -m 0750 ${NETFLOW_DIR}
 ExecStart=/usr/bin/nfcapd -l ${NETFLOW_DIR} -p ${NETFLOW_PORT} -t ${NETFLOW_INTERVAL}
-Restart=on-failure
+Restart=always
 RestartSec=2
 
 [Install]

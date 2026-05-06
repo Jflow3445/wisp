@@ -179,6 +179,8 @@ netflow_setup_content="$(cat nister_netflow_setup.sh)"
 assert_not_contains "netflow_setup_no_source_exec" "$netflow_setup_content" 'source "$ENV_FILE"'
 assert_contains "netflow_setup_checks_gid" "$netflow_setup_content" 'file_gid()'
 assert_contains "netflow_setup_secure_file_check" "$netflow_setup_content" 'env_file_is_secure()'
+assert_not_contains "netflow_setup_no_hup_kill" "$netflow_setup_content" 'kill -s HUP nister-nfcapd.service'
+assert_contains "netflow_setup_retention_cron" "$netflow_setup_content" 'RETENTION_CRON_FILE='
 
 tunnel_watchdog_content="$(cat nister_tunnel_watchdog.sh)"
 assert_not_contains "watchdog_no_source_exec" "$tunnel_watchdog_content" 'source "$STATE_FILE"'

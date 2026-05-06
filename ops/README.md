@@ -1,0 +1,69 @@
+# WISP Ops Helpers
+
+These scripts standardize VPS + MikroTik access from this repo so future pushes/checks are one command.
+
+## 1) Create local credential file
+
+```bash
+cp ops/.env.ops.example ops/.env.ops
+chmod 600 ops/.env.ops
+```
+
+`ops/.env.ops` is ignored by git via `.gitignore` (`.env.*`).
+
+## 2) Quick commands
+
+Run arbitrary command on VPS:
+
+```bash
+ops/vps_exec.sh 'hostname && ip -brief a'
+```
+
+Run arbitrary RouterOS command through VPS:
+
+```bash
+ops/router_exec.sh '/system identity print'
+ops/router_exec.sh '/radius print detail'
+```
+
+Check residual router findings (RADIUS bind + script ownership snapshot):
+
+```bash
+ops/check_residuals.sh
+```
+
+Push hotspot files to router (`flash/hotspot/...`):
+
+```bash
+ops/push_hotspot_to_router.sh
+```
+
+By default it pushes:
+- `hotspot/login.html`
+- `hotspot/error.html`
+- `hotspot/css/error.html`
+
+You can pass custom relative paths:
+
+```bash
+ops/push_hotspot_to_router.sh hotspot/login.html hotspot/status.html
+```
+
+## 3) Deploy behavior and failure modes
+
+`push_hotspot_to_router.sh` tries two methods:
+1. VPS -> router `scp` to `flash/hotspot/...`
+2. Fallback: temporary HTTP server on VPS + router `/tool fetch`
+
+If both fail with permission errors, the router account likely lacks `ftp/write` privileges for file writes.
+
+`check_residuals.sh` attempts to clear RADIUS `src-address` on `10.99.99.1` if `AUTO_FIX_RADIUS_BIND=1`.
+If it prints `not enough permissions`, the router account lacks policy to modify `/radius`.
+
+## 4) Optional manual tunnel for Winbox/UI
+
+If you need local Winbox forwarding:
+
+```bash
+ssh -N -L 8291:10.10.20.2:8291 root@209.97.137.68
+```

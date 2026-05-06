@@ -79,7 +79,7 @@ Top-level directories/files you actually use:
   Keeps L2TP/IPsec tunnel route healthy; restarts services when needed.
 
 - nister_netflow_setup.sh
-  Installs/configures nfcapd + service + logrotate.
+  Installs/configures nfcapd + systemd service + retention cleanup (without logrotate HUP).
 
 
 3) CORE ARCHITECTURE (HOW COMPONENTS CONNECT)
@@ -763,4 +763,3 @@ Legacy/compat:
 - Keep location mapping accurate for multi-site correctness.
 - Keep legacy endpoints disabled unless there is a strict migration need.
 - Always validate full flow after updates: hotspot -> auth -> payment -> purchase -> CoA -> internet access.
-

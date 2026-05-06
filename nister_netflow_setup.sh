@@ -6,10 +6,12 @@ SERVICE_SRC="$REPO_DIR/systemd/nister-nfcapd.service"
 SERVICE_DST="/etc/systemd/system/nister-nfcapd.service"
 ENV_FILE="/etc/default/nister-netflow"
 LOGROTATE_FILE="/etc/logrotate.d/nister-netflow"
+RETENTION_CRON_FILE="/etc/cron.daily/nister-netflow-retention"
 DEFAULT_NETFLOW_DIR="/var/log/netflow"
 DEFAULT_NETFLOW_PORT="2055"
 DEFAULT_NETFLOW_INTERVAL="300"
 DEFAULT_NETFLOW_WEB_GROUP="www-data"
+DEFAULT_NETFLOW_RETENTION_DAYS="180"
 
 if [[ ${EUID:-0} -ne 0 ]]; then
   echo "Run as root." >&2
@@ -104,6 +106,7 @@ load_env_file() {
       NETFLOW_PORT) NETFLOW_PORT="$value" ;;
       NETFLOW_INTERVAL) NETFLOW_INTERVAL="$value" ;;
       NETFLOW_WEB_GROUP) NETFLOW_WEB_GROUP="$value" ;;
+      NETFLOW_RETENTION_DAYS) NETFLOW_RETENTION_DAYS="$value" ;;
       *)
         echo "Warning: ignoring unknown env key '$key' in $path" >&2
         ;;
@@ -128,6 +131,7 @@ NETFLOW_DIR=/var/log/netflow
 NETFLOW_PORT=2055
 NETFLOW_INTERVAL=300
 NETFLOW_WEB_GROUP=www-data
+NETFLOW_RETENTION_DAYS=180
 EOF
   chown root:root "$ENV_FILE"
   chmod 0644 "$ENV_FILE"
@@ -137,11 +141,13 @@ NETFLOW_DIR="$DEFAULT_NETFLOW_DIR"
 NETFLOW_PORT="$DEFAULT_NETFLOW_PORT"
 NETFLOW_INTERVAL="$DEFAULT_NETFLOW_INTERVAL"
 NETFLOW_WEB_GROUP="$DEFAULT_NETFLOW_WEB_GROUP"
+NETFLOW_RETENTION_DAYS="$DEFAULT_NETFLOW_RETENTION_DAYS"
 load_env_file "$ENV_FILE"
 NETFLOW_DIR="${NETFLOW_DIR:-$DEFAULT_NETFLOW_DIR}"
 NETFLOW_PORT="${NETFLOW_PORT:-$DEFAULT_NETFLOW_PORT}"
 NETFLOW_INTERVAL="${NETFLOW_INTERVAL:-$DEFAULT_NETFLOW_INTERVAL}"
 NETFLOW_WEB_GROUP="${NETFLOW_WEB_GROUP:-$DEFAULT_NETFLOW_WEB_GROUP}"
+NETFLOW_RETENTION_DAYS="${NETFLOW_RETENTION_DAYS:-$DEFAULT_NETFLOW_RETENTION_DAYS}"
 
 if ! is_uint "$NETFLOW_PORT" || (( 10#$NETFLOW_PORT < 1 || 10#$NETFLOW_PORT > 65535 )); then
   echo "Warning: invalid NETFLOW_PORT='$NETFLOW_PORT'; falling back to $DEFAULT_NETFLOW_PORT" >&2
@@ -155,6 +161,12 @@ if ! is_uint "$NETFLOW_INTERVAL" || (( 10#$NETFLOW_INTERVAL < 1 )); then
 else
   NETFLOW_INTERVAL="$((10#$NETFLOW_INTERVAL))"
 fi
+if ! is_uint "$NETFLOW_RETENTION_DAYS" || (( 10#$NETFLOW_RETENTION_DAYS < 1 )); then
+  echo "Warning: invalid NETFLOW_RETENTION_DAYS='$NETFLOW_RETENTION_DAYS'; falling back to $DEFAULT_NETFLOW_RETENTION_DAYS" >&2
+  NETFLOW_RETENTION_DAYS="$DEFAULT_NETFLOW_RETENTION_DAYS"
+else
+  NETFLOW_RETENTION_DAYS="$((10#$NETFLOW_RETENTION_DAYS))"
+fi
 
 if ! getent group "$NETFLOW_WEB_GROUP" >/dev/null 2>&1; then
   echo "Warning: group '$NETFLOW_WEB_GROUP' not found; falling back to root" >&2
@@ -165,20 +177,28 @@ install -d -o root -g "$NETFLOW_WEB_GROUP" -m 0750 "$NETFLOW_DIR"
 install -m 0644 "$SERVICE_SRC" "$SERVICE_DST"
 
 cat > "$LOGROTATE_FILE" <<EOF
-${NETFLOW_DIR}/nfcapd.* {
-  daily
-  rotate 180
-  missingok
-  notifempty
-  compress
-  delaycompress
-  sharedscripts
-  postrotate
-    /bin/systemctl kill -s HUP nister-nfcapd.service >/dev/null 2>&1 || true
-  endscript
-}
+# nister-netflow
+# nfcapd already rotates capture files by timestamp (nfcapd.YYYYMMDDHHMM).
+# Do not run logrotate on ${NETFLOW_DIR}/nfcapd.* and do not send SIGHUP
+# to nister-nfcapd; this can stop collection.
+# Retention is handled by ${RETENTION_CRON_FILE}.
 EOF
 chmod 0644 "$LOGROTATE_FILE"
+
+cat > "$RETENTION_CRON_FILE" <<EOF
+#!/bin/sh
+set -eu
+
+NETFLOW_DIR="${NETFLOW_DIR}"
+RETENTION_DAYS="${NETFLOW_RETENTION_DAYS}"
+
+if [ -d "\$NETFLOW_DIR" ]; then
+  find "\$NETFLOW_DIR" -maxdepth 1 -type f -regextype posix-extended \\
+    -regex '.*/nfcapd\\.[0-9]{12}\$' -mtime +"\$RETENTION_DAYS" -delete
+fi
+EOF
+chown root:root "$RETENTION_CRON_FILE"
+chmod 0755 "$RETENTION_CRON_FILE"
 
 systemctl daemon-reload
 systemctl enable --now nister-nfcapd.service
@@ -189,6 +209,7 @@ echo "  dir      : $NETFLOW_DIR"
 echo "  web group: $NETFLOW_WEB_GROUP"
 echo "  port     : $NETFLOW_PORT"
 echo "  interval : $NETFLOW_INTERVAL"
+echo "  retention: $NETFLOW_RETENTION_DAYS days"
 
 echo
 echo "Collector status:"

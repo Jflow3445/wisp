@@ -89,6 +89,16 @@ function forensics_is_private_ip(string $ip): bool {
   return $pub === false;
 }
 
+function forensics_capture_name_parts(string $name): ?array {
+  if (!preg_match('/^nfcapd\.(\d{12})(?:\.\d+)*$/', $name, $m)) return null;
+  $dt = DateTimeImmutable::createFromFormat('YmdHi', $m[1], new DateTimeZone('UTC'));
+  if (!$dt) return null;
+  return [
+    'bucket' => $m[1],
+    'ts' => $dt->getTimestamp(),
+  ];
+}
+
 function forensics_list_capture_files(string $dir, DateTimeImmutable $from, DateTimeImmutable $to): array {
   if (!is_dir($dir)) return [];
   $entries = @scandir($dir);
@@ -100,14 +110,18 @@ function forensics_list_capture_files(string $dir, DateTimeImmutable $from, Date
 
   $files = [];
   foreach ($entries as $name) {
-    if (!preg_match('/^nfcapd\.(\d{12})(?:\.\d+)?$/', $name, $m)) continue;
-    $dt = DateTimeImmutable::createFromFormat('YmdHi', $m[1], new DateTimeZone('UTC'));
-    if (!$dt) continue;
-    $ts = $dt->getTimestamp();
+    $parts = forensics_capture_name_parts($name);
+    if ($parts === null) continue;
+    $ts = (int)$parts['ts'];
     if ($ts < $fromTs || $ts > $toTs) continue;
     $path = rtrim($dir, '/').'/'.$name;
     if (!is_file($path)) continue;
-    $files[] = ['ts' => $ts, 'path' => $path];
+    $size = (int)@filesize($path);
+    $bucket = (string)$parts['bucket'];
+    $prev = $files[$bucket] ?? null;
+    if ($prev === null || $size > $prev['size'] || ($size === $prev['size'] && strcmp($name, $prev['name']) < 0)) {
+      $files[$bucket] = ['ts' => $ts, 'path' => $path, 'size' => $size, 'name' => $name];
+    }
   }
 
   usort($files, static fn(array $a, array $b): int => $a['ts'] <=> $b['ts']);
@@ -492,7 +506,7 @@ function forensics_collector_status(array $env): array {
     $entries = @scandir($dir);
     if (is_array($entries)) {
       foreach ($entries as $name) {
-        if (!preg_match('/^nfcapd\.(\d{12})(?:\.\d+)?$/', $name, $m)) continue;
+        if (forensics_capture_name_parts($name) === null) continue;
         $path = rtrim($dir, '/').'/'.$name;
         if (!is_file($path)) continue;
         $mtime = (int)@filemtime($path);
@@ -511,7 +525,7 @@ function forensics_collector_status(array $env): array {
     $entries = @scandir($dir);
     if (is_array($entries)) {
       foreach ($entries as $name) {
-        if (!preg_match('/^nfcapd\.(\d{12})(?:\.\d+)?$/', $name)) continue;
+        if (forensics_capture_name_parts($name) === null) continue;
         $path = rtrim($dir, '/').'/'.$name;
         if (!is_file($path)) continue;
         $mtime = (int)@filemtime($path);
