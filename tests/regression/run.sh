@@ -100,7 +100,7 @@ PHP
 )"
 assert_eq "transaction_resolution_refund_gate" "$transaction_resolution" "OK"
 
-status_without_token="$(php_run <<'PHP'
+status_trusted_origin_without_token="$(php_run <<'PHP'
 <?php
 putenv('DB_DSN=sqlite::memory:');
 putenv('DB_USER=test');
@@ -110,11 +110,26 @@ $_SERVER = [
   'REQUEST_METHOD' => 'GET',
   'HTTP_ORIGIN' => 'https://wifi.nister.org',
 ];
-$_GET = ['username' => '233200000000'];
+$_GET = [];
 include getcwd() . '/pay-portal/hotspot-api/status.php';
 PHP
 )"
-assert_contains "status_requires_token_even_for_trusted_origin" "$status_without_token" '"error":"forbidden"'
+assert_contains "status_trusted_origin_without_token_reaches_validation" "$status_trusted_origin_without_token" '"error":"username required"'
+
+status_no_origin_without_token="$(php_run <<'PHP'
+<?php
+putenv('DB_DSN=sqlite::memory:');
+putenv('DB_USER=test');
+putenv('DB_PASS=test');
+putenv('HOTSPOT_STATUS_TOKEN=regression-secret');
+$_SERVER = [
+  'REQUEST_METHOD' => 'GET',
+];
+$_GET = [];
+include getcwd() . '/pay-portal/hotspot-api/status.php';
+PHP
+)"
+assert_contains "status_no_origin_still_requires_token" "$status_no_origin_without_token" '"error":"forbidden"'
 
 status_with_token="$(php_run <<'PHP'
 <?php

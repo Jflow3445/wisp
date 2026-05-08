@@ -534,7 +534,8 @@ Implemented controls:
 - HttpOnly cookies + SameSite settings.
 - CSRF check for admin mutating requests.
 - Bearer token protection for admin decision/pending and legacy endpoints.
-- Optional mandatory token for hotspot status API (HOTSPOT_STATUS_TOKEN).
+- Optional token for non-browser hotspot status API callers (HOTSPOT_STATUS_TOKEN);
+  trusted hotspot browser origins are allowed so the static MikroTik status page can verify users.
 - Origin checks on hotspot OTP endpoints and hotspot status API.
 - Request rate limiting for login/password-change/status endpoints.
 - Trusted proxy CIDR handling for real client IP extraction.
@@ -673,8 +674,8 @@ E) If plan purchase not applying:
 - Check CoA secret/NAS target and radclient availability.
 
 F) If hotspot status page fails:
-- Check HOTSPOT_STATUS_TOKEN header config.
-- Check origin allowlist and API host.
+- Check that browser origins are trusted and that no proxy strips the Origin header.
+- Check API/pay host reachability from the hotspot walled garden.
 - Check rate limiting responses.
 
 

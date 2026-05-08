@@ -65,7 +65,8 @@ $statusToken = trim((string)($ENV['HOTSPOT_STATUS_TOKEN'] ?? getenv('HOTSPOT_STA
 if ($statusToken !== '') {
   $provided = trim((string)($_SERVER['HTTP_X_STATUS_TOKEN'] ?? ''));
   $tokenOk = ($provided !== '' && hash_equals($statusToken, $provided));
-  if (!$tokenOk) {
+  $trustedBrowserOrigin = ($origin !== '' && $trustedOrigin);
+  if (!$tokenOk && !$trustedBrowserOrigin) {
     json_out_simple(['ok'=>false,'error'=>'forbidden'], 403);
   }
 }

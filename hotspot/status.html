@@ -198,7 +198,7 @@ function safeApiBase(raw){
     var u = new URL(v, window.location.href);
     if (u.protocol !== 'https:') return '';
     var h = String(u.hostname || '').toLowerCase();
-    var allowed = (h === 'api.nister.org');
+    var allowed = (h === 'api.nister.org' || h === 'pay.nister.org');
     if (!allowed) return '';
     var p = (u.pathname && u.pathname !== '/') ? u.pathname.replace(/\/+$/,'') : '';
     return u.origin + p;
@@ -251,12 +251,16 @@ function apiCandidates(username){
   var apiOverride = safeApiBase(qs('api'));
   var cfgApi = (window.NISTER_CFG && window.NISTER_CFG.api_base) ? window.NISTER_CFG.api_base : '';
   var safeCfg = safeApiBase(cfgApi);
+  var cfgPay = (window.NISTER_CFG && window.NISTER_CFG.pay_base) ? window.NISTER_CFG.pay_base : '';
+  var safePay = safePayBase(cfgPay);
   var pageProto = (location.protocol === 'https:') ? 'https:' : 'http:';
   var raw = [
     apiOverride,
     safeCfg,
+    safePay,
     pageProto + '//api.nister.org',
-    'https://api.nister.org'
+    'https://api.nister.org',
+    'https://pay.nister.org'
   ];
   if (location.protocol !== 'https:') raw.push('http://api.nister.org');
   var out = [];
@@ -555,7 +559,7 @@ function loadRadiusStatus(){
         var msg = (err && (err.message || err.name)) || 'api failed';
         state.lastErr = msg;
         var d2 = h('debug2');
-        if (d2) d2.textContent = 'api fail: trying fallback';
+        if (d2) d2.textContent = 'api fail: ' + msg + '; trying fallback';
       }catch(_){}
       tryOne(idx + 1);
     };
