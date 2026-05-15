@@ -14,6 +14,10 @@ COOLDOWN_SEC="${COOLDOWN_SEC:-300}"
 RESTART_WINDOW_SEC="${RESTART_WINDOW_SEC:-900}"
 MAX_RESTARTS_PER_WINDOW="${MAX_RESTARTS_PER_WINDOW:-3}"
 STILL_DOWN_EXIT_CODE="${STILL_DOWN_EXIT_CODE:-1}"
+ROUTER_LAN_CIDR="${ROUTER_LAN_CIDR:-192.168.88.0/24}"
+ROUTER_LAN_VIA="${ROUTER_LAN_VIA:-10.10.20.2}"
+ROUTER_LAN_DEV="${ROUTER_LAN_DEV:-ppp0}"
+RECOVERY_SERVICES="${RECOVERY_SERVICES:-unbound.service}"
 
 STATE_FILE="${STATE_FILE:-/run/nister_tunnel_watchdog.state}"
 LOG_DIR="${LOG_DIR:-/var/log/nister}"
@@ -157,6 +161,35 @@ ping_ok() {
   ping -c "$PING_COUNT" -W "$PING_WAIT" "$TARGET_IP" >/dev/null 2>&1
 }
 
+ensure_recovery_helpers() {
+  local route_line services service
+
+  if [[ -n "$ROUTER_LAN_CIDR" && -n "$ROUTER_LAN_VIA" && -n "$ROUTER_LAN_DEV" ]]; then
+    route_line="$(ip route show "$ROUTER_LAN_CIDR" 2>/dev/null | head -n 1 || true)"
+    if [[ "$route_line" != *"via $ROUTER_LAN_VIA dev $ROUTER_LAN_DEV"* ]]; then
+      if ip route replace "$ROUTER_LAN_CIDR" via "$ROUTER_LAN_VIA" dev "$ROUTER_LAN_DEV"; then
+        log "route=ensured cidr=$ROUTER_LAN_CIDR via=$ROUTER_LAN_VIA dev=$ROUTER_LAN_DEV"
+      else
+        log "route=ensure_failed cidr=$ROUTER_LAN_CIDR via=$ROUTER_LAN_VIA dev=$ROUTER_LAN_DEV"
+      fi
+    fi
+  fi
+
+  services="${RECOVERY_SERVICES// /,}"
+  IFS=',' read -r -a _services <<<"$services"
+  for service in "${_services[@]}"; do
+    service="${service//[[:space:]]/}"
+    [[ -n "$service" ]] || continue
+    if ! systemctl is-active --quiet "$service"; then
+      if systemctl start "$service"; then
+        log "service=started name=$service"
+      else
+        log "service=start_failed name=$service"
+      fi
+    fi
+  done
+}
+
 route_dev_ok() {
   local dev="$1"
   [[ -n "$dev" ]] || return 1
@@ -205,6 +238,7 @@ if route_dev_ok "$rd"; then
       rm -f "$STATE_FILE"
       log "status=recovered route_dev=$rd target=$TARGET_IP"
     fi
+    ensure_recovery_helpers
     exit 0
   fi
 fi
@@ -250,6 +284,7 @@ if route_dev_ok "$rd_after"; then
     log "status=still_down reason=ping_failed_after_restart route_dev=${rd_after:-none} target=$TARGET_IP"
   else
     rm -f "$STATE_FILE"
+    ensure_recovery_helpers
     log "status=up_after_restart route_dev=$rd_after target=$TARGET_IP"
     exit 0
   fi

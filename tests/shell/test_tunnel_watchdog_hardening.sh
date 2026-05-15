@@ -27,6 +27,13 @@ assert_file_has_numeric_kv() {
   [[ "$value" =~ ^[0-9]+$ ]] || fail "Key '$key' is not numeric in $path: '$value'"
 }
 
+assert_file_contains() {
+  local name="$1"
+  local path="$2"
+  local expected="$3"
+  grep -Fq "$expected" "$path" || fail "$name: expected '$expected' in $path"
+}
+
 setup_stubs() {
   local bin_dir="$1"
   mkdir -p "$bin_dir"
@@ -39,11 +46,30 @@ if [[ "${1:-}" == "route" && "${2:-}" == "get" ]]; then
   fi
   exit 0
 fi
+if [[ "${1:-}" == "route" && "${2:-}" == "show" ]]; then
+  if [[ -n "${IP_ROUTE_LINE:-}" ]]; then
+    printf '%s\n' "$IP_ROUTE_LINE"
+  fi
+  exit 0
+fi
+if [[ "${1:-}" == "route" && "${2:-}" == "replace" ]]; then
+  if [[ -n "${IP_LOG:-}" ]]; then
+    printf 'ip %s\n' "$*" >>"$IP_LOG"
+  fi
+  exit 0
+fi
 exit 0
 EOS
 
   cat >"$bin_dir/systemctl" <<'EOS'
 #!/usr/bin/env bash
+if [[ -n "${SYSTEMCTL_LOG:-}" ]]; then
+  printf 'systemctl %s\n' "$*" >>"$SYSTEMCTL_LOG"
+fi
+if [[ "${1:-}" == "is-active" ]]; then
+  [[ "${SYSTEMCTL_ACTIVE:-0}" == "1" ]] && exit 0
+  exit 3
+fi
 exit 0
 EOS
 
@@ -143,6 +169,39 @@ EOF_STATE
   assert_file_has_numeric_kv "$state_file" "window_restarts"
 }
 
+test_healthy_path_repairs_route_and_service() {
+  local case_dir="$1"
+  local stubs_bin="$2"
+  local state_file="$case_dir/state"
+  local log_dir="$case_dir/log"
+  local ip_log="$case_dir/ip.log"
+  local systemctl_log="$case_dir/systemctl.log"
+
+  mkdir -p "$log_dir"
+
+  (
+    export PATH="$stubs_bin:$PATH"
+    export STATE_FILE="$state_file"
+    export LOG_DIR="$log_dir"
+    export TARGET_IP="10.10.20.2"
+    export REQUIRED_DEVS="ppp0,ppp1"
+    export REQUIRE_PING="0"
+    export IP_ROUTE_DEV="ppp0"
+    export IP_ROUTE_LINE=""
+    export IP_LOG="$ip_log"
+    export SYSTEMCTL_LOG="$systemctl_log"
+    export SYSTEMCTL_ACTIVE="0"
+    export ROUTER_LAN_CIDR="192.168.88.0/24"
+    export ROUTER_LAN_VIA="10.10.20.2"
+    export ROUTER_LAN_DEV="ppp0"
+    export RECOVERY_SERVICES="unbound.service"
+    bash "$WATCHDOG_SCRIPT"
+  )
+
+  assert_file_contains "healthy_path_repairs_router_lan_route" "$ip_log" "ip route replace 192.168.88.0/24 via 10.10.20.2 dev ppp0"
+  assert_file_contains "healthy_path_starts_unbound" "$systemctl_log" "systemctl start unbound.service"
+}
+
 main() {
   local tmp_root
   tmp_root="$(mktemp -d)"
@@ -151,6 +210,7 @@ main() {
   setup_stubs "$tmp_root/bin"
   test_rejects_code_injection "$tmp_root/case_injection" "$tmp_root/bin"
   test_invalid_numeric_state_defaults_without_crash "$tmp_root/case_invalid_numeric" "$tmp_root/bin"
+  test_healthy_path_repairs_route_and_service "$tmp_root/case_recovery_helpers" "$tmp_root/bin"
 
   echo "PASS: tunnel watchdog hardening regression tests"
 }
