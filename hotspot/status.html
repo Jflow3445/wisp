@@ -191,6 +191,12 @@ function fetchWithTimeout(url, opts, ms){
     .finally(function(){ clearTimeout(t); });
 }
 
+function sameOriginApiBase(){
+  var h = String(location.hostname || '').toLowerCase();
+  if (h !== 'wifi.nister.org') return '';
+  return location.protocol + '//' + location.host;
+}
+
 function safeApiBase(raw){
   var v = String(raw || '').trim();
   if (!v) return '';
@@ -253,8 +259,10 @@ function apiCandidates(username){
   var safeCfg = safeApiBase(cfgApi);
   var cfgPay = (window.NISTER_CFG && window.NISTER_CFG.pay_base) ? window.NISTER_CFG.pay_base : '';
   var safePay = safePayBase(cfgPay);
+  var sameOrigin = sameOriginApiBase();
   var pageProto = (location.protocol === 'https:') ? 'https:' : 'http:';
   var raw = [
+    sameOrigin,
     apiOverride,
     safeCfg,
     safePay,
