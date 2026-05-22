@@ -6,7 +6,17 @@ require_once __DIR__.'/_paylib.php';
 function hotspot_allowed_origins(): array {
   $raw = trim((string)(getenv('HOTSPOT_OTP_ALLOWED_ORIGINS') ?: ''));
   if ($raw === '') {
-    return ['https://wifi.nister.org', 'https://pay.nister.org'];
+    return [
+      'https://wifi.nister.org',
+      'http://wifi.nister.org',
+      'https://pay.nister.org',
+      'http://192.168.88.1',
+      'https://192.168.88.1',
+      'http://192.168.80.1',
+      'https://192.168.80.1',
+      'http://10.10.20.2',
+      'https://10.10.20.2',
+    ];
   }
   $vals = preg_split('/[,\s]+/', $raw, -1, PREG_SPLIT_NO_EMPTY) ?: [];
   $out = [];
@@ -22,7 +32,7 @@ function hotspot_origin_allowed(string $origin): bool {
   if (!is_array($parts)) return false;
   $scheme = strtolower((string)($parts['scheme'] ?? ''));
   $host = strtolower((string)($parts['host'] ?? ''));
-  if ($scheme !== 'https') return false;
+  if (!in_array($scheme, ['http', 'https'], true)) return false;
   if ($host === '') return false;
   $port = isset($parts['port']) ? (int)$parts['port'] : null;
   $originNorm = $scheme . '://' . $host . (($port !== null && $port > 0) ? (':' . $port) : '');
@@ -32,7 +42,7 @@ function hotspot_origin_allowed(string $origin): bool {
     if (!is_array($p)) continue;
     $s = strtolower((string)($p['scheme'] ?? ''));
     $h = strtolower((string)($p['host'] ?? ''));
-    if ($s !== 'https' || $h === '') continue;
+    if (!in_array($s, ['http', 'https'], true) || $h === '') continue;
     $pt = isset($p['port']) ? (int)$p['port'] : null;
     $norm = $s . '://' . $h . (($pt !== null && $pt > 0) ? (':' . $pt) : '');
     if (hash_equals($norm, $originNorm)) return true;

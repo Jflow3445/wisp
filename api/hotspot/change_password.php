@@ -13,6 +13,8 @@ function portal_base_from_link(string $link, string $fallback): string {
   $allowed = [
     'wifi.nister.org' => ['https'],
     '192.168.88.1' => ['http', 'https'],
+    '192.168.80.1' => ['http', 'https'],
+    '10.10.20.2' => ['http', 'https'],
   ];
   if (!isset($allowed[$host]) || !in_array($scheme, $allowed[$host], true)) return $fallback;
   $base = $scheme . '://' . $u['host'];

@@ -6,9 +6,24 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
 DEFAULT_FILES=(
+  hotspot/alogin.html
+  hotspot/api.json
+  hotspot/change-password.html
+  hotspot/common.css
   hotspot/login.html
+  hotspot/logout.html
+  hotspot/md5.js
+  hotspot/pay.html
+  hotspot/radvert.html
+  hotspot/redirect.html
+  hotspot/registration-success.html
+  hotspot/rlogin.html
+  hotspot/signup.html
+  hotspot/status.html
   hotspot/error.html
   hotspot/css/error.html
+  hotspot/css/style.css
+  hotspot/errors.txt
 )
 
 if [[ $# -gt 0 ]]; then
@@ -127,7 +142,7 @@ for rel in "${FILES[@]}"; do
     echo "OK flash/${rel} size=${remote_size}"
   fi
 done
-router_ssh '/radius print detail;'
+router_ssh ':foreach r in=[/radius find] do={:put ("RADIUS id=" . $r . " disabled=" . [/radius get $r disabled] . " service=" . [/radius get $r service] . " address=" . [/radius get $r address] . " status=" . [/radius get $r status])}'
 
 if (( verify_fail != 0 )); then
   echo "ERR router hotspot deploy verification failed." >&2

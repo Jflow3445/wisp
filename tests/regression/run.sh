@@ -148,17 +148,16 @@ PHP
 )"
 assert_contains "status_allows_valid_token" "$status_with_token" '"error":"username required"'
 
-otp_send_http_origin="$(php_run <<'PHP'
+otp_send_http_origin_preflight="$(php_run <<'PHP'
 <?php
 $_SERVER = [
-  'REQUEST_METHOD' => 'POST',
+  'REQUEST_METHOD' => 'OPTIONS',
   'HTTP_ORIGIN' => 'http://wifi.nister.org',
 ];
-$_POST = ['username' => '233200000000'];
 include getcwd() . '/api/hotspot/otp_send.php';
 PHP
 )"
-assert_contains "otp_send_rejects_http_origin" "$otp_send_http_origin" '"error":"origin_not_allowed"'
+assert_eq "otp_send_allows_http_wifi_origin_preflight" "$otp_send_http_origin_preflight" ""
 
 otp_send_unlisted_origin="$(php_run <<'PHP'
 <?php
@@ -171,6 +170,10 @@ include getcwd() . '/api/hotspot/otp_send.php';
 PHP
 )"
 assert_contains "otp_send_rejects_unlisted_subdomain" "$otp_send_unlisted_origin" '"error":"origin_not_allowed"'
+
+referral_token_consume_block="$(awk '/function referrals_consume_signup_token/,/^}/' pay-portal/lib/referrals.php)"
+assert_not_contains "referral_consume_token_no_reused_now_placeholder" "$referral_token_consume_block" 'expires_at>=:now'
+assert_contains "referral_consume_token_distinct_expiry_placeholder" "$referral_token_consume_block" 'expires_at>=:expires_now'
 
 change_password_fallback="$(php_run <<'PHP'
 <?php

@@ -20,7 +20,7 @@ if (
   !$u ||
   !isset($u['scheme'], $u['host']) ||
   !in_array($scheme, ['http', 'https'], true) ||
-  !in_array((string)$u['host'], ['wifi.nister.org', '192.168.88.1'], true)
+  !in_array((string)$u['host'], ['wifi.nister.org', '192.168.88.1', '192.168.80.1', '10.10.20.2'], true)
 ) {
   $linkLoginOnly = $defaultLogin;
 }

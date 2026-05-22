@@ -484,12 +484,14 @@ function referrals_consume_signup_token(string $rawMsisdn, string $token): bool 
   if ($msisdn === '' || !preg_match('/^[a-f0-9]{64}$/', $token)) return false;
   $st = $PDO->prepare(
     "UPDATE signup_otp_sessions
-     SET consumed_at=:now
+     SET consumed_at=:consume_now
      WHERE token=:t AND msisdn=:m
-       AND consumed_at IS NULL AND expires_at>=:now"
+       AND consumed_at IS NULL AND expires_at>=:expires_now"
   );
+  $now = referrals_now_sql();
   $st->execute([
-    ':now'=>referrals_now_sql(),
+    ':consume_now'=>$now,
+    ':expires_now'=>$now,
     ':t'=>$token,
     ':m'=>$msisdn,
   ]);

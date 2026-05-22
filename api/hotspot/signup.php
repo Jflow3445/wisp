@@ -18,6 +18,7 @@ try {
 } catch (Throwable $e) {
   error_log('Signup bootstrap error: ' . $e->getMessage());
 }
+$APP_PDO = (isset($GLOBALS['PDO']) && $GLOBALS['PDO'] instanceof PDO) ? $GLOBALS['PDO'] : null;
 
 function portal_base_from_link(string $link, string $fallback): string {
   $u = parse_url($link);
@@ -27,6 +28,8 @@ function portal_base_from_link(string $link, string $fallback): string {
   $allowed = [
     'wifi.nister.org' => ['https'],
     '192.168.88.1' => ['http', 'https'],
+    '192.168.80.1' => ['http', 'https'],
+    '10.10.20.2' => ['http', 'https'],
   ];
   if (!isset($allowed[$host]) || !in_array($scheme, $allowed[$host], true)) return $fallback;
   $base = $scheme . '://' . $u['host'];
@@ -253,18 +256,14 @@ if ($referralCode !== '') {
 header('Cache-Control: no-store');
 
 try {
+  $appPdo = (isset($APP_PDO) && $APP_PDO instanceof PDO) ? $APP_PDO : null;
+  if (!$appPdo) {
+    fail('server_error', $username, $dst, $name);
+  }
   $pdo = hotspot_radius_pdo();
-  $GLOBALS['PDO'] = $pdo;
-  if (function_exists('referrals_bootstrap_tables')) {
-    referrals_bootstrap_tables();
-  }
-  $pdo->beginTransaction();
-  if (!referrals_consume_signup_token($username, $otpToken)) {
-    if ($pdo->inTransaction()) { $pdo->rollBack(); }
-    fail('otp_invalid_or_expired', $username, $dst, $name);
-  }
-
   $targets = array_values(array_unique(array_filter(array_merge([$username], username_variants($username)))));
+
+  $pdo->beginTransaction();
 
   if ($ENFORCE_UNIQUE) {
     $check = $pdo->prepare("SELECT username FROM radcheck WHERE username = ? AND attribute = 'Cleartext-Password' LIMIT 1");
@@ -276,6 +275,16 @@ try {
       }
     }
   }
+
+  $GLOBALS['PDO'] = $appPdo;
+  if (function_exists('referrals_bootstrap_tables')) {
+    referrals_bootstrap_tables();
+  }
+  if (!referrals_consume_signup_token($username, $otpToken)) {
+    if ($pdo->inTransaction()) { $pdo->rollBack(); }
+    fail('otp_invalid_or_expired', $username, $dst, $name);
+  }
+  $GLOBALS['PDO'] = $pdo;
 
   $expAt = (new DateTimeImmutable('now', new DateTimeZone('UTC')))
     ->modify('+' . (int)$DEFAULT_EXP_DAYS . ' days')
@@ -330,6 +339,10 @@ try {
   if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }
   error_log('Signup error for '.$username.': '.$e->getMessage());
   fail('server_error', $username, $dst, $name);
+}
+
+if (isset($APP_PDO) && $APP_PDO instanceof PDO) {
+  $GLOBALS['PDO'] = $APP_PDO;
 }
 
 if (function_exists('referrals_ensure_profile')) {
