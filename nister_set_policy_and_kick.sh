@@ -255,27 +255,47 @@ for row in "${rows[@]}"; do
     continue
   fi
 
-  payload_lines=()
+  coa_users=("$SESS_USER")
   u_coa="$(msisdn_local "$SESS_USER")"
-  [[ -z "${u_coa:-}" ]] && u_coa="$SESS_USER"
-  payload_lines+=("User-Name = \"${u_coa}\"")
-  [[ -n "${ACCTSID_SAFE:-}" ]] && payload_lines+=("Acct-Session-Id = \"${ACCTSID_SAFE}\"")
-  if is_valid_ipv4 "${FRAMEDIP:-}"; then
-    payload_lines+=("Framed-IP-Address = ${FRAMEDIP}")
+  [[ -n "${u_coa:-}" ]] && coa_users+=("$u_coa")
+  if [[ "$SESS_USER" =~ ^0[0-9]{9}$ ]]; then
+    coa_users+=("233${SESS_USER:1}")
   fi
-  if is_valid_mac "${CALLINGSTATIONID:-}"; then
-    payload_lines+=("Calling-Station-Id = \"${CALLINGSTATIONID^^}\"")
-  fi
-  payload_lines+=("NAS-IP-Address = ${NAS_TARGET}")
-  payload_lines+=("Message-Authenticator = 0x00")
-  payload="$(printf '%s\n' "${payload_lines[@]}")"
 
-  out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$COA_SECRET_FILE_RUNTIME" "${NAS_TARGET}:${COA_PORT}" disconnect 2>&1 || true)"
-  if echo "$out" | grep -q "Disconnect-ACK"; then
+  sent_ok=0
+  tried_users=()
+  last_out=""
+  for u_coa in "${coa_users[@]}"; do
+    [[ -n "${u_coa:-}" ]] || continue
+    [[ " ${tried_users[*]} " == *" ${u_coa} "* ]] && continue
+    tried_users+=("$u_coa")
+
+    payload_lines=()
+    payload_lines+=("User-Name = \"${u_coa}\"")
+    [[ -n "${ACCTSID_SAFE:-}" ]] && payload_lines+=("Acct-Session-Id = \"${ACCTSID_SAFE}\"")
+    if is_valid_ipv4 "${FRAMEDIP:-}"; then
+      payload_lines+=("Framed-IP-Address = ${FRAMEDIP}")
+    fi
+    if is_valid_mac "${CALLINGSTATIONID:-}"; then
+      payload_lines+=("Calling-Station-Id = \"${CALLINGSTATIONID^^}\"")
+    fi
+    payload_lines+=("NAS-IP-Address = ${NAS_TARGET}")
+    payload_lines+=("Message-Authenticator = 0x00")
+    payload="$(printf '%s\n' "${payload_lines[@]}")"
+
+    out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$COA_SECRET_FILE_RUNTIME" "${NAS_TARGET}:${COA_PORT}" disconnect 2>&1 || true)"
+    last_out="$out"
+    if echo "$out" | grep -q "Disconnect-ACK"; then
+      sent_ok=1
+      break
+    fi
+  done
+
+  if (( sent_ok == 1 )); then
     (( ok++ ))
   else
     (( fail++ ))
-    alert "COA_FAIL user=$SESS_USER target=${NAS_TARGET}:${COA_PORT} sid=${ACCTSID_SAFE:-na} ip=${FRAMEDIP:-na} mac=${CALLINGSTATIONID:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 300)"
+    alert "COA_FAIL user=$SESS_USER target=${NAS_TARGET}:${COA_PORT} coa_users=${tried_users[*]:-na} sid=${ACCTSID_SAFE:-na} ip=${FRAMEDIP:-na} mac=${CALLINGSTATIONID:-na} out=$(echo "$last_out" | tr '\n' ' ' | head -c 300)"
   fi
 done
 

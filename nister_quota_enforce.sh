@@ -627,30 +627,44 @@ monotonic_used(){
 
 send_disconnect(){
   local u="$1" nas="$2" sid="${3:-}" ip="${4:-}" mac="${5:-}"
-  local sid_safe payload payload_lines out u_coa
+  local sid_safe payload payload_lines out u_coa last_out="" candidate
+  local -a coa_users tried_users
 
   sid_safe="$(echo "${sid:-}" | tr -cd 'A-Za-z0-9._:-')"
-  u_coa="$(msisdn_local "${u}")"
-  [[ -z "${u_coa:-}" ]] && u_coa="$u"
+  coa_users=("$u")
+  candidate="$(msisdn_local "${u}")"
+  [[ -n "${candidate:-}" ]] && coa_users+=("$candidate")
+  if [[ "$u" =~ ^0[0-9]{9}$ ]]; then
+    coa_users+=("233${u:1}")
+  fi
 
-  payload_lines=()
-  payload_lines+=("User-Name = \"${u_coa}\"")
-  [[ -n "$sid_safe" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
-  if is_valid_ipv4 "${ip:-}"; then
-    payload_lines+=("Framed-IP-Address = ${ip}")
-  fi
-  if is_valid_mac "${mac:-}"; then
-    payload_lines+=("Calling-Station-Id = \"${mac^^}\"")
-  fi
-  payload_lines+=("NAS-IP-Address = ${nas}")
-  payload_lines+=("Message-Authenticator = 0x00")
-  payload="$(printf '%s\n' "${payload_lines[@]}")"
+  tried_users=()
+  for u_coa in "${coa_users[@]}"; do
+    [[ -n "${u_coa:-}" ]] || continue
+    [[ " ${tried_users[*]} " == *" ${u_coa} "* ]] && continue
+    tried_users+=("$u_coa")
 
-  out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$COA_SECRET_FILE_RUNTIME" "${nas}:${COA_PORT}" disconnect 2>&1 || true)"
-  if echo "$out" | grep -q "Disconnect-ACK"; then
-    return 0
-  fi
-  log "ERR user=$USER coa_disconnect_failed target=${nas}:${COA_PORT} sid=${sid_safe:-na} ip=${ip:-na} mac=${mac:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 300)"
+    payload_lines=()
+    payload_lines+=("User-Name = \"${u_coa}\"")
+    [[ -n "$sid_safe" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
+    if is_valid_ipv4 "${ip:-}"; then
+      payload_lines+=("Framed-IP-Address = ${ip}")
+    fi
+    if is_valid_mac "${mac:-}"; then
+      payload_lines+=("Calling-Station-Id = \"${mac^^}\"")
+    fi
+    payload_lines+=("NAS-IP-Address = ${nas}")
+    payload_lines+=("Message-Authenticator = 0x00")
+    payload="$(printf '%s\n' "${payload_lines[@]}")"
+
+    out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$COA_SECRET_FILE_RUNTIME" "${nas}:${COA_PORT}" disconnect 2>&1 || true)"
+    last_out="$out"
+    if echo "$out" | grep -q "Disconnect-ACK"; then
+      return 0
+    fi
+  done
+
+  log "ERR user=$USER coa_disconnect_failed target=${nas}:${COA_PORT} coa_users=${tried_users[*]:-na} sid=${sid_safe:-na} ip=${ip:-na} mac=${mac:-na} out=$(echo "$last_out" | tr '\n' ' ' | head -c 300)"
   return 1
 }
 

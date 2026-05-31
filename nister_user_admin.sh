@@ -374,6 +374,8 @@ kick_user(){
   (( ${#rows[@]} > 0 )) || { echo "[*] No active session found -> nothing to kick."; return 0; }
 
   local ok=0 fail=0 row u ip sid nas mac sid_safe payload payload_lines out
+  local u_coa candidate sent_ok last_out
+  local -a coa_users tried_users
   for row in "${rows[@]}"; do
     IFS=$'\t' read -r u ip sid nas mac <<<"$row"
     [[ -n "${u:-}" ]] || continue
@@ -388,28 +390,48 @@ kick_user(){
       continue
     fi
 
-    payload_lines=()
-    u_coa="$(msisdn_local "$u")"
-    [[ -z "${u_coa:-}" ]] && u_coa="$u"
-    payload_lines+=("User-Name = \"${u_coa}\"")
-    [[ -n "${sid_safe:-}" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
-    if is_valid_ipv4 "${ip:-}"; then
-      payload_lines+=("Framed-IP-Address = ${ip}")
-    fi
-    if is_valid_mac "${mac:-}"; then
-      payload_lines+=("Calling-Station-Id = \"${mac^^}\"")
-    fi
-    payload_lines+=("NAS-IP-Address = ${nas:-${NAS_IP}}")
-    payload_lines+=("Message-Authenticator = 0x00")
-    payload="$(printf '%s\n' "${payload_lines[@]}")"
-
     echo "[*] Kicking user=$u ip=${ip:-na} sid=${sid_safe:-na} mac=${mac:-na} via ${nas:-${NAS_IP}}:${COA_PORT}"
-    out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$coa_secret_file" "${nas:-${NAS_IP}}:${COA_PORT}" disconnect 2>&1 || true)"
-    if echo "$out" | grep -q "Disconnect-ACK"; then
+    coa_users=("$u")
+    candidate="$(msisdn_local "$u")"
+    [[ -n "${candidate:-}" ]] && coa_users+=("$candidate")
+    if [[ "$u" =~ ^0[0-9]{9}$ ]]; then
+      coa_users+=("233${u:1}")
+    fi
+
+    sent_ok=0
+    tried_users=()
+    last_out=""
+    for u_coa in "${coa_users[@]}"; do
+      [[ -n "${u_coa:-}" ]] || continue
+      [[ " ${tried_users[*]} " == *" ${u_coa} "* ]] && continue
+      tried_users+=("$u_coa")
+
+      payload_lines=()
+      payload_lines+=("User-Name = \"${u_coa}\"")
+      [[ -n "${sid_safe:-}" ]] && payload_lines+=("Acct-Session-Id = \"${sid_safe}\"")
+      if is_valid_ipv4 "${ip:-}"; then
+        payload_lines+=("Framed-IP-Address = ${ip}")
+      fi
+      if is_valid_mac "${mac:-}"; then
+        payload_lines+=("Calling-Station-Id = \"${mac^^}\"")
+      fi
+      payload_lines+=("NAS-IP-Address = ${nas:-${NAS_IP}}")
+      payload_lines+=("Message-Authenticator = 0x00")
+      payload="$(printf '%s\n' "${payload_lines[@]}")"
+
+      out="$(printf '%s' "$payload" | radclient -r 1 -t 3 -S "$coa_secret_file" "${nas:-${NAS_IP}}:${COA_PORT}" disconnect 2>&1 || true)"
+      last_out="$out"
+      if echo "$out" | grep -q "Disconnect-ACK"; then
+        sent_ok=1
+        break
+      fi
+    done
+
+    if (( sent_ok == 1 )); then
       ((ok+=1))
     else
       ((fail+=1))
-      echo "[*] CoA failed user=$u sid=${sid_safe:-na} ip=${ip:-na} mac=${mac:-na} out=$(echo "$out" | tr '\n' ' ' | head -c 220)"
+      echo "[*] CoA failed user=$u coa_users=${tried_users[*]:-na} sid=${sid_safe:-na} ip=${ip:-na} mac=${mac:-na} out=$(echo "$last_out" | tr '\n' ' ' | head -c 220)"
     fi
   done
   echo "[*] kick done: ok=$ok fail=$fail"

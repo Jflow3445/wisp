@@ -51,8 +51,8 @@ if ($radiusUser !== '' && $radiusPass !== '' && $radiusSecret !== '') {
 }
 
 // ---- Tunnel route + ping ----
-$tunnelHost = (string)($ENV['HEALTH_TUNNEL_HOST'] ?? '10.10.20.4');
-$tunnelExpectedDevRaw = (string)($ENV['HEALTH_TUNNEL_DEV'] ?? 'ppp0');
+$tunnelHost = (string)($ENV['HEALTH_TUNNEL_HOST'] ?? '10.10.20.2');
+$tunnelExpectedDevRaw = (string)($ENV['HEALTH_TUNNEL_DEV'] ?? 'ppp0,ppp1');
 $tunnelAllowedDevs = [];
 if ($tunnelExpectedDevRaw !== '') {
   foreach (preg_split('/[,\s]+/', $tunnelExpectedDevRaw, -1, PREG_SPLIT_NO_EMPTY) as $dev) {
@@ -99,7 +99,7 @@ if ($routeDev !== null) {
 $coaOk = null;
 $coaMs = null;
 $coaNote = '';
-$coaNas = (string)($ENV['COA_HOST'] ?? '10.10.20.4');
+$coaNas = (string)($ENV['COA_HOST'] ?? '10.10.20.2');
 $coaPort = (string)($ENV['COA_PORT'] ?? '3799');
 $coaSecretFile = (string)($ENV['COA_SECRET_FILE'] ?? '/etc/nister/coa_secret');
 $coaSecret = is_readable($coaSecretFile) ? trim((string)file_get_contents($coaSecretFile)) : '';

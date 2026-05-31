@@ -60,8 +60,12 @@
     var loginCandidates = [];
     var loginAttempts = [];
     var loginAttempt = 0;
+    var loginAttemptStartedAt = 0;
     var loginRawPassword = '';
     var topLevelFallbackTried = false;
+    var LOGIN_ATTEMPT_WAIT_MS = 3500;
+    var LOGIN_FINAL_WAIT_MS = 6500;
+    var LOGIN_TOTAL_TIMEOUT_MS = 24000;
 
     function usernameCandidates(raw){
       var base = (raw || '').trim();
@@ -141,6 +145,7 @@
       loginCandidates = [];
       loginAttempts = [];
       loginAttempt = 0;
+      loginAttemptStartedAt = 0;
       loginRawPassword = '';
       showBanner('err', text || 'Phone number or password is incorrect. Please try again.');
     }
@@ -181,11 +186,32 @@
 
     function maybeTryNextCandidate(){
       if (!loginPending) return false;
+      if ((Date.now() - (loginAttemptStartedAt || loginStartAt)) < LOGIN_ATTEMPT_WAIT_MS) return false;
       if (!Array.isArray(loginAttempts) || loginAttempts.length <= 1) return false;
       if (loginAttempt >= loginAttempts.length - 1) return false;
       loginAttempt += 1;
       submitLoginAttempt();
       return true;
+    }
+
+    function isFinalLoginAttempt(){
+      return Array.isArray(loginAttempts) && loginAttempts.length > 0 &&
+        loginAttempt >= loginAttempts.length - 1;
+    }
+
+    function handlePendingLoginProgress(){
+      if (maybeTryNextCandidate()) return;
+      var attemptElapsed = Date.now() - (loginAttemptStartedAt || loginStartAt);
+      if (isFinalLoginAttempt() && attemptElapsed > LOGIN_FINAL_WAIT_MS){
+        handleLoginError('Phone number or password is incorrect. Please check your details and try again.');
+        return;
+      }
+      if ((Date.now() - loginStartAt) > LOGIN_TOTAL_TIMEOUT_MS){
+        if (!topLevelFallbackTried && tryTopLevelLoginFallback()) return;
+        handleLoginError('The login server did not respond. Please try again.');
+        return;
+      }
+      scheduleLoginCheck();
     }
 
     function readAuthFrameResult(){
@@ -241,43 +267,16 @@
             }
           }catch(_){}
         }
-        var elapsed = Date.now() - loginStartAt;
-        if (elapsed > 6000 && maybeTryNextCandidate()){
-          return;
-        }
-        if (elapsed > 18000){
-          if (tryTopLevelLoginFallback()) return;
-          handleLoginError('We could not verify your login. Please try again.');
-        } else {
-          scheduleLoginCheck();
-        }
+        handlePendingLoginProgress();
       };
       xhr.ontimeout = function(){
-        var elapsed = Date.now() - loginStartAt;
-        if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
-        if (elapsed > 18000){
-          if (tryTopLevelLoginFallback()) return;
-          handleLoginError('We could not verify your login. Please try again.');
-        }
-        else { scheduleLoginCheck(); }
+        handlePendingLoginProgress();
       };
       xhr.onerror = function(){
-        var elapsed = Date.now() - loginStartAt;
-        if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
-        if (elapsed > 18000){
-          if (tryTopLevelLoginFallback()) return;
-          handleLoginError('We could not verify your login. Please try again.');
-        }
-        else { scheduleLoginCheck(); }
+        handlePendingLoginProgress();
       };
       try { xhr.send(); } catch(_){
-        var elapsed = Date.now() - loginStartAt;
-        if (elapsed > 6000 && maybeTryNextCandidate()){ return; }
-        if (elapsed > 18000){
-          if (tryTopLevelLoginFallback()) return;
-          handleLoginError('We could not verify your login. Please try again.');
-        }
-        else { scheduleLoginCheck(); }
+        handlePendingLoginProgress();
       }
     }
 
@@ -287,7 +286,10 @@
       var attempt = loginAttempts[loginAttempt] || null;
       var u = attempt && attempt.username ? attempt.username : '';
       if (!u) { handleLoginError('Please enter both username and password.'); return; }
+      loginAttemptStartedAt = Date.now();
       f.username.value = u;
+      f.target = isFinalLoginAttempt() ? '_top' : 'authframe';
+      if (isFinalLoginAttempt()) topLevelFallbackTried = true;
 
       var chap = chapContext();
       var mode = attempt && attempt.mode ? attempt.mode : 'pap';
@@ -304,7 +306,9 @@
         f.password.value = loginRawPassword;
       }
 
-      if (loginAttempt > 0 && mode === 'pap') {
+      if (isFinalLoginAttempt()) {
+        showBanner('success','Checking credentials with the router...');
+      } else if (loginAttempt > 0 && mode === 'pap') {
         showBanner('success','Retrying login using secure HTTPS password mode...');
       } else if (loginAttempt > 0) {
         showBanner('success','Trying another login variant...');
@@ -355,6 +359,7 @@
       loginCandidates = usernameCandidates(u);
       loginAttempts = buildLoginAttempts(loginCandidates);
       loginAttempt = 0;
+      loginAttemptStartedAt = 0;
       loginRawPassword = p;
       topLevelFallbackTried = false;
       if (!loginCandidates.length || !loginAttempts.length) {

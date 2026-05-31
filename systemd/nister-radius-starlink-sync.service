@@ -1,0 +1,13 @@
+[Unit]
+Description=NISTER sync Starlink public RADIUS client
+After=network-online.target strongswan-starter.service freeradius.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/etc/freeradius/3.0 /tmp
+ExecStart=/usr/local/sbin/nister_radius_starlink_sync.sh

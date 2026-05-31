@@ -83,7 +83,15 @@ EOS
 exit 0
 EOS
 
-  chmod +x "$bin_dir/ip" "$bin_dir/systemctl" "$bin_dir/logger" "$bin_dir/sleep"
+  cat >"$bin_dir/timeout" <<'EOS'
+#!/usr/bin/env bash
+if [[ "${TCP_PROBE_OK:-1}" == "1" ]]; then
+  exit 0
+fi
+exit 1
+EOS
+
+  chmod +x "$bin_dir/ip" "$bin_dir/systemctl" "$bin_dir/logger" "$bin_dir/sleep" "$bin_dir/timeout"
 }
 
 run_watchdog_down_path() {
@@ -103,6 +111,7 @@ run_watchdog_down_path() {
     export RESTART_WINDOW_SEC="900"
     export MAX_RESTARTS_PER_WINDOW="3"
     export STILL_DOWN_EXIT_CODE="1"
+    export POST_RESTART_WAIT_SEC="0"
     export IP_ROUTE_DEV=""
     bash "$WATCHDOG_SCRIPT"
   ); then
@@ -185,7 +194,9 @@ test_healthy_path_repairs_route_and_service() {
     export LOG_DIR="$log_dir"
     export TARGET_IP="10.10.20.2"
     export REQUIRED_DEVS="ppp0,ppp1"
-    export REQUIRE_PING="0"
+    export PROBE_MODE="tcp"
+    export TCP_PORTS="22"
+    export TCP_PROBE_OK="1"
     export IP_ROUTE_DEV="ppp0"
     export IP_ROUTE_LINE=""
     export IP_LOG="$ip_log"

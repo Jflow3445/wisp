@@ -10,14 +10,21 @@ fi
 PING_COUNT="${PING_COUNT:-2}"
 PING_WAIT="${PING_WAIT:-1}"
 REQUIRE_PING="${REQUIRE_PING:-1}"
+PROBE_MODE="${PROBE_MODE:-}"
+TCP_PORTS="${TCP_PORTS:-22}"
+TCP_CONNECT_TIMEOUT="${TCP_CONNECT_TIMEOUT:-2}"
 COOLDOWN_SEC="${COOLDOWN_SEC:-300}"
 RESTART_WINDOW_SEC="${RESTART_WINDOW_SEC:-900}"
 MAX_RESTARTS_PER_WINDOW="${MAX_RESTARTS_PER_WINDOW:-3}"
 STILL_DOWN_EXIT_CODE="${STILL_DOWN_EXIT_CODE:-1}"
+POST_RESTART_WAIT_SEC="${POST_RESTART_WAIT_SEC:-60}"
+POST_RESTART_POLL_SEC="${POST_RESTART_POLL_SEC:-3}"
 ROUTER_LAN_CIDR="${ROUTER_LAN_CIDR:-192.168.88.0/24}"
 ROUTER_LAN_VIA="${ROUTER_LAN_VIA:-10.10.20.2}"
-ROUTER_LAN_DEV="${ROUTER_LAN_DEV:-ppp0}"
+ROUTER_LAN_DEV="${ROUTER_LAN_DEV:-}"
 RECOVERY_SERVICES="${RECOVERY_SERVICES:-unbound.service}"
+IPSEC_SERVICES="${IPSEC_SERVICES:-strongswan-starter}"
+L2TP_SERVICES="${L2TP_SERVICES:-xl2tpd}"
 
 STATE_FILE="${STATE_FILE:-/run/nister_tunnel_watchdog.state}"
 LOG_DIR="${LOG_DIR:-/var/log/nister}"
@@ -161,16 +168,79 @@ ping_ok() {
   ping -c "$PING_COUNT" -W "$PING_WAIT" "$TARGET_IP" >/dev/null 2>&1
 }
 
-ensure_recovery_helpers() {
-  local route_line services service
+parse_tcp_ports() {
+  local raw="${TCP_PORTS// /,}"
+  local port
+  TCP_PORTS_LIST=()
+  IFS=',' read -r -a _tcp_ports <<<"$raw"
+  for port in "${_tcp_ports[@]}"; do
+    port="${port//[[:space:]]/}"
+    [[ -n "$port" ]] || continue
+    if [[ "$port" =~ ^[0-9]+$ ]] && ((10#$port >= 1 && 10#$port <= 65535)); then
+      TCP_PORTS_LIST+=("$((10#$port))")
+    else
+      log "config=ignored key=TCP_PORTS invalid_port=$port"
+    fi
+  done
+  if [[ "${#TCP_PORTS_LIST[@]}" -eq 0 ]]; then
+    TCP_PORTS_LIST=(22)
+    log "config=defaulted key=TCP_PORTS value=22"
+  fi
+}
 
-  if [[ -n "$ROUTER_LAN_CIDR" && -n "$ROUTER_LAN_VIA" && -n "$ROUTER_LAN_DEV" ]]; then
+tcp_port_ok() {
+  local port="$1"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$TCP_CONNECT_TIMEOUT" bash -c ':</dev/tcp/$1/$2' _ "$TARGET_IP" "$port" >/dev/null 2>&1
+  else
+    bash -c ':</dev/tcp/$1/$2' _ "$TARGET_IP" "$port" >/dev/null 2>&1
+  fi
+}
+
+tcp_probe_ok() {
+  local port
+  for port in "${TCP_PORTS_LIST[@]}"; do
+    if tcp_port_ok "$port"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+probe_ok() {
+  case "$PROBE_MODE" in
+    none) return 0 ;;
+    ping) ping_ok ;;
+    tcp) tcp_probe_ok ;;
+    *) return 1 ;;
+  esac
+}
+
+probe_failed_reason() {
+  case "$PROBE_MODE" in
+    none) printf 'probe_disabled' ;;
+    ping) printf 'ping_failed' ;;
+    tcp) printf 'tcp_probe_failed' ;;
+    *) printf 'probe_mode_invalid' ;;
+  esac
+}
+
+ensure_recovery_helpers() {
+  local tunnel_dev="${1:-}"
+  local route_line services service
+  local router_lan_dev="$ROUTER_LAN_DEV"
+
+  if [[ -z "$router_lan_dev" ]]; then
+    router_lan_dev="$tunnel_dev"
+  fi
+
+  if [[ -n "$ROUTER_LAN_CIDR" && -n "$ROUTER_LAN_VIA" && -n "$router_lan_dev" ]]; then
     route_line="$(ip route show "$ROUTER_LAN_CIDR" 2>/dev/null | head -n 1 || true)"
-    if [[ "$route_line" != *"via $ROUTER_LAN_VIA dev $ROUTER_LAN_DEV"* ]]; then
-      if ip route replace "$ROUTER_LAN_CIDR" via "$ROUTER_LAN_VIA" dev "$ROUTER_LAN_DEV"; then
-        log "route=ensured cidr=$ROUTER_LAN_CIDR via=$ROUTER_LAN_VIA dev=$ROUTER_LAN_DEV"
+    if [[ "$route_line" != *"via $ROUTER_LAN_VIA dev $router_lan_dev"* ]]; then
+      if ip route replace "$ROUTER_LAN_CIDR" via "$ROUTER_LAN_VIA" dev "$router_lan_dev"; then
+        log "route=ensured cidr=$ROUTER_LAN_CIDR via=$ROUTER_LAN_VIA dev=$router_lan_dev"
       else
-        log "route=ensure_failed cidr=$ROUTER_LAN_CIDR via=$ROUTER_LAN_VIA dev=$ROUTER_LAN_DEV"
+        log "route=ensure_failed cidr=$ROUTER_LAN_CIDR via=$ROUTER_LAN_VIA dev=$router_lan_dev"
       fi
     fi
   fi
@@ -186,6 +256,24 @@ ensure_recovery_helpers() {
       else
         log "service=start_failed name=$service"
       fi
+    fi
+  done
+}
+
+restart_service_list() {
+  local label="$1"
+  local services_raw="$2"
+  local service
+
+  services_raw="${services_raw// /,}"
+  IFS=',' read -r -a _restart_services <<<"$services_raw"
+  for service in "${_restart_services[@]}"; do
+    service="${service//[[:space:]]/}"
+    [[ -n "$service" ]] || continue
+    if systemctl restart "$service"; then
+      log "service=restarted group=$label name=$service"
+    else
+      log "service=restart_failed group=$label name=$service"
     fi
   done
 }
@@ -223,22 +311,49 @@ if [[ "${REQUIRE_PING}" != "0" && "${REQUIRE_PING}" != "1" ]]; then
   REQUIRE_PING=1
   log "config=defaulted key=REQUIRE_PING value=$REQUIRE_PING"
 fi
+if [[ -z "$PROBE_MODE" ]]; then
+  if [[ "$REQUIRE_PING" == "1" ]]; then
+    PROBE_MODE="ping"
+  else
+    PROBE_MODE="none"
+  fi
+fi
+if [[ "$PROBE_MODE" != "none" && "$PROBE_MODE" != "ping" && "$PROBE_MODE" != "tcp" ]]; then
+  PROBE_MODE="ping"
+  log "config=defaulted key=PROBE_MODE value=$PROBE_MODE"
+fi
+if ! normalize_uint_or_default TCP_CONNECT_TIMEOUT 2; then
+  log "config=defaulted key=TCP_CONNECT_TIMEOUT value=$TCP_CONNECT_TIMEOUT"
+fi
 if ! normalize_uint_or_default STILL_DOWN_EXIT_CODE 1; then
   log "config=defaulted key=STILL_DOWN_EXIT_CODE value=$STILL_DOWN_EXIT_CODE"
+fi
+if ! normalize_uint_or_default POST_RESTART_WAIT_SEC 60; then
+  log "config=defaulted key=POST_RESTART_WAIT_SEC value=$POST_RESTART_WAIT_SEC"
+fi
+if ! normalize_uint_or_default POST_RESTART_POLL_SEC 3; then
+  log "config=defaulted key=POST_RESTART_POLL_SEC value=$POST_RESTART_POLL_SEC"
+fi
+if (( POST_RESTART_POLL_SEC < 1 )); then
+  POST_RESTART_POLL_SEC=1
+  log "config=defaulted key=POST_RESTART_POLL_SEC value=$POST_RESTART_POLL_SEC"
+fi
+if [[ "$PROBE_MODE" == "tcp" ]]; then
+  parse_tcp_ports
 fi
 
 now_epoch="$(date +%s)"
 rd="$(route_dev || true)"
 
 if route_dev_ok "$rd"; then
-  if [[ "$REQUIRE_PING" == "1" ]] && ! ping_ok; then
-    log "status=down action=restart reason=ping_failed route_dev=$rd target=$TARGET_IP"
+  if ! probe_ok; then
+    log "status=down action=restart reason=$(probe_failed_reason) probe=$PROBE_MODE route_dev=$rd target=$TARGET_IP"
   else
     if [[ -f "$STATE_FILE" ]]; then
       rm -f "$STATE_FILE"
       log "status=recovered route_dev=$rd target=$TARGET_IP"
     fi
-    ensure_recovery_helpers
+    ensure_recovery_helpers "$rd"
     exit 0
   fi
 fi
@@ -274,17 +389,35 @@ if (( MAX_RESTARTS_PER_WINDOW > 0 )) && (( window_restarts >= MAX_RESTARTS_PER_W
 fi
 
 log "status=down action=restart route_dev=${rd:-none} target=$TARGET_IP"
-systemctl restart strongswan-starter
-systemctl restart xl2tpd
-sleep 4
+restart_service_list ipsec "$IPSEC_SERVICES"
+restart_service_list l2tp "$L2TP_SERVICES"
 
-rd_after="$(route_dev || true)"
+rd_after=""
+deadline_epoch=$((now_epoch + POST_RESTART_WAIT_SEC))
+while :; do
+  if (( POST_RESTART_WAIT_SEC > 0 )); then
+    sleep "$POST_RESTART_POLL_SEC"
+  fi
+  rd_after="$(route_dev || true)"
+  if route_dev_ok "$rd_after"; then
+    if probe_ok; then
+      rm -f "$STATE_FILE"
+      ensure_recovery_helpers "$rd_after"
+      log "status=up_after_restart route_dev=$rd_after target=$TARGET_IP"
+      exit 0
+    fi
+  fi
+  if (( POST_RESTART_WAIT_SEC <= 0 || $(date +%s) >= deadline_epoch )); then
+    break
+  fi
+done
+
 if route_dev_ok "$rd_after"; then
-  if [[ "$REQUIRE_PING" == "1" ]] && ! ping_ok; then
-    log "status=still_down reason=ping_failed_after_restart route_dev=${rd_after:-none} target=$TARGET_IP"
+  if ! probe_ok; then
+    log "status=still_down reason=$(probe_failed_reason)_after_restart probe=$PROBE_MODE route_dev=${rd_after:-none} target=$TARGET_IP"
   else
     rm -f "$STATE_FILE"
-    ensure_recovery_helpers
+    ensure_recovery_helpers "$rd_after"
     log "status=up_after_restart route_dev=$rd_after target=$TARGET_IP"
     exit 0
   fi
