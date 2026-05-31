@@ -783,10 +783,21 @@ function location_nas_delete(int $id): void {
   $st->execute([':id'=>$id]);
 }
 
+function location_is_loopback_ip(string $raw): bool {
+  $ip = trim($raw);
+  if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) return false;
+  if ($ip === '::1') return true;
+  if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+    return str_starts_with($ip, '127.');
+  }
+  return false;
+}
+
 function location_router_discovery_norm_ip(string $raw): string {
   $ip = trim($raw);
   if ($ip === '' || strpos($ip, '$(') !== false) return '';
   if (!filter_var($ip, FILTER_VALIDATE_IP)) return '';
+  if (location_is_loopback_ip($ip)) return '';
   return $ip;
 }
 
@@ -905,6 +916,11 @@ function location_discovery_list(?int $locationId = null, bool $onlyUnassigned =
   location_bootstrap();
   global $PDO;
   $limit = max(1, min(1000, $limit));
+  if ($onlyUnassigned) {
+    try {
+      location_router_discovery_reconcile_known();
+    } catch (Throwable $e) { /* non-fatal */ }
+  }
 
   $sql = "SELECT id, identity_key, nas_ip, exporter_ip, exporter_id, host_ip, router_ip_hint,
                  remote_addr, x_forwarded_for, link_login_only, source, status, note,
@@ -1107,6 +1123,101 @@ function location_router_discovery_mark_assigned(
   $st->execute($bind);
 }
 
+function location_router_discovery_reconcile_known(): void {
+  location_bootstrap();
+  global $PDO;
+
+  // Local app probes are not routers and should never appear as unassigned MikroTiks.
+  $PDO->exec(
+    "UPDATE location_router_discovery
+     SET status='ignored',
+         note=COALESCE(note, 'Ignored loopback router context'),
+         assigned_at=COALESCE(assigned_at, NOW())
+     WHERE status<>'ignored'
+       AND COALESCE(assigned_location_id,0)=0
+       AND (
+         nas_ip='::1' OR exporter_ip='::1' OR host_ip='::1' OR router_ip_hint='::1'
+         OR nas_ip LIKE '127.%'
+         OR exporter_ip LIKE '127.%'
+         OR host_ip LIKE '127.%'
+         OR router_ip_hint LIKE '127.%'
+       )
+       AND COALESCE(exporter_id,'')=''"
+  );
+
+  // If a discovery fingerprint already matches a router map, mark it assigned.
+  $PDO->exec(
+    "UPDATE location_router_discovery d
+     JOIN location_nas n
+       ON n.active=1
+      AND (
+        (COALESCE(d.nas_ip,'')<>'' AND d.nas_ip=n.nas_ip)
+        OR (COALESCE(d.exporter_ip,'')<>'' AND d.exporter_ip=n.exporter_ip)
+        OR (COALESCE(d.exporter_id,'')<>'' AND d.exporter_id=n.exporter_id)
+        OR (COALESCE(d.host_ip,'')<>'' AND d.host_ip=n.nas_ip)
+        OR (COALESCE(d.router_ip_hint,'')<>'' AND d.router_ip_hint=n.nas_ip)
+      )
+     JOIN locations l ON l.id=n.location_id AND l.active=1
+     SET d.status='assigned',
+         d.assigned_location_id=n.location_id,
+         d.assigned_mapping_id=n.id,
+         d.assigned_at=COALESCE(d.assigned_at, NOW())
+     WHERE d.status<>'ignored'
+       AND COALESCE(d.assigned_location_id,0)=0"
+  );
+}
+
+function location_resolve_assigned_discovery_context(array $ips, array $ids): ?array {
+  location_bootstrap();
+  global $PDO;
+
+  $ips = array_values(array_filter(array_unique(array_map(static function($v): string {
+    $ip = trim((string)$v);
+    return ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) && !location_is_loopback_ip($ip)) ? $ip : '';
+  }, $ips))));
+  $ids = array_values(array_filter(array_unique(array_map(static function($v): string {
+    $id = location_router_discovery_norm_id((string)$v);
+    return $id;
+  }, $ids))));
+  if (!$ips && !$ids) return null;
+
+  $conds = [];
+  $params = [];
+  if ($ids) {
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $conds[] = "d.exporter_id IN ({$ph})";
+    array_push($params, ...$ids);
+  }
+  if ($ips) {
+    $ph = implode(',', array_fill(0, count($ips), '?'));
+    $conds[] = "(d.nas_ip IN ({$ph}) OR d.exporter_ip IN ({$ph}) OR d.host_ip IN ({$ph}) OR d.router_ip_hint IN ({$ph}))";
+    array_push($params, ...$ips, ...$ips, ...$ips, ...$ips);
+  }
+  if (!$conds) return null;
+
+  $sql = "SELECT l.id, l.code, l.name, l.active, d.assigned_mapping_id
+          FROM location_router_discovery d
+          JOIN locations l ON l.id=d.assigned_location_id
+          WHERE d.status='assigned'
+            AND COALESCE(d.assigned_location_id,0)>0
+            AND l.active=1
+            AND (" . implode(' OR ', $conds) . ")
+          ORDER BY d.last_seen_at DESC, d.id DESC
+          LIMIT 1";
+  $st = $PDO->prepare($sql);
+  $st->execute($params);
+  $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+  if (!$row) return null;
+
+  return [
+    'id' => (int)($row['id'] ?? 0),
+    'code' => (string)($row['code'] ?? ''),
+    'name' => (string)($row['name'] ?? ''),
+    'active' => (int)($row['active'] ?? 0),
+    'mapping_id' => (int)($row['assigned_mapping_id'] ?? 0),
+  ];
+}
+
 function location_is_private_or_reserved_ip(string $raw): bool {
   $ip = trim($raw);
   if ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP)) return false;
@@ -1132,6 +1243,7 @@ function location_resolve_from_router_context(array $in = []): ?array {
     $ip = trim((string)$raw);
     if ($ip === '' || strpos($ip, '$(') !== false) return;
     if (!filter_var($ip, FILTER_VALIDATE_IP)) return;
+    if (location_is_loopback_ip($ip)) return;
     $ipCands[$ip] = true;
   };
   $addId = static function(string $raw) use (&$idCands): void {
@@ -1282,6 +1394,16 @@ function location_resolve_from_router_context(array $in = []): ?array {
       } catch (Throwable $e) { /* non-fatal */ }
       return $m;
     }
+  }
+
+  $m = location_resolve_assigned_discovery_context($ips, $ids);
+  if ($m) {
+    try {
+      $mid = (int)($m['mapping_id'] ?? 0);
+      location_router_discovery_mark_assigned((int)($m['id'] ?? 0), $primaryNas, $primaryExporterIp, $primaryExporterId, $mid > 0 ? $mid : null, null);
+    } catch (Throwable $e) { /* non-fatal */ }
+    unset($m['mapping_id']);
+    return $m;
   }
 
   return null;

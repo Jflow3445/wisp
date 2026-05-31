@@ -924,6 +924,68 @@ $ADMIN_CSRF = admin_csrf_token();
   </div>
   <div class="card" data-section="forensics">
     <div class="section-head">
+      <h2>Starlink Daily Usage Check</h2>
+      <div class="muted">UTC day totals from MikroTik NetFlow.</div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="flow_day_date">Starlink date (UTC)</label>
+        <input id="flow_day_date" type="date">
+      </div>
+      <div class="field">
+        <label for="flow_day_starlink_gb">Starlink reported GB</label>
+        <input id="flow_day_starlink_gb" type="text" placeholder="6.7">
+      </div>
+      <div class="field">
+        <label for="flow_day_lag">Today lag minutes</label>
+        <input id="flow_day_lag" type="number" min="0" max="180" step="1" value="10">
+      </div>
+    </div>
+    <div class="tool-actions">
+      <button class="btn approve" id="flow_day_run" type="button">Calculate Daily Usage</button>
+    </div>
+    <div class="grid tight" style="margin-top:10px">
+      <div class="kpi compact">
+        <div class="label">All users combined</div>
+        <div class="value" id="flow_day_user_total">-</div>
+        <div class="muted" id="flow_day_user_total_meta">-</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Download</div>
+        <div class="value" id="flow_day_download">-</div>
+        <div class="muted">WAN to users</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Upload</div>
+        <div class="value" id="flow_day_upload">-</div>
+        <div class="muted">Users to WAN</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Router/control</div>
+        <div class="value" id="flow_day_router">-</div>
+        <div class="muted">Not user browsing</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">WAN total seen</div>
+        <div class="value" id="flow_day_wan_total">-</div>
+        <div class="muted">Users + router/control</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Starlink gap</div>
+        <div class="value" id="flow_day_gap">-</div>
+        <div class="muted" id="flow_day_gap_meta">Enter Starlink GB</div>
+      </div>
+      <div class="kpi compact">
+        <div class="label">Capture coverage</div>
+        <div class="value" id="flow_day_coverage">-</div>
+        <div class="muted" id="flow_day_coverage_meta">-</div>
+      </div>
+    </div>
+    <div class="meta" id="flow_day_window">Window: -</div>
+    <div class="note" id="flow_day_status">Choose the Starlink date and calculate.</div>
+  </div>
+  <div class="card" data-section="forensics">
+    <div class="section-head">
       <h2>Traffic Forensics Export</h2>
       <div class="muted">Export destination IP evidence for legal investigations (all users or per user).</div>
     </div>
@@ -1234,6 +1296,107 @@ function initFlowWindowDefaults(){
   const from = new Date(now.getTime() - (60 * 60 * 1000));
   fromEl.value = toDatetimeLocalValue(from);
   toEl.value = toDatetimeLocalValue(now);
+}
+
+function utcDateValue(d){
+  const pad = (n)=>String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+}
+
+function initFlowDayDefaults(){
+  const dateEl = document.getElementById('flow_day_date');
+  if (dateEl && !dateEl.value) dateEl.value = utcDateValue(new Date());
+  const lagEl = document.getElementById('flow_day_lag');
+  if (lagEl && !lagEl.value) lagEl.value = '10';
+}
+
+function setFlowDayStatus(msg, state){
+  const el = document.getElementById('flow_day_status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error','success');
+  if (state === 'error') el.classList.add('error');
+  if (state === 'success') el.classList.add('success');
+}
+
+function fmtDecimalGB(bytes){
+  if (bytes === null || bytes === undefined) return '-';
+  const n = Number(bytes);
+  if (!isFinite(n)) return '-';
+  return `${(n / 1000000000).toFixed(3)} GB`;
+}
+
+function parseStarlinkGbInput(){
+  const raw = toolValue('flow_day_starlink_gb');
+  if (!raw) return null;
+  const n = Number(String(raw).replace(/[^\d.]/g, ''));
+  if (!isFinite(n) || n < 0) return null;
+  return n;
+}
+
+function setText(id, text){
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+async function loadFlowDailyUsage(){
+  const date = toolValue('flow_day_date');
+  const lagRaw = toolValue('flow_day_lag');
+  if (!date){
+    setFlowDayStatus('Starlink date is required.', 'error');
+    return;
+  }
+  const lag = lagRaw === '' ? 10 : Math.max(0, Math.min(180, Number(lagRaw) || 0));
+  const btn = document.getElementById('flow_day_run');
+  if (btn) btn.disabled = true;
+  setFlowDayStatus('Calculating NetFlow daily total...');
+  try {
+    const j = await api('flow_daily_usage', { date, lag_minutes: lag });
+    if (!j.ok || !j.usage){
+      const msg = j.detail ? `${j.error}: ${j.detail}` : (j.error || 'daily usage failed');
+      setFlowDayStatus(msg, 'error');
+      return;
+    }
+    const u = j.usage;
+    const b = u.bytes || {};
+    setText('flow_day_user_total', fmtDecimalGB(b.user_total));
+    setText('flow_day_user_total_meta', fmtBytes(b.user_total));
+    setText('flow_day_download', fmtDecimalGB(b.user_download));
+    setText('flow_day_upload', fmtDecimalGB(b.user_upload));
+    setText('flow_day_router', fmtDecimalGB(b.router_total));
+    setText('flow_day_wan_total', fmtDecimalGB(b.wan_total));
+
+    const reportedGb = parseStarlinkGbInput();
+    if (reportedGb === null){
+      setText('flow_day_gap', '-');
+      setText('flow_day_gap_meta', 'Enter Starlink GB');
+    } else {
+      const userGb = Number(b.user_total || 0) / 1000000000;
+      const gap = reportedGb - userGb;
+      const pct = reportedGb > 0 ? (gap / reportedGb) * 100 : 0;
+      setText('flow_day_gap', `${gap >= 0 ? '+' : ''}${gap.toFixed(3)} GB`);
+      setText('flow_day_gap_meta', `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% vs user total`);
+    }
+
+    const cov = Number(u.capture_coverage || 0);
+    setText('flow_day_coverage', `${(cov * 100).toFixed(1)}%`);
+    setText('flow_day_coverage_meta', `${u.files_in_window || 0}/${u.expected_files || 0} files, ${u.nonempty_files_in_window || 0} non-empty`);
+
+    const live = !!u.is_live_day;
+    const liveNote = live ? ` | live day, ${u.starlink_lag_minutes || 0}m lag` : '';
+    const flowSpan = u.first_flow_utc && u.last_flow_utc ? ` | flows ${u.first_flow_utc} to ${u.last_flow_utc} UTC` : '';
+    setText('flow_day_window', `Window: ${u.from_utc} UTC to ${u.to_utc} UTC${liveNote}${flowSpan}`);
+
+    if (u.expected_files > 0 && cov < 0.95) {
+      setFlowDayStatus('Capture coverage is low, so this day may undercount real Starlink usage.', 'error');
+    } else {
+      setFlowDayStatus('Use “All users combined” as the user-side total to compare against Starlink’s UTC daily usage.', 'success');
+    }
+  } catch (err) {
+    setFlowDayStatus('Daily usage calculation failed.', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function loadWho(){
@@ -3110,6 +3273,7 @@ async function refreshAll(){
 document.addEventListener('DOMContentLoaded', async ()=>{
   initMenu();
   initFlowWindowDefaults();
+  initFlowDayDefaults();
   await refreshAll();
   const btn = document.getElementById('refresh_btn');
   if (btn) btn.addEventListener('click', refreshAll);
@@ -3122,6 +3286,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
   const flowRefreshBtn = document.getElementById('flow_refresh');
   if (flowRefreshBtn) flowRefreshBtn.addEventListener('click', loadFlowStatus);
+  const flowDayBtn = document.getElementById('flow_day_run');
+  if (flowDayBtn) flowDayBtn.addEventListener('click', loadFlowDailyUsage);
   const flowAllBtn = document.getElementById('flow_export_all');
   if (flowAllBtn) flowAllBtn.addEventListener('click', ()=>exportTraffic('mapped', false));
   const flowUserBtn = document.getElementById('flow_export_user');

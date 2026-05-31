@@ -18,6 +18,32 @@ function forensics_nfdump_bin(array $env): string {
   return $bin;
 }
 
+function forensics_env_int(array $env, string $key, int $default, int $min, int $max): int {
+  $raw = $env[$key] ?? getenv($key) ?? ($_ENV[$key] ?? null);
+  if ($raw === null || $raw === false || trim((string)$raw) === '') return $default;
+  $n = (int)$raw;
+  if ($n < $min) return $default;
+  if ($n > $max) return $max;
+  return $n;
+}
+
+function forensics_wan_ifindex(array $env): int {
+  return forensics_env_int($env, 'NETFLOW_WAN_IFINDEX', 1, 1, 2147483647);
+}
+
+function forensics_capture_interval_seconds(array $env): int {
+  return forensics_env_int($env, 'NETFLOW_INTERVAL', 300, 60, 3600);
+}
+
+function forensics_starlink_lag_minutes(array $env, ?int $override = null): int {
+  if ($override !== null) {
+    if ($override < 0) return 0;
+    if ($override > 180) return 180;
+    return $override;
+  }
+  return forensics_env_int($env, 'STARLINK_USAGE_LAG_MINUTES', 10, 0, 180);
+}
+
 function forensics_window_limit_hours(array $env): int {
   $n = (int)($env['FORENSICS_EXPORT_MAX_HOURS']
     ?? getenv('FORENSICS_EXPORT_MAX_HOURS')
@@ -60,6 +86,42 @@ function forensics_parse_utc_datetime(string $raw): ?DateTimeImmutable {
   } catch (Throwable $e) {
     return null;
   }
+}
+
+function forensics_parse_starlink_day(string $raw): ?DateTimeImmutable {
+  $raw = trim($raw);
+  $tz = new DateTimeZone('UTC');
+  if ($raw === '') {
+    return (new DateTimeImmutable('now', $tz))->setTime(0, 0, 0);
+  }
+  if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) return null;
+  $dt = DateTimeImmutable::createFromFormat('!Y-m-d', $raw, $tz);
+  if (!$dt instanceof DateTimeImmutable) return null;
+  return $dt->setTime(0, 0, 0);
+}
+
+function forensics_resolve_starlink_day_window(string $dateRaw, int $lagMinutes): array {
+  $day = forensics_parse_starlink_day($dateRaw);
+  if (!$day) {
+    return [null, null, null, false, 'date must be YYYY-MM-DD'];
+  }
+
+  $tz = new DateTimeZone('UTC');
+  $now = new DateTimeImmutable('now', $tz);
+  $next = $day->add(new DateInterval('P1D'));
+  if ($day > $now) {
+    return [null, null, null, false, 'date is in the future'];
+  }
+
+  $live = ($now >= $day && $now < $next);
+  $to = $next;
+  if ($live) {
+    $lag = max(0, min(180, $lagMinutes));
+    $to = $lag > 0 ? $now->sub(new DateInterval('PT'.$lag.'M')) : $now;
+    if ($to < $day) $to = $day;
+  }
+
+  return [$day, $to, $next, $live, null];
 }
 
 function forensics_resolve_window(string $fromRaw, string $toRaw, int $maxHours): array {
@@ -270,6 +332,10 @@ function forensics_csv_rows_from_file(string $nfdumpBin, string $file, callable 
         'flg' => $pick('flg'),
         'ipkt' => $pick('ipkt'),
         'ibyt' => $pick('ibyt'),
+        'opkt' => $pick('opkt'),
+        'obyt' => $pick('obyt'),
+        'in' => $pick('in'),
+        'out' => $pick('out'),
         'ra' => $pick('ra'),
         'exid' => $pick('exid'),
       ];
@@ -491,6 +557,252 @@ function forensics_stream_raw_csv($out, array $env, DateTimeImmutable $from, Dat
     'rows' => $rows,
     'row_limit' => $rowLimit,
     'netflow_dir' => $dir,
+    'location_id' => $locationId,
+  ];
+}
+
+function forensics_int_field($raw): int {
+  $s = trim((string)$raw);
+  if ($s === '') return 0;
+  if (!preg_match('/^-?\d+$/', $s)) return 0;
+  return (int)$s;
+}
+
+function forensics_decimal_gb(int $bytes): float {
+  return round($bytes / 1000000000, 3);
+}
+
+function forensics_gib(int $bytes): float {
+  return round($bytes / 1073741824, 3);
+}
+
+function forensics_prorated_flow_bytes(array $flow, int $fromTs, int $toTs): ?float {
+  $bytes = forensics_int_field($flow['ibyt'] ?? 0);
+  if ($bytes <= 0) return null;
+
+  $ts = strtotime((string)($flow['ts'] ?? '').' UTC');
+  $te = strtotime((string)($flow['te'] ?? '').' UTC');
+  if ($ts === false) return null;
+  if ($te === false) $te = $ts;
+  if ($te < $ts) $te = $ts;
+
+  if ($te <= $fromTs || $ts >= $toTs) return null;
+  if ($te === $ts) {
+    return ($ts >= $fromTs && $ts < $toTs) ? (float)$bytes : null;
+  }
+
+  $overlapStart = max($ts, $fromTs);
+  $overlapEnd = min($te, $toTs);
+  if ($overlapEnd <= $overlapStart) return null;
+
+  $duration = max(1, $te - $ts);
+  $ratio = ($overlapEnd - $overlapStart) / $duration;
+  if ($ratio <= 0) return null;
+  if ($ratio > 1) $ratio = 1;
+  return $bytes * $ratio;
+}
+
+function forensics_flow_dedupe_key(array $flow): string {
+  return implode('|', [
+    (string)($flow['ts'] ?? ''),
+    (string)($flow['te'] ?? ''),
+    (string)($flow['sa'] ?? ''),
+    (string)($flow['da'] ?? ''),
+    (string)($flow['sp'] ?? ''),
+    (string)($flow['dp'] ?? ''),
+    (string)($flow['pr'] ?? ''),
+    (string)($flow['ipkt'] ?? ''),
+    (string)($flow['ibyt'] ?? ''),
+  ]);
+}
+
+function forensics_daily_wan_usage(array $env, DateTimeImmutable $from, DateTimeImmutable $to, ?int $locationId = null): array {
+  $dir = forensics_netflow_dir($env);
+  $bin = forensics_nfdump_bin($env);
+  $wanIf = forensics_wan_ifindex($env);
+  $interval = forensics_capture_interval_seconds($env);
+  $files = forensics_list_capture_files($dir, $from, $to);
+  $exporterMap = ($locationId !== null && $locationId > 0) ? location_exporter_map($locationId) : [];
+
+  $fromTs = $from->getTimestamp();
+  $toTs = $to->getTimestamp();
+  $windowSeconds = max(0, $toTs - $fromTs);
+
+  $buckets = [];
+  $nonEmptyBuckets = [];
+  foreach ($files as $file) {
+    $parts = forensics_capture_name_parts(basename($file));
+    if ($parts === null) continue;
+    $ts = (int)$parts['ts'];
+    if ($ts < $fromTs || $ts >= $toTs) continue;
+    $bucket = (string)$parts['bucket'];
+    $buckets[$bucket] = true;
+    if (((int)@filesize($file)) > 300) $nonEmptyBuckets[$bucket] = true;
+  }
+
+  $expectedBuckets = $windowSeconds > 0 ? (int)ceil($windowSeconds / $interval) : 0;
+
+  $totals = [
+    'all_flows' => 0.0,
+    'non_wan' => 0.0,
+    'wan_total' => 0.0,
+    'wan_raw' => 0.0,
+    'wan_duplicate' => 0.0,
+    'user_download' => 0.0,
+    'user_upload' => 0.0,
+    'router_download' => 0.0,
+    'router_upload' => 0.0,
+    'wan_unknown' => 0.0,
+  ];
+  $rows = [
+    'total' => 0,
+    'wan' => 0,
+    'wan_dedup' => 0,
+    'user' => 0,
+    'router' => 0,
+    'duplicate' => 0,
+    'non_wan' => 0,
+    'site_unmatched' => 0,
+  ];
+  $firstTs = null;
+  $lastTs = null;
+  $forwardedKeys = [];
+  $zeroWanRows = [];
+
+  foreach ($files as $file) {
+    forensics_csv_rows_from_file($bin, $file, function(array $flow) use (
+      &$totals, &$rows, &$firstTs, &$lastTs, &$forwardedKeys, &$zeroWanRows,
+      $fromTs, $toTs, $wanIf, $locationId, $exporterMap
+    ): void {
+      $bytes = forensics_prorated_flow_bytes($flow, $fromTs, $toTs);
+      if ($bytes === null || $bytes <= 0) return;
+
+      if ($locationId !== null && $locationId > 0) {
+        $locMeta = location_resolve_by_exporter(
+          $exporterMap,
+          (string)($flow['ra'] ?? ''),
+          (string)($flow['exid'] ?? '')
+        );
+        if ((int)($locMeta['id'] ?? 0) !== $locationId) {
+          $rows['site_unmatched']++;
+          return;
+        }
+      }
+
+      $ts = strtotime((string)($flow['ts'] ?? '').' UTC');
+      $te = strtotime((string)($flow['te'] ?? '').' UTC');
+      if ($ts !== false) {
+        $effectiveStart = max((int)$ts, $fromTs);
+        $firstTs = ($firstTs === null) ? $effectiveStart : min($firstTs, $effectiveStart);
+        if ($te === false) $te = $ts;
+        if ($te < $ts) $te = $ts;
+        $effectiveEnd = min((int)$te, $toTs);
+        $lastTs = ($lastTs === null) ? $effectiveEnd : max($lastTs, $effectiveEnd);
+      }
+
+      $inIf = forensics_int_field($flow['in'] ?? 0);
+      $outIf = forensics_int_field($flow['out'] ?? 0);
+
+      $rows['total']++;
+      $totals['all_flows'] += $bytes;
+
+      $touchesWan = ($inIf === $wanIf || $outIf === $wanIf);
+      if (!$touchesWan) {
+        $rows['non_wan']++;
+        $totals['non_wan'] += $bytes;
+        return;
+      }
+
+      $rows['wan']++;
+      $totals['wan_raw'] += $bytes;
+
+      if ($inIf === $wanIf && $outIf > 0 && $outIf !== $wanIf) {
+        $rows['user']++;
+        $totals['user_download'] += $bytes;
+        $forwardedKeys[forensics_flow_dedupe_key($flow)] = true;
+      } elseif ($outIf === $wanIf && $inIf > 0 && $inIf !== $wanIf) {
+        $rows['user']++;
+        $totals['user_upload'] += $bytes;
+        $forwardedKeys[forensics_flow_dedupe_key($flow)] = true;
+      } elseif ($inIf === $wanIf && $outIf === 0) {
+        $zeroWanRows[] = ['key' => forensics_flow_dedupe_key($flow), 'bytes' => $bytes, 'dir' => 'download'];
+      } elseif ($outIf === $wanIf && $inIf === 0) {
+        $zeroWanRows[] = ['key' => forensics_flow_dedupe_key($flow), 'bytes' => $bytes, 'dir' => 'upload'];
+      } else {
+        $totals['wan_unknown'] += $bytes;
+      }
+    });
+  }
+
+  foreach ($zeroWanRows as $row) {
+    $bytes = (float)($row['bytes'] ?? 0.0);
+    if ($bytes <= 0) continue;
+    if (isset($forwardedKeys[(string)($row['key'] ?? '')])) {
+      $rows['duplicate']++;
+      $totals['wan_duplicate'] += $bytes;
+      continue;
+    }
+    $rows['router']++;
+    if (($row['dir'] ?? '') === 'upload') {
+      $totals['router_upload'] += $bytes;
+    } else {
+      $totals['router_download'] += $bytes;
+    }
+  }
+
+  $totals['wan_total'] =
+    $totals['user_download']
+    + $totals['user_upload']
+    + $totals['router_download']
+    + $totals['router_upload']
+    + $totals['wan_unknown'];
+  $rows['wan_dedup'] = $rows['wan'] - $rows['duplicate'];
+
+  $round = static function(float $v): int {
+    if ($v <= 0) return 0;
+    return (int)round($v);
+  };
+
+  $bytes = [
+    'all_flows' => $round($totals['all_flows']),
+    'non_wan' => $round($totals['non_wan']),
+    'wan_total' => $round($totals['wan_total']),
+    'wan_raw' => $round($totals['wan_raw']),
+    'wan_duplicate' => $round($totals['wan_duplicate']),
+    'user_download' => $round($totals['user_download']),
+    'user_upload' => $round($totals['user_upload']),
+    'router_download' => $round($totals['router_download']),
+    'router_upload' => $round($totals['router_upload']),
+    'wan_unknown' => $round($totals['wan_unknown']),
+  ];
+  $bytes['user_total'] = $bytes['user_download'] + $bytes['user_upload'];
+  $bytes['router_total'] = $bytes['router_download'] + $bytes['router_upload'];
+
+  $gb = [];
+  $gib = [];
+  foreach ($bytes as $k => $v) {
+    $gb[$k] = forensics_decimal_gb((int)$v);
+    $gib[$k] = forensics_gib((int)$v);
+  }
+
+  return [
+    'timezone' => 'UTC',
+    'from_utc' => $from->format('Y-m-d H:i:s'),
+    'to_utc' => $to->format('Y-m-d H:i:s'),
+    'window_seconds' => $windowSeconds,
+    'wan_ifindex' => $wanIf,
+    'capture_interval_seconds' => $interval,
+    'files_selected' => count($files),
+    'files_in_window' => count($buckets),
+    'nonempty_files_in_window' => count($nonEmptyBuckets),
+    'expected_files' => $expectedBuckets,
+    'capture_coverage' => $expectedBuckets > 0 ? round(count($buckets) / $expectedBuckets, 4) : 0.0,
+    'first_flow_utc' => $firstTs !== null ? gmdate('Y-m-d H:i:s', $firstTs) : null,
+    'last_flow_utc' => $lastTs !== null ? gmdate('Y-m-d H:i:s', $lastTs) : null,
+    'rows' => $rows,
+    'bytes' => $bytes,
+    'gb_decimal' => $gb,
+    'gib' => $gib,
     'location_id' => $locationId,
   ];
 }

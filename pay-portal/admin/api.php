@@ -927,6 +927,46 @@ try {
       break;
     }
 
+    case 'flow_daily_usage': {
+      try {
+        $scope = admin_location_scope($in, true);
+        if (!($scope['ok'] ?? false)) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>(string)($scope['error'] ?? 'invalid_location_scope')]);
+          break;
+        }
+        $locationId = isset($scope['location_id']) ? (int)($scope['location_id'] ?? 0) : 0;
+        if ($locationId <= 0) $locationId = null;
+
+        $lagRaw = $in['lag_minutes'] ?? ($_GET['lag_minutes'] ?? null);
+        $lagOverride = null;
+        if ($lagRaw !== null && trim((string)$lagRaw) !== '') {
+          $lagOverride = (int)$lagRaw;
+        }
+        $lagMinutes = forensics_starlink_lag_minutes(is_array($ENV) ? $ENV : [], $lagOverride);
+        [$from, $to, $dayEnd, $live, $err] = forensics_resolve_starlink_day_window(
+          (string)($in['date'] ?? ($_GET['date'] ?? '')),
+          $lagMinutes
+        );
+        if ($err !== null || !$from || !$to || !$dayEnd) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'bad_date','detail'=>$err]);
+          break;
+        }
+
+        $usage = forensics_daily_wan_usage(is_array($ENV) ? $ENV : [], $from, $to, $locationId);
+        $usage['date'] = $from->format('Y-m-d');
+        $usage['day_end_utc'] = $dayEnd->format('Y-m-d H:i:s');
+        $usage['is_live_day'] = $live;
+        $usage['starlink_lag_minutes'] = $live ? $lagMinutes : 0;
+        echo json_encode(['ok'=>true, 'usage'=>$usage]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'flow_daily_usage_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
     case 'user_state_list': {
       $r = rdb_pdo();
       if (function_exists('radius_normalize_legacy_nopaid')) {

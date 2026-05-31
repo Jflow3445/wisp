@@ -421,6 +421,19 @@
       buy.href = base + encodeURIComponent(u || '$(username)' || '');
     }
 
+    function updateResetLink(){
+      var u = (document.getElementById('user').value || '').trim();
+      var reset = document.getElementById('reset_link');
+      if (!reset) return;
+      var params = [];
+      if (u) params.push('username=' + encodeURIComponent(u));
+      var mac = '$(mac)';
+      if (mac && mac.indexOf('$(') === -1) params.push('mac=' + encodeURIComponent(mac));
+      var siteCode = detectSiteCode();
+      if (siteCode) params.push('location_code=' + encodeURIComponent(siteCode));
+      reset.href = 'reset-password.html' + (params.length ? ('?' + params.join('&')) : '');
+    }
+
     function redirectIfLoggedIn(){
       var loggedIn = '$(logged-in)';
       var status = '$(link-status)';
@@ -475,8 +488,12 @@
         if(ev.key === 'Enter'){ doLogin(ev); }
       });
 
-      document.getElementById('user').addEventListener('input', updateBuyLink);
+      document.getElementById('user').addEventListener('input', function(){
+        updateBuyLink();
+        updateResetLink();
+      });
       updateBuyLink();
+      updateResetLink();
       bindToggle('toggle_pass', 'pass');
     });
   </script>
@@ -532,6 +549,8 @@
         <div style="height:14px"></div>
 
         <button class="btn btn-primary btn-full" type="submit">Log in</button>
+        <div style="height:10px"></div>
+        <a class="btn btn-ghost btn-full" id="reset_link" href="reset-password.html">Reset password</a>
       </form>
 
       <hr>

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/_paylib.php';
+require_once __DIR__.'/_db.php';
 
 function hotspot_allowed_origins(): array {
   $raw = trim((string)(getenv('HOTSPOT_OTP_ALLOWED_ORIGINS') ?: ''));
@@ -71,6 +72,30 @@ function hotspot_client_ip(): string {
   return $remote;
 }
 
+function hotspot_otp_username_variants(string $u): array {
+  $d = preg_replace('/\D+/', '', $u);
+  if ($d === '') return [];
+  if (preg_match('/^233\d{9}$/', $d)) return array_values(array_unique([$d, '0' . substr($d, 3)]));
+  if (preg_match('/^0\d{9}$/', $d)) return array_values(array_unique([$d, '233' . substr($d, 1)]));
+  return [$d];
+}
+
+function hotspot_otp_account_exists(string $username): bool {
+  $variants = hotspot_otp_username_variants($username);
+  if (!$variants) return false;
+  $pdo = hotspot_radius_pdo();
+  $ph = implode(',', array_fill(0, count($variants), '?'));
+  $attrs = [
+    'Cleartext-Password','Password','Crypt-Password',
+    'MD5-Password','SHA-Password','SSHA-Password','SMD5-Password',
+    'NT-Password','LM-Password',
+  ];
+  $aph = implode(',', array_fill(0, count($attrs), '?'));
+  $st = $pdo->prepare("SELECT 1 FROM radcheck WHERE username IN ($ph) AND attribute IN ($aph) LIMIT 1");
+  $st->execute(array_merge($variants, $attrs));
+  return (bool)$st->fetchColumn();
+}
+
 $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
 $originAllowed = ($origin === '') ? true : hotspot_origin_allowed($origin);
 if ($origin !== '' && $originAllowed) {
@@ -117,10 +142,18 @@ if (is_string($raw) && trim($raw) !== '') {
 }
 
 $username = (string)($in['username'] ?? $in['msisdn'] ?? $in['user'] ?? '');
+$purpose = strtolower(trim((string)($in['purpose'] ?? 'signup')));
+if (!in_array($purpose, ['signup', 'password_reset'], true)) $purpose = 'signup';
 $ip = hotspot_client_ip();
 $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
 
 try {
+  if ($purpose === 'password_reset' && !hotspot_otp_account_exists($username)) {
+    http_response_code(404);
+    echo json_encode(['ok'=>false, 'error'=>'account_not_found'], JSON_UNESCAPED_SLASHES);
+    exit;
+  }
+
   $otp = referrals_otp_send($username, $ip, $ua);
   if (!($otp['ok'] ?? false)) {
     $err = (string)($otp['error'] ?? 'otp_send_failed');
@@ -134,16 +167,30 @@ try {
     exit;
   }
 
-  $msg = sms_send_templated(
-    $username,
-    'SMS_SIGNUP_OTP_TEXT',
-    'Your NISTER signup code is {OTP}. It expires in {TTL_MIN} minutes.',
-    [
-      'OTP' => (string)$otp['code'],
-      'TTL_MIN' => (string)max(1, (int)ceil(((int)$otp['expires_seconds']) / 60)),
-      'MSISDN' => sms_normalize_local($username),
-    ]
-  );
+  $ttlMin = (string)max(1, (int)ceil(((int)$otp['expires_seconds']) / 60));
+  if ($purpose === 'password_reset') {
+    $msg = sms_send_templated(
+      $username,
+      'SMS_PASSWORD_RESET_OTP_TEXT',
+      'Your NISTER password reset code is {OTP}. It expires in {TTL_MIN} minutes.',
+      [
+        'OTP' => (string)$otp['code'],
+        'TTL_MIN' => $ttlMin,
+        'MSISDN' => sms_normalize_local($username),
+      ]
+    );
+  } else {
+    $msg = sms_send_templated(
+      $username,
+      'SMS_SIGNUP_OTP_TEXT',
+      'Your NISTER signup code is {OTP}. It expires in {TTL_MIN} minutes.',
+      [
+        'OTP' => (string)$otp['code'],
+        'TTL_MIN' => $ttlMin,
+        'MSISDN' => sms_normalize_local($username),
+      ]
+    );
+  }
 
   if (!($msg['sent'] ?? false)) {
     http_response_code(503);

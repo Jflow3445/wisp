@@ -17,6 +17,7 @@ DEFAULT_FILES=(
   hotspot/radvert.html
   hotspot/redirect.html
   hotspot/registration-success.html
+  hotspot/reset-password.html
   hotspot/rlogin.html
   hotspot/signup.html
   hotspot/status.html
