@@ -149,6 +149,14 @@ ops/router_exec.sh ':do { /ip dhcp-server option set [find where name="capport"]
 
 This does not clear the private cache inside every phone OS, but it forces the router to rediscover unauthenticated clients and gives renewing clients a fresh CAPPORT URL without interrupting authenticated users.
 
+If users are still stuck and a short AP interruption is acceptable, bounce the AP-facing bridge ports. As of 2026-06-01 the affected AP uplinks were `ether3` and `ether4`:
+
+```bash
+ops/router_exec.sh ':put "AP_PORT_BOUNCE_START"; :foreach p in={"ether3";"ether4"} do={ :do { /interface disable [find where name=$p]; :put ("DISABLED=" . $p) } on-error={ :put ("DISABLE_FAILED=" . $p) } }; :delay 8s; :foreach p in={"ether3";"ether4"} do={ :do { /interface enable [find where name=$p]; :put ("ENABLED=" . $p) } on-error={ :put ("ENABLE_FAILED=" . $p) } }; :delay 10s; :put "AP_PORT_BOUNCE_DONE"; /interface print detail where name="ether3"; /interface print detail where name="ether4"; /ip hotspot host print count-only; /ip hotspot active print count-only'
+```
+
+Only use this after confirming the AP-facing ports from `/ip hotspot host print detail` or `/interface bridge port print detail`; bouncing the wrong port can interrupt unrelated traffic.
+
 ### 3. Refresh Starlink public-IP authorization if needed
 
 If router logs show public fallback RADIUS requests from a new Starlink public IP, run:
