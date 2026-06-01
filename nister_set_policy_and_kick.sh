@@ -119,6 +119,7 @@ RADACCT_LOGICAL_OPEN_SQL="(
   OR (
     acctstoptime IS NOT NULL
     AND acctstoptime<>'0000-00-00 00:00:00'
+    AND acctstoptime >= acctstarttime
     AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
     AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${LOGICAL_OPEN_RECENT_MINUTES} MINUTE)
   )

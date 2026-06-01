@@ -68,10 +68,27 @@ mysql_run(){
 open_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00');" 2>/dev/null || echo 0)"
 dups_before="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY nasipaddress,acctsessionid HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
 stale_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);" 2>/dev/null || echo 0)"
+invalid_stop_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NOT NULL AND acctstoptime<>'0000-00-00 00:00:00' AND acctstarttime IS NOT NULL AND acctstoptime < acctstarttime;" 2>/dev/null || echo 0)"
 
-log "INFO open_before=$open_before dup_groups_before=$dups_before stale_before=$stale_before stale_minutes=$STALE_MINUTES"
+log "INFO open_before=$open_before dup_groups_before=$dups_before stale_before=$stale_before invalid_stop_before=$invalid_stop_before stale_minutes=$STALE_MINUTES"
 
 if (( DRY_RUN == 0 )); then
+  # Close corrupted rows where later accounting updates landed on an older
+  # AcctUniqueId after the NAS reused Acct-Session-Id. These rows look
+  # logically open because AcctUpdateTime is newer than an old stop time.
+  invalid_closed="$(mysql_run -e "
+UPDATE radacct
+SET acctstoptime = COALESCE(acctupdatetime, UTC_TIMESTAMP()),
+    acctsessiontime = GREATEST(0, TIMESTAMPDIFF(SECOND, acctstarttime, COALESCE(acctupdatetime, UTC_TIMESTAMP()))),
+    acctterminatecause = 'Cleanup-Invalid-Stop'
+WHERE acctstoptime IS NOT NULL
+  AND acctstoptime<>'0000-00-00 00:00:00'
+  AND acctstarttime IS NOT NULL
+  AND acctstoptime < acctstarttime;
+SELECT ROW_COUNT();
+" 2>/dev/null | tail -n1 || echo 0)"
+  [[ "$invalid_closed" =~ ^[0-9]+$ ]] || invalid_closed=0
+
   # Close older duplicates (keep the most recently updated row per (NAS, Acct-Session-Id)).
   dup_closed="$(mysql_run <<SQL
 UPDATE radacct ra
@@ -116,6 +133,7 @@ SELECT ROW_COUNT();
   open_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00');" 2>/dev/null || echo 0)"
   dups_after="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY nasipaddress,acctsessionid HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
   stale_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);" 2>/dev/null || echo 0)"
+  invalid_stop_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NOT NULL AND acctstoptime<>'0000-00-00 00:00:00' AND acctstarttime IS NOT NULL AND acctstoptime < acctstarttime;" 2>/dev/null || echo 0)"
 
-  log "INFO dup_closed=$dup_closed dup_groups_after=$dups_after stale_closed=$stale_closed open_after=$open_after stale_after=$stale_after"
+  log "INFO invalid_closed=$invalid_closed invalid_stop_after=$invalid_stop_after dup_closed=$dup_closed dup_groups_after=$dups_after stale_closed=$stale_closed open_after=$open_after stale_after=$stale_after"
 fi

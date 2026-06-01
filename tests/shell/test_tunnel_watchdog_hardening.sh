@@ -212,6 +212,8 @@ test_healthy_path_repairs_route_and_service() {
   )
 
   assert_file_contains "healthy_path_repairs_router_lan_route" "$ip_log" "ip route replace 192.168.88.0/24 via 10.10.20.2 dev ppp0"
+  assert_file_contains "healthy_path_repairs_radius_loopback_route" "$ip_log" "ip route replace 10.10.20.4/32 via 10.10.20.2 dev ppp0"
+  assert_file_contains "healthy_path_repairs_hotspot_lan_route" "$ip_log" "ip route replace 192.168.80.0/20 via 10.10.20.2 dev ppp0"
   assert_file_contains "healthy_path_starts_unbound" "$systemctl_log" "systemctl start unbound.service"
 }
 
@@ -243,10 +245,11 @@ test_restart_disabled_observes_only() {
   assert_file_contains "restart_disabled_logged" "$log_dir/tunnel_watchdog.log" "reason=restart_disabled"
 }
 
-test_systemd_unit_uses_route_only_probe() {
+test_systemd_unit_recovers_tunnel_with_rate_limits() {
   [[ -f "$WATCHDOG_SERVICE" ]] || fail "Missing watchdog systemd unit: $WATCHDOG_SERVICE"
-  assert_file_contains "watchdog_unit_probe_mode" "$WATCHDOG_SERVICE" "Environment=PROBE_MODE=none"
-  assert_file_contains "watchdog_unit_restart_disabled" "$WATCHDOG_SERVICE" "Environment=MAX_RESTARTS_PER_WINDOW=0"
+  assert_file_contains "watchdog_unit_probe_mode" "$WATCHDOG_SERVICE" "Environment=PROBE_MODE=ping"
+  assert_file_contains "watchdog_unit_restart_limit" "$WATCHDOG_SERVICE" "Environment=MAX_RESTARTS_PER_WINDOW=3"
+  assert_file_contains "watchdog_unit_extra_tunnel_routes" "$WATCHDOG_SERVICE" "Environment=TUNNEL_ROUTES=10.10.20.4/32,192.168.80.0/20"
   if grep -Fq "Environment=PROBE_MODE=tcp" "$WATCHDOG_SERVICE"; then
     fail "watchdog unit must not use TCP probing for tunnel health"
   fi
@@ -273,7 +276,7 @@ main() {
   test_invalid_numeric_state_defaults_without_crash "$tmp_root/case_invalid_numeric" "$tmp_root/bin"
   test_healthy_path_repairs_route_and_service "$tmp_root/case_recovery_helpers" "$tmp_root/bin"
   test_restart_disabled_observes_only "$tmp_root/case_restart_disabled" "$tmp_root/bin"
-  test_systemd_unit_uses_route_only_probe
+  test_systemd_unit_recovers_tunnel_with_rate_limits
   test_systemd_timer_waits_after_run_finishes
 
   echo "PASS: tunnel watchdog hardening regression tests"

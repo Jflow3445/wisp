@@ -10,6 +10,7 @@ DEFAULT_FILES=(
   hotspot/api.json
   hotspot/change-password.html
   hotspot/common.css
+  hotspot/config.js
   hotspot/login.html
   hotspot/logout.html
   hotspot/md5.js

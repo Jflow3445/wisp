@@ -1148,6 +1148,7 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
                            OR (
                              acctstoptime IS NOT NULL
                              AND acctstoptime<>'0000-00-00 00:00:00'
+                             AND acctstoptime >= acctstarttime
                              AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
                              AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
                            )

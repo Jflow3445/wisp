@@ -7,6 +7,7 @@ ROUTER_SSH_KEY="${ROUTER_SSH_KEY_ON_VPS:-/root/.ssh/mikrotik_certsync}"
 LOG_TAG="${LOG_TAG:-nister-router-catchup}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-6}"
 HOTSPOT_BASE_URL="${HOTSPOT_BASE_URL:-https://wifi.nister.org/router-sync}"
+SYNC_HOTSPOT_FILES="${SYNC_HOTSPOT_FILES:-0}"
 
 log() {
   local msg="$1"
@@ -57,6 +58,18 @@ if ros "$radius_cmd" >/dev/null 2>&1; then
   log "status=ok action=radius_refreshed"
 else
   log "status=warn action=radius_refresh_failed"
+fi
+
+captive_cmd=':do { /ip dhcp-server option set [find where name="capport"] value="'\''https://wifi.nister.org/api.json'\''" } on-error={ :log warning "nister: capport refresh failed" }; :foreach pattern in={"captive.apple.com";"connectivitycheck.gstatic.com";"connectivitycheck.android.com";"clients3.google.com";"www.msftconnecttest.com";"ipv6.msftconnecttest.com";"www.msftncsi.com"} do={ :do { /ip firewall address-list remove [find where list="HG3_WG_DST" and comment~$pattern] } on-error={}; :do { /ip firewall address-list remove [find where list="HG3_WG_DST" and address=$pattern] } on-error={} }'
+if ros "$captive_cmd" >/dev/null 2>&1; then
+  log "status=ok action=captive_refreshed"
+else
+  log "status=warn action=captive_refresh_failed"
+fi
+
+if [[ "$SYNC_HOTSPOT_FILES" != "1" ]]; then
+  log "status=done hotspot_sync=skipped"
+  exit 0
 fi
 
 files=(

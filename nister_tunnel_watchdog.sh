@@ -22,6 +22,7 @@ POST_RESTART_POLL_SEC="${POST_RESTART_POLL_SEC:-3}"
 ROUTER_LAN_CIDR="${ROUTER_LAN_CIDR:-192.168.88.0/24}"
 ROUTER_LAN_VIA="${ROUTER_LAN_VIA:-10.10.20.2}"
 ROUTER_LAN_DEV="${ROUTER_LAN_DEV:-}"
+TUNNEL_ROUTES="${TUNNEL_ROUTES:-10.10.20.4/32,192.168.80.0/20}"
 RECOVERY_SERVICES="${RECOVERY_SERVICES:-unbound.service}"
 IPSEC_SERVICES="${IPSEC_SERVICES:-strongswan-starter}"
 L2TP_SERVICES="${L2TP_SERVICES:-xl2tpd}"
@@ -227,7 +228,7 @@ probe_failed_reason() {
 
 ensure_recovery_helpers() {
   local tunnel_dev="${1:-}"
-  local route_line services service
+  local route_line services service routes route
   local router_lan_dev="$ROUTER_LAN_DEV"
 
   if [[ -z "$router_lan_dev" ]]; then
@@ -244,6 +245,21 @@ ensure_recovery_helpers() {
       fi
     fi
   fi
+
+  routes="${TUNNEL_ROUTES// /,}"
+  IFS=',' read -r -a _routes <<<"$routes"
+  for route in "${_routes[@]}"; do
+    route="${route//[[:space:]]/}"
+    [[ -n "$route" && -n "$ROUTER_LAN_VIA" && -n "$router_lan_dev" ]] || continue
+    route_line="$(ip route show "$route" 2>/dev/null | head -n 1 || true)"
+    if [[ "$route_line" != *"via $ROUTER_LAN_VIA dev $router_lan_dev"* && "$route_line" != *"dev $router_lan_dev"* ]]; then
+      if ip route replace "$route" via "$ROUTER_LAN_VIA" dev "$router_lan_dev"; then
+        log "route=ensured cidr=$route via=$ROUTER_LAN_VIA dev=$router_lan_dev"
+      else
+        log "route=ensure_failed cidr=$route via=$ROUTER_LAN_VIA dev=$router_lan_dev"
+      fi
+    fi
+  done
 
   services="${RECOVERY_SERVICES// /,}"
   IFS=',' read -r -a _services <<<"$services"
