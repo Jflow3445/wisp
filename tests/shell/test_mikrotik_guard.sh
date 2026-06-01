@@ -73,7 +73,50 @@ shift || true
 "$@"
 EOS
 
-  chmod +x "$bin_dir/ip" "$bin_dir/ping" "$bin_dir/systemctl" "$bin_dir/logger" "$bin_dir/flock"
+  cat >"$bin_dir/curl" <<'EOS'
+#!/usr/bin/env bash
+case "${CAPPORT_CURL_MODE:-ok}" in
+  macro)
+    if [[ -n "${CAPPORT_FALLBACK_FILE:-}" && -f "$CAPPORT_FALLBACK_FILE" ]]; then
+      cat "$CAPPORT_FALLBACK_FILE"
+      exit 0
+    fi
+    cat "${CAPPORT_MACRO_BODY:?}"
+    exit 0
+    ;;
+  fail)
+    exit 22
+    ;;
+  *)
+    cat "${CAPPORT_OK_BODY:?}"
+    exit 0
+    ;;
+esac
+EOS
+
+  chmod +x "$bin_dir/ip" "$bin_dir/ping" "$bin_dir/systemctl" "$bin_dir/logger" "$bin_dir/flock" "$bin_dir/curl"
+}
+
+write_capport_ok_body() {
+  local path="$1"
+  cat >"$path" <<'EOF'
+{
+  "captive": true,
+  "user-portal-url": "http://192.168.88.1/login",
+  "venue-info-url": "https://wifi.nister.org/",
+  "can-extend-session": false
+}
+EOF
+}
+
+write_capport_macro_body() {
+  local path="$1"
+  cat >"$path" <<'EOF'
+{
+  "captive": $(if logged-in == 'yes')false$(else)true$(endif),
+  "user-portal-url": "$(link-login-only)"
+}
+EOF
 }
 
 test_guard_enables_timers_and_runs_catchup_when_healthy() {
@@ -87,6 +130,8 @@ test_guard_enables_timers_and_runs_catchup_when_healthy() {
   local watchdog="$case_dir/watchdog.sh"
 
   mkdir -p "$log_dir"
+  write_capport_ok_body "$case_dir/capport-ok.json"
+  write_capport_macro_body "$case_dir/capport-macro.json"
   cat >"$catchup" <<EOS
 #!/usr/bin/env bash
 printf 'catchup\n' >>"$catchup_log"
@@ -104,6 +149,9 @@ EOS
     export PING_OK="1"
     export SYSTEMCTL_ACTIVE="0"
     export SYSTEMCTL_LOG="$systemctl_log"
+    export CAPPORT_OK_BODY="$case_dir/capport-ok.json"
+    export CAPPORT_MACRO_BODY="$case_dir/capport-macro.json"
+    export CAPPORT_FALLBACK_FILE="$case_dir/public/api.json"
     export WATCHDOG_SCRIPT="$watchdog"
     export ROUTER_CATCHUP_SCRIPT="$catchup"
     export WATCHDOG_LOCK="$case_dir/watchdog.lock"
@@ -131,6 +179,8 @@ test_guard_runs_watchdog_when_tunnel_bad() {
   local rc=0
 
   mkdir -p "$log_dir"
+  write_capport_ok_body "$case_dir/capport-ok.json"
+  write_capport_macro_body "$case_dir/capport-macro.json"
   cat >"$catchup" <<EOS
 #!/usr/bin/env bash
 printf 'catchup\n' >>"$catchup_log"
@@ -148,6 +198,9 @@ EOS
     export IP_ROUTE_DEV=""
     export PING_OK="0"
     export SYSTEMCTL_ACTIVE="1"
+    export CAPPORT_OK_BODY="$case_dir/capport-ok.json"
+    export CAPPORT_MACRO_BODY="$case_dir/capport-macro.json"
+    export CAPPORT_FALLBACK_FILE="$case_dir/public/api.json"
     export WATCHDOG_SCRIPT="$watchdog"
     export ROUTER_CATCHUP_SCRIPT="$catchup"
     export WATCHDOG_LOCK="$case_dir/watchdog.lock"
@@ -167,6 +220,54 @@ EOS
   assert_file_contains "guard_logs_failed" "$log_dir/mikrotik_guard.log" "status=failed"
 }
 
+test_guard_repairs_public_capport_macro_template() {
+  local case_dir="$1"
+  local stubs_bin="$2"
+  local log_dir="$case_dir/log"
+  local public_dir="$case_dir/public"
+  local public_api="$public_dir/api.json"
+  local systemctl_log="$case_dir/systemctl.log"
+  local catchup="$case_dir/catchup.sh"
+  local watchdog="$case_dir/watchdog.sh"
+
+  mkdir -p "$log_dir" "$public_dir"
+  write_capport_ok_body "$case_dir/capport-ok.json"
+  write_capport_macro_body "$case_dir/capport-macro.json"
+  cat >"$catchup" <<'EOS'
+#!/usr/bin/env bash
+exit 0
+EOS
+  cat >"$watchdog" <<'EOS'
+#!/usr/bin/env bash
+exit 0
+EOS
+  chmod +x "$catchup" "$watchdog"
+
+  (
+    export PATH="$stubs_bin:$PATH"
+    export LOG_DIR="$log_dir"
+    export IP_ROUTE_DEV="ppp0"
+    export PING_OK="1"
+    export SYSTEMCTL_ACTIVE="1"
+    export SYSTEMCTL_LOG="$systemctl_log"
+    export CAPPORT_CURL_MODE="macro"
+    export CAPPORT_OK_BODY="$case_dir/capport-ok.json"
+    export CAPPORT_MACRO_BODY="$case_dir/capport-macro.json"
+    export CAPPORT_FALLBACK_FILE="$public_api"
+    export WATCHDOG_SCRIPT="$watchdog"
+    export ROUTER_CATCHUP_SCRIPT="$catchup"
+    export WATCHDOG_LOCK="$case_dir/watchdog.lock"
+    export CATCHUP_LOCK="$case_dir/catchup.lock"
+    export CRITICAL_TIMERS=""
+    export CRITICAL_SERVICES=""
+    bash "$GUARD_SCRIPT"
+  )
+
+  assert_file_contains "guard_logs_capport_macro" "$log_dir/mikrotik_guard.log" "capport=invalid reason=mikrotik_macro"
+  assert_file_contains "guard_logs_capport_repair" "$log_dir/mikrotik_guard.log" "capport=repaired file=$public_api"
+  assert_file_contains "guard_writes_static_capport" "$public_api" '"user-portal-url": "http://192.168.88.1/login"'
+}
+
 test_guard_systemd_units_are_periodic_and_locked() {
   [[ -f "$GUARD_SERVICE" ]] || fail "Missing guard systemd service: $GUARD_SERVICE"
   [[ -f "$GUARD_TIMER" ]] || fail "Missing guard systemd timer: $GUARD_TIMER"
@@ -183,6 +284,7 @@ main() {
   setup_stubs "$tmp_root/bin"
   test_guard_enables_timers_and_runs_catchup_when_healthy "$tmp_root/healthy" "$tmp_root/bin"
   test_guard_runs_watchdog_when_tunnel_bad "$tmp_root/bad_tunnel" "$tmp_root/bin"
+  test_guard_repairs_public_capport_macro_template "$tmp_root/capport_macro" "$tmp_root/bin"
   test_guard_systemd_units_are_periodic_and_locked
 
   echo "PASS: MikroTik guard regression tests"

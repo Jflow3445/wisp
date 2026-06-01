@@ -51,6 +51,7 @@ The recovered state on 2026-06-01 was:
 - Router public fallback RADIUS entry points at `209.97.137.68` and does not bind to `10.10.20.4`.
 - Router has `/radius incoming accept=yes port=3799` for CoA/disconnect.
 - DHCP CAPPORT option is `https://wifi.nister.org/api.json`.
+- Public `https://wifi.nister.org/api.json` returns valid static JSON. It must not be a MikroTik template containing `$(...)` macros; public Apache cannot expand those macros.
 - `HG3_WG_DST` contains only infrastructure addresses such as `192.168.88.1` and `209.97.137.68`; it must not contain captive probe domains.
 - FreeRADIUS `Acct-Unique-Session-Id` includes at least NAS IP, MikroTik session ID, client MAC, and username.
 - `nister-mikrotik-guard.timer` is enabled and runs every 5 minutes after the previous run finishes.
@@ -90,6 +91,36 @@ ops/vps_exec.sh 'systemctl start nister-mikrotik-guard.service; systemctl show n
 Expected result is `Result=success`, `ExecMainStatus=0`, and recent `status=ok` guard logs.
 
 ### 2. Refresh router self-heal, RADIUS, and captive settings
+
+First verify the public CAPPORT JSON. This catches the failure where phones keep loading because they reached Apache's public hostname and received an unexpanded MikroTik template instead of JSON:
+
+```bash
+ops/vps_exec.sh 'curl -fsS --max-time 8 https://wifi.nister.org/api.json | python3 -m json.tool'
+```
+
+Expected body:
+
+```json
+{
+  "captive": true,
+  "user-portal-url": "http://192.168.88.1/login",
+  "venue-info-url": "https://wifi.nister.org/",
+  "can-extend-session": false
+}
+```
+
+If the output contains `$(if logged-in...)`, `$(link-login-only)`, or any other MikroTik macro, replace the public file:
+
+```bash
+ops/vps_exec.sh 'cat >/var/www/html/api.json <<EOF
+{
+  "captive": true,
+  "user-portal-url": "http://192.168.88.1/login",
+  "venue-info-url": "https://wifi.nister.org/",
+  "can-extend-session": false
+}
+EOF'
+```
 
 ```bash
 ops/vps_exec.sh '/usr/local/sbin/nister_router_catchup.sh'
@@ -167,6 +198,7 @@ Known good signs:
 - Open rows correspond to active users.
 - Router RADIUS monitor shows recent accepts. Historical timeout counters can remain; do not treat old counters alone as a current outage.
 - Test devices may need to toggle Wi-Fi, forget/rejoin the SSID, or open `http://neverssl.com/` after CAPPORT/probe-domain fixes.
+- If the captive UI still does not open automatically, test directly from an affected device with `http://192.168.88.1/login`. That bypasses public DNS and proves whether the router-local hotspot page is reachable.
 
 ## Files To Inspect Or Deploy
 
@@ -182,6 +214,8 @@ Known good signs:
 - `nister_set_policy_and_kick.sh`
 - `nister_user_admin.sh`
 - `pay-portal/lib/radius.php`
+- `wifi-portal/api.json`
+- `wifi-portal/.htaccess`
 
 `ops/router_catchup.sh` intentionally skips hotspot file sync by default. Use `ops/push_hotspot_to_router.sh` for explicit hotspot file deployment, or set `SYNC_HOTSPOT_FILES=1` only when catchup should fetch hosted hotspot files.
 
