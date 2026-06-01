@@ -102,12 +102,27 @@
       };
     }
 
+    function isAppleMobileClient(){
+      try {
+        var ua = String(navigator.userAgent || '');
+        return /(iPhone|iPad|iPod)/.test(ua) && /AppleWebKit/.test(ua);
+      } catch(_) {
+        return false;
+      }
+    }
+
     function buildLoginAttempts(candidates){
       var out = [];
       var chap = chapContext();
+      var appleMobile = isAppleMobileClient();
       for (var i = 0; i < candidates.length; i++){
         var u = String(candidates[i] || '').trim();
         if (!u) continue;
+        if (appleMobile) {
+          out.push({ username: u, mode: 'pap' });
+          if (chap.present && chap.md5Ready) out.push({ username: u, mode: 'chap' });
+          continue;
+        }
         // Try CHAP first when available, then PAP fallback for HTTPS/PAP profiles.
         if (chap.present && chap.md5Ready) out.push({ username: u, mode: 'chap' });
         out.push({ username: u, mode: 'pap' });
@@ -287,8 +302,9 @@
       if (!u) { handleLoginError('Please enter both username and password.'); return; }
       loginAttemptStartedAt = Date.now();
       f.username.value = u;
-      f.target = isFinalLoginAttempt() ? '_top' : 'authframe';
-      if (isFinalLoginAttempt()) topLevelFallbackTried = true;
+      var topLevelLogin = isAppleMobileClient() || isFinalLoginAttempt();
+      f.target = topLevelLogin ? '_top' : 'authframe';
+      if (topLevelLogin) topLevelFallbackTried = true;
 
       var chap = chapContext();
       var mode = attempt && attempt.mode ? attempt.mode : 'pap';

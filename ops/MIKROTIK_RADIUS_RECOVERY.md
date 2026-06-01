@@ -8,6 +8,8 @@ Last full recovery documented: 2026-06-01.
 
 Use this runbook when users can join the Wi-Fi but cannot reach the login page, the captive portal keeps loading, or the login interface never pops up.
 
+For the 2026-06-01 iPhone-only login issue, preserve the known-good Android/laptop state documented in `ops/MIKROTIK_IPHONE_LOGIN_INVESTIGATION.md` before making changes.
+
 Common signals from the 2026-06-01 outage:
 
 - Users reported that the login interface did not appear and the device only kept loading.
