@@ -29,3 +29,4 @@ Notes:
 - If exporter is behind NAT/firewall, allow outbound UDP `2055` to `209.97.137.68`.
 - Keep NTP enabled on router and server for legal-grade timestamp correlation.
 - Ensure collector dir is readable by web app: `chown root:www-data /var/log/netflow && chmod 0750 /var/log/netflow`.
+- For MikroTik/Microtik RADIUS, captive portal, hotspot login, or L2TP/IPsec tunnel outage recovery, use `ops/MIKROTIK_RADIUS_RECOVERY.md`.

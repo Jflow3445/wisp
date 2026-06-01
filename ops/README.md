@@ -2,6 +2,10 @@
 
 These scripts standardize VPS + MikroTik access from this repo so future pushes/checks are one command.
 
+## Recovery Runbooks
+
+- [MikroTik RADIUS / Captive Portal Recovery](./MIKROTIK_RADIUS_RECOVERY.md) - use this when Wi-Fi clients can associate but the login portal does not pop up, keeps loading, or RADIUS/tunnel checks fail. Also searchable as Microtik.
+
 ## 1) Create local credential file
 
 ```bash
@@ -39,9 +43,7 @@ ops/push_hotspot_to_router.sh
 ```
 
 By default it pushes:
-- `hotspot/login.html`
-- `hotspot/error.html`
-- `hotspot/css/error.html`
+- all default hotspot pages and assets needed by the router, including `hotspot/config.js`, `hotspot/login.html`, `hotspot/status.html`, `hotspot/error.html`, and CSS/error assets.
 
 You can pass custom relative paths:
 

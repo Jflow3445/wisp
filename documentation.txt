@@ -1,7 +1,7 @@
 NISTER WISP PROJECT - END-TO-END DOCUMENTATION (PLAIN TERMS)
 ==============================================================
 
-Last updated from current workspace state: 2026-04-26
+Last updated from current workspace state: 2026-06-01
 Project root: /Users/dolla/Documents/Projects/wisp
 
 
@@ -51,6 +51,10 @@ Top-level directories/files you actually use:
   - pay.html
   - change-password.html
   - config.js (loads safe public config)
+
+- ops/
+  VPS/router helper commands and recovery runbooks.
+  Use ops/MIKROTIK_RADIUS_RECOVERY.md for MikroTik/Microtik RADIUS, captive portal, hotspot login, or L2TP/IPsec tunnel outages.
 
 - wifi-portal/
   Compatibility wrapper paths and daloradius subtree.
@@ -656,6 +660,10 @@ D) Validate RADIUS + CoA:
 24) OPERATIONS RUNBOOK (COMMON TASKS)
 -------------------------------------
 
+Outage recovery shortcut:
+- MikroTik/Microtik RADIUS, captive portal, hotspot login, or tunnel recovery:
+  ops/MIKROTIK_RADIUS_RECOVERY.md
+
 A) Force user to limited/nopaid and kick now:
 - Use nister_set_policy_and_kick.sh or admin API user_force_* actions.
 
@@ -703,6 +711,11 @@ Symptom: Health shows tunnel fail
 - Verify route device matches required device(s).
 - Verify ping target reachable.
 - Check tunnel watchdog and VPN services.
+- Use ops/MIKROTIK_RADIUS_RECOVERY.md if captive login or RADIUS is also affected.
+
+Symptom: Wi-Fi joins but captive login page does not pop or keeps loading
+- Use ops/MIKROTIK_RADIUS_RECOVERY.md.
+- Check CAPPORT, HG3_WG_DST captive probe domain entries, tunnel routes, and RADIUS monitor output.
 
 Symptom: Accounting gaps
 - Check router RADIUS accounting backup behavior and timeout settings.
