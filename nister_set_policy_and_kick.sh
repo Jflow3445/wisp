@@ -159,6 +159,32 @@ is_valid_ipv4(){
   done
   return 0
 }
+is_private_or_cgnat_ipv4(){
+  local a b c d
+  is_valid_ipv4 "$1" || return 1
+  IFS='.' read -r a b c d <<<"$1"
+  [[ "$a" == "10" ]] && return 0
+  [[ "$a" == "192" && "$b" == "168" ]] && return 0
+  [[ "$a" == "172" && "$b" -ge 16 && "$b" -le 31 ]] && return 0
+  [[ "$a" == "100" && "$b" -ge 64 && "$b" -le 127 ]] && return 0
+  return 1
+}
+route_dev_for_ip(){
+  ip route get "$1" 2>/dev/null | awk '{
+    for (i=1; i<=NF; i++) {
+      if ($i == "dev" && (i+1) <= NF) { print $(i+1); exit }
+    }
+  }'
+}
+coa_target_reachable(){
+  local target="$1" dev
+  is_valid_ipv4 "$target" || return 1
+  if is_private_or_cgnat_ipv4 "$target"; then
+    dev="$(route_dev_for_ip "$target")"
+    [[ "$dev" == ppp* ]] || return 1
+  fi
+  return 0
+}
 is_valid_mac(){
   [[ "${1^^}" =~ ^([0-9A-F]{2}:){5}[0-9A-F]{2}$ ]]
 }
@@ -247,6 +273,10 @@ for row in "${rows[@]}"; do
   if ! is_valid_ipv4 "$NAS_TARGET"; then NAS_TARGET="$NAS"; fi
   if ! is_allowed_nas "$NAS_TARGET"; then
     echo "[*] Skip user=$SESS_USER (nas not allowed by NAS_IPS) nas=${NAS_TARGET}"
+    continue
+  fi
+  if ! coa_target_reachable "$NAS_TARGET"; then
+    echo "[*] Skip user=$SESS_USER (coa target unreachable) nas=${NAS_TARGET} route_dev=$(route_dev_for_ip "$NAS_TARGET" || true)"
     continue
   fi
 

@@ -39,6 +39,78 @@ function username_variants(string $u): array {
   return [$d];
 }
 
+function hs_policy_rank(string $policy): int {
+  $p = strtoupper(trim($policy));
+  if ($p === 'HS_ACTIVE') return 3;
+  if ($p === 'HS_LIMITED') return 2;
+  if ($p === 'HS_NOPAID' || $p === 'NOPAID') return 1;
+  return 0;
+}
+
+function strongest_hs_policy(PDO $pdo, array $targets): string {
+  if (!$targets) return 'HS_NOPAID';
+  $ph = implode(',', array_fill(0, count($targets), '?'));
+  $params = array_merge($targets, $targets);
+  $st = $pdo->prepare(
+    "SELECT policy FROM (
+       SELECT groupname AS policy
+       FROM radusergroup
+       WHERE username IN ($ph)
+         AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')
+       UNION ALL
+       SELECT value AS policy
+       FROM radreply
+       WHERE username IN ($ph)
+         AND attribute IN ('Mikrotik-Address-List','MT-Address-List')
+         AND value IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')
+     ) p"
+  );
+  $st->execute($params);
+  $best = 'HS_NOPAID';
+  $bestRank = 1;
+  while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
+    $policy = strtoupper(trim((string)($row['policy'] ?? '')));
+    if ($policy === 'NOPAID') $policy = 'HS_NOPAID';
+    $rank = hs_policy_rank($policy);
+    if ($rank > $bestRank) {
+      $best = $policy;
+      $bestRank = $rank;
+    }
+  }
+  return $best;
+}
+
+function mirror_hs_policy(PDO $pdo, array $targets, string $policy): void {
+  $policy = strtoupper(trim($policy));
+  if (!in_array($policy, ['HS_ACTIVE','HS_LIMITED','HS_NOPAID'], true)) {
+    $policy = 'HS_NOPAID';
+  }
+  $groupDel = $pdo->prepare(
+    "DELETE FROM radusergroup
+     WHERE username = ?
+       AND groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID','nopaid')"
+  );
+  $groupIns = $pdo->prepare(
+    "INSERT INTO radusergroup (username, groupname, priority)
+     VALUES (?, ?, 0)"
+  );
+  $replyDel = $pdo->prepare(
+    "DELETE FROM radreply
+     WHERE username = ?
+       AND attribute IN ('Mikrotik-Address-List','MT-Address-List')"
+  );
+  $replyIns = $pdo->prepare(
+    "INSERT INTO radreply (username, attribute, op, value)
+     VALUES (?, 'Mikrotik-Address-List', ':=', ?)"
+  );
+  foreach ($targets as $u) {
+    $groupDel->execute([$u]);
+    $groupIns->execute([$u, $policy]);
+    $replyDel->execute([$u]);
+    $replyIns->execute([$u, $policy]);
+  }
+}
+
 function pick(array $src, array $keys): string {
   foreach ($keys as $k) {
     if (isset($src[$k])) {
@@ -171,6 +243,7 @@ try {
     reset_rate_limit_hit('hotspot_reset_password_user', $clientIp . '|' . $userKey, 6, 600, 900);
     fail('Account not found for this phone number.', $user);
   }
+  $policy = strongest_hs_policy($pdo, $targets);
 
   if (!referrals_consume_signup_token($user, $otpToken)) {
     reset_rate_limit_hit('hotspot_reset_password_ip', $clientIp, 12, 600, 900);
@@ -189,10 +262,13 @@ try {
     "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
      ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
   );
+  $pdo->beginTransaction();
   foreach ($targets as $u) {
     $del->execute(array_merge([$u], $delAttrs));
     $upsert->execute([$u, $pass]);
   }
+  mirror_hs_policy($pdo, $targets, $policy);
+  $pdo->commit();
 
   reset_rate_limit_clear('hotspot_reset_password_ip', $clientIp);
   reset_rate_limit_clear('hotspot_reset_password_user', $clientIp . '|' . $userKey);
@@ -225,6 +301,9 @@ try {
   <p><a class='btn' href='".h($login)."'>Go to Wi-Fi login</a></p></div>";
   exit;
 } catch (Throwable $e) {
+  if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+    $pdo->rollBack();
+  }
   error_log('[api/hotspot/reset_password.php] user=' . $user . ' err=' . $e->getMessage());
   fail('Could not reset password right now. Please try again shortly.', $user);
 }

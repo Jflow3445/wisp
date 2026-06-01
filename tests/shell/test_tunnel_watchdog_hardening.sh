@@ -3,6 +3,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WATCHDOG_SCRIPT="$REPO_ROOT/nister_tunnel_watchdog.sh"
+WATCHDOG_SERVICE="$REPO_ROOT/systemd/nister-tunnel-watchdog.service"
+WATCHDOG_TIMER="$REPO_ROOT/systemd/nister-tunnel-watchdog.timer"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -213,6 +215,54 @@ test_healthy_path_repairs_route_and_service() {
   assert_file_contains "healthy_path_starts_unbound" "$systemctl_log" "systemctl start unbound.service"
 }
 
+test_restart_disabled_observes_only() {
+  local case_dir="$1"
+  local stubs_bin="$2"
+  local state_file="$case_dir/state"
+  local log_dir="$case_dir/log"
+  local systemctl_log="$case_dir/systemctl.log"
+
+  mkdir -p "$log_dir"
+
+  (
+    export PATH="$stubs_bin:$PATH"
+    export STATE_FILE="$state_file"
+    export LOG_DIR="$log_dir"
+    export TARGET_IP="10.10.20.2"
+    export REQUIRED_DEVS="ppp0,ppp1"
+    export PROBE_MODE="none"
+    export MAX_RESTARTS_PER_WINDOW="0"
+    export IP_ROUTE_DEV=""
+    export SYSTEMCTL_LOG="$systemctl_log"
+    bash "$WATCHDOG_SCRIPT"
+  )
+
+  if [[ -f "$systemctl_log" ]] && grep -Fq "systemctl restart" "$systemctl_log"; then
+    fail "restart_disabled path must not restart services"
+  fi
+  assert_file_contains "restart_disabled_logged" "$log_dir/tunnel_watchdog.log" "reason=restart_disabled"
+}
+
+test_systemd_unit_uses_route_only_probe() {
+  [[ -f "$WATCHDOG_SERVICE" ]] || fail "Missing watchdog systemd unit: $WATCHDOG_SERVICE"
+  assert_file_contains "watchdog_unit_probe_mode" "$WATCHDOG_SERVICE" "Environment=PROBE_MODE=none"
+  assert_file_contains "watchdog_unit_restart_disabled" "$WATCHDOG_SERVICE" "Environment=MAX_RESTARTS_PER_WINDOW=0"
+  if grep -Fq "Environment=PROBE_MODE=tcp" "$WATCHDOG_SERVICE"; then
+    fail "watchdog unit must not use TCP probing for tunnel health"
+  fi
+  if grep -Fq "Environment=TCP_PORTS=22" "$WATCHDOG_SERVICE"; then
+    fail "watchdog unit must not depend on RouterOS SSH for tunnel health"
+  fi
+}
+
+test_systemd_timer_waits_after_run_finishes() {
+  [[ -f "$WATCHDOG_TIMER" ]] || fail "Missing watchdog systemd timer: $WATCHDOG_TIMER"
+  assert_file_contains "watchdog_timer_inactive_delay" "$WATCHDOG_TIMER" "OnUnitInactiveSec=120s"
+  if grep -Fq "OnUnitActiveSec=60s" "$WATCHDOG_TIMER"; then
+    fail "watchdog timer must not fire back-to-back during long recovery runs"
+  fi
+}
+
 main() {
   local tmp_root
   tmp_root="$(mktemp -d)"
@@ -222,6 +272,9 @@ main() {
   test_rejects_code_injection "$tmp_root/case_injection" "$tmp_root/bin"
   test_invalid_numeric_state_defaults_without_crash "$tmp_root/case_invalid_numeric" "$tmp_root/bin"
   test_healthy_path_repairs_route_and_service "$tmp_root/case_recovery_helpers" "$tmp_root/bin"
+  test_restart_disabled_observes_only "$tmp_root/case_restart_disabled" "$tmp_root/bin"
+  test_systemd_unit_uses_route_only_probe
+  test_systemd_timer_waits_after_run_finishes
 
   echo "PASS: tunnel watchdog hardening regression tests"
 }

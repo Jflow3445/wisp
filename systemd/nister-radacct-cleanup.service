@@ -5,9 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=STALE_MINUTES=60
 ExecStart=/usr/bin/flock -n /run/nister_radacct_cleanup.lock /usr/local/sbin/nister_radacct_cleanup.sh
 SuccessExitStatus=1
 
 # Optional overrides:
-# Environment=STALE_MINUTES=1440
+# Environment=STALE_MINUTES=60
 # Environment=DRY_RUN=0

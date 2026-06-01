@@ -244,7 +244,7 @@ $ADMIN_CSRF = admin_csrf_token();
         <div class="value" id="health_overall">-</div>
       </div>
       <div class="kpi compact">
-        <div class="label">RADIUS auth</div>
+        <div class="label">RADIUS local auth</div>
         <div class="value" id="health_radius">-</div>
         <div class="muted" id="health_radius_ms">-</div>
       </div>
@@ -264,8 +264,9 @@ $ADMIN_CSRF = admin_csrf_token();
         <div class="muted" id="health_loss">-</div>
       </div>
       <div class="kpi compact">
-        <div class="label">Download speed</div>
+        <div class="label">VPS download</div>
         <div class="value" id="health_speed">-</div>
+        <div class="muted" id="health_speed_meta">not Starlink</div>
       </div>
     </div>
     <div class="section-head" style="margin-top:14px">
@@ -1830,7 +1831,8 @@ function renderHealth(j){
   const routeDev = latest && latest.route_dev ? `via ${latest.route_dev}` : '-';
   const latency = latest ? fmtMs(latest.ping_ms) : '-';
   const loss = latest ? fmtLoss(latest.loss_pct) : '-';
-  const speed = latest ? fmtMpbs(latest.speed_mbps) : '-';
+  const tunnelOk = latest && Number(latest.tunnel_ok) === 1;
+  const speed = latest && tunnelOk ? fmtMpbs(latest.speed_mbps) : '-';
   const enf = (j && typeof j.enforcement === 'object' && j.enforcement) ? j.enforcement : null;
 
   const updEl = document.getElementById('health_updated');
@@ -1855,6 +1857,8 @@ function renderHealth(j){
   if (lossEl) lossEl.textContent = loss;
   const sEl = document.getElementById('health_speed');
   if (sEl) sEl.textContent = speed;
+  const sMetaEl = document.getElementById('health_speed_meta');
+  if (sMetaEl) sMetaEl.textContent = tunnelOk ? 'VPS-side check' : 'skipped: tunnel down';
 
   const enfAcctAgeEl = document.getElementById('enf_last_acct_age');
   const enfAcctTsEl = document.getElementById('enf_last_acct_ts');

@@ -1,13 +1,12 @@
 [Unit]
-Description=Run NISTER tunnel watchdog every minute
+Description=Run NISTER tunnel watchdog periodically
 
 [Timer]
 OnBootSec=45s
-OnUnitActiveSec=60s
+OnUnitInactiveSec=120s
 AccuracySec=5s
 Persistent=true
 Unit=nister-tunnel-watchdog.service
 
 [Install]
 WantedBy=timers.target
-

@@ -7,12 +7,12 @@ Wants=network-online.target
 Type=oneshot
 Environment=TARGET_IP=10.10.20.2
 Environment=REQUIRED_DEVS=ppp0,ppp1
-Environment=PROBE_MODE=tcp
-Environment=TCP_PORTS=22
-Environment=COOLDOWN_SEC=60
-Environment=MAX_RESTARTS_PER_WINDOW=15
+Environment=PROBE_MODE=none
+Environment=COOLDOWN_SEC=1800
+Environment=RESTART_WINDOW_SEC=3600
+Environment=MAX_RESTARTS_PER_WINDOW=0
 Environment=STILL_DOWN_EXIT_CODE=2
-Environment=POST_RESTART_WAIT_SEC=75
+Environment=POST_RESTART_WAIT_SEC=120
 Environment=POST_RESTART_POLL_SEC=5
 NoNewPrivileges=true
 PrivateTmp=true

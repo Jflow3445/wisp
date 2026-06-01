@@ -1,0 +1,13 @@
+[Unit]
+Description=NISTER router catch-up when MikroTik tunnel briefly returns
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/run /var/log
+ExecStart=/usr/bin/flock -n /run/nister_router_catchup.lock /usr/local/sbin/nister_router_catchup.sh

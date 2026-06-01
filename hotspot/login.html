@@ -203,8 +203,7 @@
       if (maybeTryNextCandidate()) return;
       var attemptElapsed = Date.now() - (loginAttemptStartedAt || loginStartAt);
       if (isFinalLoginAttempt() && attemptElapsed > LOGIN_FINAL_WAIT_MS){
-        handleLoginError('Phone number or password is incorrect. Please check your details and try again.');
-        return;
+        if (!topLevelFallbackTried && tryTopLevelLoginFallback()) return;
       }
       if ((Date.now() - loginStartAt) > LOGIN_TOTAL_TIMEOUT_MS){
         if (!topLevelFallbackTried && tryTopLevelLoginFallback()) return;

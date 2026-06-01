@@ -378,6 +378,11 @@ if (( now_epoch - window_start > RESTART_WINDOW_SEC )); then
   window_restarts=0
 fi
 
+if (( MAX_RESTARTS_PER_WINDOW == 0 )); then
+  log "status=down action=skip reason=restart_disabled route_dev=${rd:-none} target=$TARGET_IP"
+  exit 0
+fi
+
 if (( now_epoch - last_restart < COOLDOWN_SEC )); then
   log "status=down action=skip reason=cooldown route_dev=${rd:-none} target=$TARGET_IP"
   exit 0

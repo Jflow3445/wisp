@@ -1,0 +1,5 @@
+RewriteEngine On
+
+RewriteRule ^login/?$ /login.html [R=302,L,QSA]
+RewriteRule ^hotspot/login\.html$ /login.html [R=302,L,QSA]
+RewriteRule ^hotspot/status\.html$ /status.html [R=302,L,QSA]

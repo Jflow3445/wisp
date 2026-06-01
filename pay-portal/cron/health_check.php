@@ -194,6 +194,9 @@ $speedUrl = (string)($ENV['HEALTH_SPEED_URL'] ?? '');
 if ($speedUrl === '' && isset($ENV['HEALTH_SPEED_GDRIVE'])) {
   $speedUrl = (string)$ENV['HEALTH_SPEED_GDRIVE'];
 }
+if ($tunnelOk !== 1) {
+  $speedUrl = '';
+}
 if ($speedUrl !== '') {
   // Convert Google Drive file link if detected
   if (preg_match('~drive\\.google\\.com/file/d/([A-Za-z0-9_-]+)~', $speedUrl, $m)) {
