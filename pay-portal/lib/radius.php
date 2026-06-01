@@ -977,37 +977,7 @@ function radius_try_disconnect(string $msisdn, array $ENV=[], ?int $locationId=n
   $local = '0'.$last9;
   $e164  = '233'.$last9;
 
-  // DB handle
-  $pdo = null;
-  if (function_exists('rdb_pdo')) $pdo = rdb_pdo();
-  elseif (function_exists('radius_pdo')) $pdo = radius_pdo($ENV);
-  elseif (function_exists('db_pdo')) $pdo = db_pdo($ENV);
-  if (!$pdo instanceof PDO) return;
-
-  // Find active sessions across configured NAS IPs; match by trailing last9 digits.
-  $nasPlaceholders = implode(',', array_fill(0, count($nasIps), '?'));
-  $st = $pdo->prepare(
-    "SELECT username, acctsessionid, framedipaddress, callingstationid, acctstarttime, nasipaddress
-     FROM radacct
-     WHERE (
-       (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
-       OR (
-         acctstoptime IS NOT NULL
-         AND acctstoptime<>'0000-00-00 00:00:00'
-         AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
-         AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
-       )
-     )
-       AND nasipaddress IN ($nasPlaceholders)
-       AND username LIKE CONCAT('%', ?)
-     ORDER BY acctstarttime DESC
-     LIMIT 200"
-  );
-  $st->execute(array_merge($nasIps, [$last9]));
-  $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-  if (!$rows) return;
-
-  // Username candidates (order matters: try hotspot local first)
+  // Username candidates (order matters: try hotspot local first), used for exact radacct matching.
   $tryUsersMap = [];
   $addUser = static function(array &$m, string $u): void {
     $u = preg_replace('/\D+/', '', $u);
@@ -1019,14 +989,49 @@ function radius_try_disconnect(string $msisdn, array $ENV=[], ?int $locationId=n
   $addUser($tryUsersMap, $canon);
   $addUser($tryUsersMap, $e164);
   if (function_exists('msisdn_local')) $addUser($tryUsersMap, (string)msisdn_local($canon));
+  $tryUsers = array_keys($tryUsersMap);
+  if (!$tryUsers) return;
+
+  // DB handle
+  $pdo = null;
+  if (function_exists('rdb_pdo')) $pdo = rdb_pdo();
+  elseif (function_exists('radius_pdo')) $pdo = radius_pdo($ENV);
+  elseif (function_exists('db_pdo')) $pdo = db_pdo($ENV);
+  if (!$pdo instanceof PDO) return;
+
+  // Find active sessions across configured NAS IPs; match exact normalized variants only.
+  $nasPlaceholders = implode(',', array_fill(0, count($nasIps), '?'));
+  $userPlaceholders = implode(',', array_fill(0, count($tryUsers), '?'));
+  $st = $pdo->prepare(
+    "SELECT username, acctsessionid, framedipaddress, callingstationid, acctstarttime, nasipaddress
+     FROM radacct
+     WHERE (
+       (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
+       OR (
+         acctstoptime IS NOT NULL
+         AND acctstoptime<>'0000-00-00 00:00:00'
+         AND acctstoptime >= acctstarttime
+         AND COALESCE(acctupdatetime, acctstarttime) > acctstoptime
+         AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
+       )
+     )
+       AND nasipaddress IN ($nasPlaceholders)
+       AND username IN ($userPlaceholders)
+     ORDER BY acctstarttime DESC
+     LIMIT 200"
+  );
+  $st->execute(array_merge($nasIps, $tryUsers));
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+  if (!$rows) return;
 
   // Dedup sessions by (sid|ip|mac)
   $sessions = [];
   foreach ($rows as $r) {
+    $rowUsers = [];
     $uRaw = (string)($r['username'] ?? '');
     $uDig = preg_replace('/\D+/', '', $uRaw);
-    if ($uRaw !== '') $addUser($tryUsersMap, $uRaw);
-    if ($uDig !== '') $addUser($tryUsersMap, $uDig);
+    if ($uRaw !== '') $addUser($rowUsers, $uRaw);
+    if ($uDig !== '') $addUser($rowUsers, $uDig);
 
     $sid = (string)($r['acctsessionid'] ?? '');
     if ($sid === '') continue;
@@ -1035,17 +1040,21 @@ function radius_try_disconnect(string $msisdn, array $ENV=[], ?int $locationId=n
 
     $fip = trim((string)($r['framedipaddress'] ?? ''));
     $mac = strtoupper(trim((string)($r['callingstationid'] ?? '')));
+    if (!filter_var($fip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && !preg_match('/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/', $mac)) {
+      continue;
+    }
 
     $nas = trim((string)($r['nasipaddress'] ?? ''));
     if ($nas === '') continue;
     $k = $sidSafe.'|'.$fip.'|'.$mac.'|'.$nas;
     if (!isset($sessions[$k])) {
-      $sessions[$k] = ['sid'=>$sidSafe,'fip'=>$fip,'mac'=>$mac,'nas'=>$nas];
+      $sessions[$k] = ['sid'=>$sidSafe,'fip'=>$fip,'mac'=>$mac,'nas'=>$nas,'users'=>[]];
+    }
+    foreach (array_keys($rowUsers) as $ru) {
+      $sessions[$k]['users'][$ru] = true;
     }
   }
   if (!$sessions) return;
-
-  $tryUsers = array_keys($tryUsersMap);
 
   foreach ($sessions as $sess) {
     $nas = $sess['nas'] ?? '';
@@ -1064,6 +1073,7 @@ function radius_try_disconnect(string $msisdn, array $ENV=[], ?int $locationId=n
     $base[] = 'Message-Authenticator = 0x00';
     $basePayload = implode("\n", $base)."\n";
 
+    $tryUsers = array_keys($sess['users'] ?? []);
     foreach ($tryUsers as $u) {
       $u = preg_replace('/\D+/', '', (string)$u);
       if ($u === '') continue;
@@ -1139,10 +1149,26 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   elseif (function_exists('db_pdo')) $pdo = db_pdo($ENV);
   if (!$pdo instanceof PDO) return ['ok'=>false,'error'=>'db_unavailable'];
 
-  // Resolve NAS + username from active/logically-open radacct session.
-  $st = $pdo->prepare("SELECT username, nasipaddress
+  $msisdn = $msisdn ? preg_replace('/\D+/', '', $msisdn) : '';
+  $userFilter = [];
+  $addUser = static function(array &$list, string $u): void {
+    $u = preg_replace('/\D+/', '', $u);
+    if ($u !== '') $list[$u] = true;
+  };
+  if ($msisdn !== '') {
+    $addUser($userFilter, $msisdn);
+    if (preg_match('/^0[0-9]{9}$/', $msisdn)) $addUser($userFilter, '233'.substr($msisdn, 1));
+    if (preg_match('/^233[0-9]{9}$/', $msisdn)) $addUser($userFilter, '0'.substr($msisdn, 3));
+  }
+
+  // Resolve NAS + username from a fresh active/logically-open radacct session.
+  $userSql = '';
+  if ($userFilter) {
+    $userSql = ' AND username IN ('.implode(',', array_fill(0, count($userFilter), '?')).')';
+  }
+  $st = $pdo->prepare("SELECT username, nasipaddress, acctsessionid, callingstationid
                        FROM radacct
-                       WHERE framedipaddress=:ip
+                       WHERE framedipaddress=?
                          AND (
                            (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
                            OR (
@@ -1153,12 +1179,19 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
                              AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
                            )
                          )
+                         AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
+                         $userSql
                        ORDER BY acctstarttime DESC
                        LIMIT 1");
-  $st->execute([':ip'=>$ip]);
+  $execParams = [$ip];
+  foreach (array_keys($userFilter) as $u) $execParams[] = $u;
+  $st->execute($execParams);
   $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
   $nas = trim((string)($row['nasipaddress'] ?? ''));
   $user = preg_replace('/\s+/', '', (string)($row['username'] ?? ''));
+  $sid = preg_replace('/[^A-Za-z0-9._:-]/', '', (string)($row['acctsessionid'] ?? ''));
+  $mac = strtoupper(trim((string)($row['callingstationid'] ?? '')));
+  if ($user === '' || $sid === '') return ['ok'=>false,'error'=>'no_fresh_session'];
 
   // Normalize NAS allow-list (if provided) and ensure target is allowed
   $nasRaw = (string)($ENV['NAS_IPS'] ?? ($ENV['NAS_IP'] ?? ''));
@@ -1166,27 +1199,19 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
     return (bool)filter_var($v, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
   }));
 
-  // Fallback NAS target if not in radacct or not allowed
-  if ($nas === '' || ($nasList && !in_array($nas, $nasList, true))) {
-    $nas = $nasList[0] ?? '';
-  }
   if ($nas === '') return ['ok'=>false,'error'=>'nas_missing'];
+  if ($nasList && !in_array($nas, $nasList, true)) return ['ok'=>false,'error'=>'nas_not_allowed'];
 
-  // Build user candidates (radacct user, provided msisdn, local/e164, and blank)
+  // Build user candidates tied to the selected fresh radacct row.
   $candidates = [];
-  $addUser = static function(array &$list, string $u): void {
-    $u = preg_replace('/\D+/', '', $u);
-    if ($u !== '') $list[$u] = true;
-  };
   if ($user !== '') $addUser($candidates, $user);
-  $msisdn = $msisdn ? preg_replace('/\D+/', '', $msisdn) : '';
   if ($msisdn !== '') {
     $addUser($candidates, $msisdn);
     if (preg_match('/^0[0-9]{9}$/', $msisdn)) $addUser($candidates, '233'.substr($msisdn, 1));
     if (preg_match('/^233[0-9]{9}$/', $msisdn)) $addUser($candidates, '0'.substr($msisdn, 3));
   }
   $tryUsers = array_keys($candidates);
-  $tryUsers[] = ''; // allow payload without User-Name
+  if (!$tryUsers) return ['ok'=>false,'error'=>'user_missing'];
 
   $cmd = [$radclient, '-x'];
   $cmd[] = $nas.':'.$port;
@@ -1196,8 +1221,12 @@ function radius_force_kick_ip(string $ip, ?string $msisdn=null, array $ENV=[]): 
   $lastOut = '';
   foreach ($tryUsers as $u) {
     $payload = '';
-    if ($u !== '') $payload .= 'User-Name = "'.$u."\"\n";
+    $payload .= 'User-Name = "'.$u."\"\n";
+    $payload .= 'Acct-Session-Id = "'.$sid."\"\n";
     $payload .= 'Framed-IP-Address = '.$ip."\n";
+    if (preg_match('/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/', $mac)) {
+      $payload .= 'Calling-Station-Id = "'.$mac."\"\n";
+    }
     $payload .= "Message-Authenticator = 0x00\n";
 
     $out = '';

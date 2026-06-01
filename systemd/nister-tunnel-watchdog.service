@@ -11,7 +11,8 @@ Environment=PROBE_MODE=ping
 Environment=COOLDOWN_SEC=1800
 Environment=RESTART_WINDOW_SEC=3600
 Environment=MAX_RESTARTS_PER_WINDOW=3
-Environment=STILL_DOWN_EXIT_CODE=2
+Environment=ALLOW_PASSIVE_MODE=0
+Environment=STILL_DOWN_EXIT_CODE=1
 Environment=POST_RESTART_WAIT_SEC=120
 Environment=POST_RESTART_POLL_SEC=5
 Environment=TUNNEL_ROUTES=10.10.20.4/32,192.168.80.0/20
@@ -26,4 +27,3 @@ RestrictSUIDSGID=true
 LockPersonality=true
 ReadWritePaths=/run /var/log/nister
 ExecStart=/usr/bin/flock -n /run/nister_tunnel_watchdog.lock /usr/local/sbin/nister_tunnel_watchdog.sh
-SuccessExitStatus=2

@@ -58,6 +58,9 @@ if [[ "${1:-}" == "route" && "${2:-}" == "replace" ]]; then
   if [[ -n "${IP_LOG:-}" ]]; then
     printf 'ip %s\n' "$*" >>"$IP_LOG"
   fi
+  if [[ "${IP_REPLACE_FAIL:-0}" == "1" ]]; then
+    exit 2
+  fi
   exit 0
 fi
 exit 0
@@ -217,6 +220,40 @@ test_healthy_path_repairs_route_and_service() {
   assert_file_contains "healthy_path_starts_unbound" "$systemctl_log" "systemctl start unbound.service"
 }
 
+test_route_repair_failure_fails_watchdog() {
+  local case_dir="$1"
+  local stubs_bin="$2"
+  local state_file="$case_dir/state"
+  local log_dir="$case_dir/log"
+  local rc=0
+
+  mkdir -p "$log_dir"
+
+  if (
+    export PATH="$stubs_bin:$PATH"
+    export STATE_FILE="$state_file"
+    export LOG_DIR="$log_dir"
+    export TARGET_IP="10.10.20.2"
+    export REQUIRED_DEVS="ppp0,ppp1"
+    export PROBE_MODE="tcp"
+    export TCP_PORTS="22"
+    export TCP_PROBE_OK="1"
+    export IP_ROUTE_DEV="ppp0"
+    export IP_ROUTE_LINE=""
+    export IP_REPLACE_FAIL="1"
+    export SYSTEMCTL_ACTIVE="1"
+    export STILL_DOWN_EXIT_CODE="1"
+    bash "$WATCHDOG_SCRIPT"
+  ); then
+    rc=0
+  else
+    rc=$?
+  fi
+
+  [[ "$rc" -eq 1 ]] || fail "Expected route repair failure to exit 1, got $rc"
+  assert_file_contains "route_repair_failure_degraded" "$log_dir/tunnel_watchdog.log" "reason=recovery_helper_failed"
+}
+
 test_restart_disabled_observes_only() {
   local case_dir="$1"
   local stubs_bin="$2"
@@ -234,6 +271,7 @@ test_restart_disabled_observes_only() {
     export REQUIRED_DEVS="ppp0,ppp1"
     export PROBE_MODE="none"
     export MAX_RESTARTS_PER_WINDOW="0"
+    export ALLOW_PASSIVE_MODE="1"
     export IP_ROUTE_DEV=""
     export SYSTEMCTL_LOG="$systemctl_log"
     bash "$WATCHDOG_SCRIPT"
@@ -249,7 +287,12 @@ test_systemd_unit_recovers_tunnel_with_rate_limits() {
   [[ -f "$WATCHDOG_SERVICE" ]] || fail "Missing watchdog systemd unit: $WATCHDOG_SERVICE"
   assert_file_contains "watchdog_unit_probe_mode" "$WATCHDOG_SERVICE" "Environment=PROBE_MODE=ping"
   assert_file_contains "watchdog_unit_restart_limit" "$WATCHDOG_SERVICE" "Environment=MAX_RESTARTS_PER_WINDOW=3"
+  assert_file_contains "watchdog_unit_passive_mode_off" "$WATCHDOG_SERVICE" "Environment=ALLOW_PASSIVE_MODE=0"
+  assert_file_contains "watchdog_unit_still_down_fails" "$WATCHDOG_SERVICE" "Environment=STILL_DOWN_EXIT_CODE=1"
   assert_file_contains "watchdog_unit_extra_tunnel_routes" "$WATCHDOG_SERVICE" "Environment=TUNNEL_ROUTES=10.10.20.4/32,192.168.80.0/20"
+  if grep -Fq "SuccessExitStatus=2" "$WATCHDOG_SERVICE"; then
+    fail "watchdog unit must surface prolonged tunnel failures to systemd"
+  fi
   if grep -Fq "Environment=PROBE_MODE=tcp" "$WATCHDOG_SERVICE"; then
     fail "watchdog unit must not use TCP probing for tunnel health"
   fi
@@ -275,6 +318,7 @@ main() {
   test_rejects_code_injection "$tmp_root/case_injection" "$tmp_root/bin"
   test_invalid_numeric_state_defaults_without_crash "$tmp_root/case_invalid_numeric" "$tmp_root/bin"
   test_healthy_path_repairs_route_and_service "$tmp_root/case_recovery_helpers" "$tmp_root/bin"
+  test_route_repair_failure_fails_watchdog "$tmp_root/case_route_repair_failure" "$tmp_root/bin"
   test_restart_disabled_observes_only "$tmp_root/case_restart_disabled" "$tmp_root/bin"
   test_systemd_unit_recovers_tunnel_with_rate_limits
   test_systemd_timer_waits_after_run_finishes

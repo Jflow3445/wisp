@@ -368,8 +368,10 @@ COA_PORT="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1==
 COA_SECRET="$(awk -v n="$COA_NAME" '$1=="home_server"&&$2==n{blk=1;next} blk&&$1=="secret"{gsub(/"|;/,"",$3);print $3;exit} blk&&/}/{blk=0}' "$PROXYCONF" 2>/dev/null || true)"
 COA_PORT="${COA_PORT:-3799}"
 
-KICK_RECENT_MINUTES="${KICK_RECENT_MINUTES:-0}"
-[[ "$KICK_RECENT_MINUTES" =~ ^[0-9]+$ ]] || KICK_RECENT_MINUTES=0
+KICK_RECENT_MINUTES="${KICK_RECENT_MINUTES:-60}"
+[[ "$KICK_RECENT_MINUTES" =~ ^[0-9]+$ ]] || KICK_RECENT_MINUTES=60
+BROAD_COA_FALLBACK="${BROAD_COA_FALLBACK:-0}"
+[[ "$BROAD_COA_FALLBACK" =~ ^[01]$ ]] || BROAD_COA_FALLBACK=0
 ZERO_CAP_EXHAUST_ACTIVE="${ZERO_CAP_EXHAUST_ACTIVE:-1}"
 [[ "$ZERO_CAP_EXHAUST_ACTIVE" =~ ^[01]$ ]] || ZERO_CAP_EXHAUST_ACTIVE=1
 KICK_RECENT_SQL=""
@@ -754,10 +756,11 @@ kick_sessions(){
     IFS=$'	' read -r u ip sid nas mac <<<"$row"
     sid_safe="$(echo "${sid:-}" | tr -cd 'A-Za-z0-9._:-')"
     has_match=0
-    [[ -n "$sid_safe" ]] && has_match=1
-    is_valid_ipv4 "${ip:-}" && has_match=1
+    if [[ -n "$sid_safe" ]] && { is_valid_ipv4 "${ip:-}" || is_valid_mac "${mac:-}"; }; then
+      has_match=1
+    fi
     if (( has_match == 0 )); then
-      log "WARN user=$USER skip_coa_missing_match_keys sid=${sid:-na} ip=${ip:-na} nas=${nas:-na}"
+      log "WARN user=$USER skip_coa_missing_match_keys sid=${sid:-na} ip=${ip:-na} mac=${mac:-na} nas=${nas:-na}"
       continue
     fi
 
@@ -792,6 +795,12 @@ kick_sessions(){
   if (( attempts == 0 )); then
     if (( ${#rows[@]} == 0 )); then
       log "KICK_DONE user=$USER ok=$ok fail=$fail attempts=$attempts rows=0 skipped=no_active_session"
+      return 0
+    fi
+
+    if [[ "$BROAD_COA_FALLBACK" != "1" ]]; then
+      log "WARN user=$USER kick_fallback_disabled rows=${#rows[@]} required=sid_and_ip_or_mac"
+      log "KICK_DONE user=$USER ok=$ok fail=$fail attempts=$attempts rows=${#rows[@]}"
       return 0
     fi
 

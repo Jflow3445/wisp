@@ -16,6 +16,7 @@ TCP_CONNECT_TIMEOUT="${TCP_CONNECT_TIMEOUT:-2}"
 COOLDOWN_SEC="${COOLDOWN_SEC:-300}"
 RESTART_WINDOW_SEC="${RESTART_WINDOW_SEC:-900}"
 MAX_RESTARTS_PER_WINDOW="${MAX_RESTARTS_PER_WINDOW:-3}"
+ALLOW_PASSIVE_MODE="${ALLOW_PASSIVE_MODE:-0}"
 STILL_DOWN_EXIT_CODE="${STILL_DOWN_EXIT_CODE:-1}"
 POST_RESTART_WAIT_SEC="${POST_RESTART_WAIT_SEC:-60}"
 POST_RESTART_POLL_SEC="${POST_RESTART_POLL_SEC:-3}"
@@ -230,6 +231,7 @@ ensure_recovery_helpers() {
   local tunnel_dev="${1:-}"
   local route_line services service routes route
   local router_lan_dev="$ROUTER_LAN_DEV"
+  local failed=0
 
   if [[ -z "$router_lan_dev" ]]; then
     router_lan_dev="$tunnel_dev"
@@ -242,6 +244,7 @@ ensure_recovery_helpers() {
         log "route=ensured cidr=$ROUTER_LAN_CIDR via=$ROUTER_LAN_VIA dev=$router_lan_dev"
       else
         log "route=ensure_failed cidr=$ROUTER_LAN_CIDR via=$ROUTER_LAN_VIA dev=$router_lan_dev"
+        failed=1
       fi
     fi
   fi
@@ -257,6 +260,7 @@ ensure_recovery_helpers() {
         log "route=ensured cidr=$route via=$ROUTER_LAN_VIA dev=$router_lan_dev"
       else
         log "route=ensure_failed cidr=$route via=$ROUTER_LAN_VIA dev=$router_lan_dev"
+        failed=1
       fi
     fi
   done
@@ -271,9 +275,12 @@ ensure_recovery_helpers() {
         log "service=started name=$service"
       else
         log "service=start_failed name=$service"
+        failed=1
       fi
     fi
   done
+
+  return "$failed"
 }
 
 restart_service_list() {
@@ -327,6 +334,10 @@ if [[ "${REQUIRE_PING}" != "0" && "${REQUIRE_PING}" != "1" ]]; then
   REQUIRE_PING=1
   log "config=defaulted key=REQUIRE_PING value=$REQUIRE_PING"
 fi
+if [[ "${ALLOW_PASSIVE_MODE}" != "0" && "${ALLOW_PASSIVE_MODE}" != "1" ]]; then
+  ALLOW_PASSIVE_MODE=0
+  log "config=defaulted key=ALLOW_PASSIVE_MODE value=$ALLOW_PASSIVE_MODE"
+fi
 if [[ -z "$PROBE_MODE" ]]; then
   if [[ "$REQUIRE_PING" == "1" ]]; then
     PROBE_MODE="ping"
@@ -369,7 +380,10 @@ if route_dev_ok "$rd"; then
       rm -f "$STATE_FILE"
       log "status=recovered route_dev=$rd target=$TARGET_IP"
     fi
-    ensure_recovery_helpers "$rd"
+    if ! ensure_recovery_helpers "$rd"; then
+      log "status=degraded reason=recovery_helper_failed route_dev=$rd target=$TARGET_IP"
+      exit "$STILL_DOWN_EXIT_CODE"
+    fi
     exit 0
   fi
 fi
@@ -396,17 +410,20 @@ fi
 
 if (( MAX_RESTARTS_PER_WINDOW == 0 )); then
   log "status=down action=skip reason=restart_disabled route_dev=${rd:-none} target=$TARGET_IP"
-  exit 0
+  if [[ "$ALLOW_PASSIVE_MODE" == "1" ]]; then
+    exit 0
+  fi
+  exit "$STILL_DOWN_EXIT_CODE"
 fi
 
 if (( now_epoch - last_restart < COOLDOWN_SEC )); then
   log "status=down action=skip reason=cooldown route_dev=${rd:-none} target=$TARGET_IP"
-  exit 0
+  exit "$STILL_DOWN_EXIT_CODE"
 fi
 
 if (( MAX_RESTARTS_PER_WINDOW > 0 )) && (( window_restarts >= MAX_RESTARTS_PER_WINDOW )); then
   log "status=down action=skip reason=rate_limit route_dev=${rd:-none} target=$TARGET_IP window_restarts=$window_restarts"
-  exit 0
+  exit "$STILL_DOWN_EXIT_CODE"
 fi
 
 log "status=down action=restart route_dev=${rd:-none} target=$TARGET_IP"
@@ -423,7 +440,10 @@ while :; do
   if route_dev_ok "$rd_after"; then
     if probe_ok; then
       rm -f "$STATE_FILE"
-      ensure_recovery_helpers "$rd_after"
+      if ! ensure_recovery_helpers "$rd_after"; then
+        log "status=degraded reason=recovery_helper_failed route_dev=$rd_after target=$TARGET_IP"
+        exit "$STILL_DOWN_EXIT_CODE"
+      fi
       log "status=up_after_restart route_dev=$rd_after target=$TARGET_IP"
       exit 0
     fi
@@ -438,7 +458,10 @@ if route_dev_ok "$rd_after"; then
     log "status=still_down reason=$(probe_failed_reason)_after_restart probe=$PROBE_MODE route_dev=${rd_after:-none} target=$TARGET_IP"
   else
     rm -f "$STATE_FILE"
-    ensure_recovery_helpers "$rd_after"
+    if ! ensure_recovery_helpers "$rd_after"; then
+      log "status=degraded reason=recovery_helper_failed route_dev=$rd_after target=$TARGET_IP"
+      exit "$STILL_DOWN_EXIT_CODE"
+    fi
     log "status=up_after_restart route_dev=$rd_after target=$TARGET_IP"
     exit 0
   fi

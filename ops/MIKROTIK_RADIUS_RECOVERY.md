@@ -22,7 +22,7 @@ Common signals from the 2026-06-01 outage:
 Run these from the repo root after `ops/.env.ops` is configured.
 
 ```bash
-ops/vps_exec.sh 'ip -brief address; ip route get 10.10.20.2; ip route get 10.10.20.4; systemctl is-active freeradius mariadb apache2 nister-tunnel-watchdog.timer nister-router-catchup.timer nister-radius-starlink-sync.timer'
+ops/vps_exec.sh 'ip -brief address; ip route get 10.10.20.2; ip route get 10.10.20.4; systemctl is-active freeradius mariadb apache2 nister-tunnel-watchdog.timer nister-router-catchup.timer nister-radius-starlink-sync.timer nister-radacct-cleanup.timer nister-health-check.timer nister-mikrotik-guard.timer'
 ```
 
 ```bash
@@ -34,11 +34,11 @@ ops/router_exec.sh '/ip hotspot active print detail; /ip dhcp-server option prin
 ```
 
 ```bash
-ops/vps_exec.sh 'journalctl -u nister-tunnel-watchdog.service -u nister-router-catchup.service -u nister-radius-starlink-sync.service --since "1 hour ago" --no-pager -n 200'
+ops/vps_exec.sh 'journalctl -u nister-mikrotik-guard.service -u nister-tunnel-watchdog.service -u nister-router-catchup.service -u nister-radius-starlink-sync.service --since "1 hour ago" --no-pager -n 200'
 ```
 
 ```bash
-ops/vps_exec.sh 'tail -n 200 /var/log/nister/tunnel_watchdog.log; tail -n 200 /var/log/freeradius/radius.log'
+ops/vps_exec.sh 'tail -n 120 /var/log/nister/mikrotik_guard.log; tail -n 120 /var/log/nister/tunnel_watchdog.log; tail -n 120 /var/log/freeradius/radius.log'
 ```
 
 ## Known Good State
@@ -53,6 +53,7 @@ The recovered state on 2026-06-01 was:
 - DHCP CAPPORT option is `https://wifi.nister.org/api.json`.
 - `HG3_WG_DST` contains only infrastructure addresses such as `192.168.88.1` and `209.97.137.68`; it must not contain captive probe domains.
 - FreeRADIUS `Acct-Unique-Session-Id` includes at least NAS IP, MikroTik session ID, client MAC, and username.
+- `nister-mikrotik-guard.timer` is enabled and runs every 5 minutes after the previous run finishes.
 
 ## Recovery Steps
 
@@ -74,7 +75,19 @@ The watchdog should now be configured for active recovery, not passive logging:
 ops/vps_exec.sh 'systemctl cat nister-tunnel-watchdog.service; systemctl status --no-pager nister-tunnel-watchdog.timer nister-tunnel-watchdog.service'
 ```
 
-Look for `PROBE_MODE=ping`, `MAX_RESTARTS_PER_WINDOW=3`, and `TUNNEL_ROUTES=10.10.20.4/32,192.168.80.0/20`.
+Look for `PROBE_MODE=ping`, `MAX_RESTARTS_PER_WINDOW=3`, `ALLOW_PASSIVE_MODE=0`, and `TUNNEL_ROUTES=10.10.20.4/32,192.168.80.0/20`.
+
+The watchdog unit should fail visibly if the tunnel is still down, rate-limited, or unable to repair required routes. It should not contain `SuccessExitStatus=2`.
+
+### 1b. Run the reliability guard
+
+The guard keeps critical timers/services enabled, runs the watchdog if the tunnel is bad, and runs router catchup when the tunnel is healthy.
+
+```bash
+ops/vps_exec.sh 'systemctl start nister-mikrotik-guard.service; systemctl show nister-mikrotik-guard.service -p Result -p ExecMainStatus -p ActiveState; tail -n 80 /var/log/nister/mikrotik_guard.log'
+```
+
+Expected result is `Result=success`, `ExecMainStatus=0`, and recent `status=ok` guard logs.
 
 ### 2. Refresh router self-heal, RADIUS, and captive settings
 
@@ -158,7 +171,10 @@ Known good signs:
 ## Files To Inspect Or Deploy
 
 - `nister_tunnel_watchdog.sh`
+- `nister_mikrotik_guard.sh`
 - `systemd/nister-tunnel-watchdog.service`
+- `systemd/nister-mikrotik-guard.service`
+- `systemd/nister-mikrotik-guard.timer`
 - `ops/router_catchup.sh`
 - `ops/push_hotspot_to_router.sh`
 - `nister_radacct_cleanup.sh`

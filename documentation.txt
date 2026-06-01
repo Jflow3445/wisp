@@ -82,6 +82,9 @@ Top-level directories/files you actually use:
 - nister_tunnel_watchdog.sh
   Keeps L2TP/IPsec tunnel route healthy; restarts services when needed.
 
+- nister_mikrotik_guard.sh
+  Keeps critical MikroTik/RADIUS timers and services enabled, runs tunnel recovery if needed, and runs router catchup after healthy tunnel checks.
+
 - nister_netflow_setup.sh
   Installs/configures nfcapd + systemd service + retention cleanup (without logrotate HUP).
 
@@ -460,8 +463,11 @@ Systemd timers/services in this repo:
 - nister-health-check.timer -> every 30 min
   Runs pay-portal/cron/health_check.php
 
-- nister-tunnel-watchdog.timer -> every 60 sec
+- nister-tunnel-watchdog.timer -> 120 sec after previous run finishes
   Runs /usr/local/sbin/nister_tunnel_watchdog.sh
+
+- nister-mikrotik-guard.timer -> 5 min after previous run finishes
+  Runs /usr/local/sbin/nister_mikrotik_guard.sh
 
 - nister-radacct-cleanup.timer -> every 30 min
   Runs /usr/local/sbin/nister_radacct_cleanup.sh

@@ -1,0 +1,13 @@
+[Unit]
+Description=NISTER MikroTik reliability guard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/run /var/log/nister
+ExecStart=/usr/bin/flock -n /run/nister_mikrotik_guard.lock /usr/local/sbin/nister_mikrotik_guard.sh

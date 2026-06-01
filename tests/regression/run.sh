@@ -204,6 +204,10 @@ tunnel_watchdog_content="$(cat nister_tunnel_watchdog.sh)"
 assert_not_contains "watchdog_no_source_exec" "$tunnel_watchdog_content" 'source "$STATE_FILE"'
 assert_contains "watchdog_atomic_state_write" "$tunnel_watchdog_content" 'write_state_file_atomic()'
 
+starlink_sync_content="$(cat nister_radius_starlink_sync.sh)"
+assert_contains "starlink_sync_adopt_failure_exits" "$starlink_sync_content" 'reason=adopt_unknown_failed'
+assert_contains "starlink_sync_restart_failure_visible" "$starlink_sync_content" 'action=restart_after_update'
+
 set_policy_content="$(cat nister_set_policy_and_kick.sh)"
 assert_contains "set_policy_group_validation_active" "$set_policy_content" 'validate_group_name HS_ACTIVE "$HS_ACTIVE"'
 
@@ -212,5 +216,12 @@ assert_contains "user_admin_group_validation_active" "$user_admin_content" 'vali
 
 quota_enforce_content="$(cat nister_quota_enforce.sh)"
 assert_contains "quota_enforce_group_validation_active" "$quota_enforce_content" 'validate_group_name HS_ACTIVE "$HS_ACTIVE"'
+assert_contains "quota_enforce_broad_coa_fallback_off" "$quota_enforce_content" 'BROAD_COA_FALLBACK="${BROAD_COA_FALLBACK:-0}"'
+assert_contains "quota_enforce_requires_strong_coa_match" "$quota_enforce_content" 'required=sid_and_ip_or_mac'
+
+radius_content="$(cat pay-portal/lib/radius.php)"
+assert_not_contains "radius_disconnect_no_suffix_like" "$radius_content" 'username LIKE CONCAT'
+assert_not_contains "radius_force_kick_no_blank_user" "$radius_content" "\$tryUsers[] = '';"
+assert_contains "radius_force_kick_requires_fresh_session" "$radius_content" "'error'=>'no_fresh_session'"
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

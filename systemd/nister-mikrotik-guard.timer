@@ -1,0 +1,12 @@
+[Unit]
+Description=Run NISTER MikroTik reliability guard periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=15s
+Persistent=true
+Unit=nister-mikrotik-guard.service
+
+[Install]
+WantedBy=timers.target

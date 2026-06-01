@@ -166,16 +166,21 @@ adopt_unknown_radius_clients() {
     (( count >= MAX_UNKNOWN_ADOPTS )) && break
   done < <(unknown_radius_client_ips)
   if (( changed != 0 )); then
-    $RESTART_CMD
+    if ! $RESTART_CMD; then
+      log "status=failed action=restart_after_adopt_unknown"
+      return 1
+    fi
   fi
   return 0
 }
 
 peer_ip="$(current_peer_ip | head -n 1 | tr -d '[:space:]')"
 if ! valid_ipv4 "$peer_ip"; then
-  if adopt_unknown_radius_clients; then
-    log "status=skipped reason=no_established_peer right_id=$RIGHT_ID"
+  if ! adopt_unknown_radius_clients; then
+    log "status=failed reason=adopt_unknown_failed right_id=$RIGHT_ID"
+    exit 1
   fi
+  log "status=skipped reason=no_established_peer right_id=$RIGHT_ID"
   exit 0
 fi
 
@@ -197,5 +202,8 @@ if ! $CHECK_CMD >/tmp/nister-radius-starlink-sync-check.out 2>&1; then
   exit 1
 fi
 
-$RESTART_CMD
+if ! $RESTART_CMD; then
+  log "status=failed action=restart_after_update client=$CLIENT_NAME old_ip=${existing_ip:-none} new_ip=$peer_ip backup=$backup"
+  exit 1
+fi
 log "status=ok action=updated client=$CLIENT_NAME old_ip=${existing_ip:-none} new_ip=$peer_ip backup=$backup"
