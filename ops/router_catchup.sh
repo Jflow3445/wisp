@@ -9,6 +9,12 @@ CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-6}"
 HOTSPOT_BASE_URL="${HOTSPOT_BASE_URL:-https://wifi.nister.org/router-sync}"
 SYNC_HOTSPOT_FILES="${SYNC_HOTSPOT_FILES:-0}"
 EXIT_ON_UNREACHABLE="${EXIT_ON_UNREACHABLE:-1}"
+CAPPORT_API_URL="${CAPPORT_API_URL:-https://wifi.nister.org/api.json?v=20260601-remote-refresh}"
+
+if [[ "$CAPPORT_API_URL" == *\"* || "$CAPPORT_API_URL" == *";"* || "$CAPPORT_API_URL" == *$'\n'* || "$CAPPORT_API_URL" == *$'\r'* ]]; then
+  printf 'invalid CAPPORT_API_URL: unsafe RouterOS characters\n' >&2
+  exit 1
+fi
 
 log() {
   local msg="$1"
@@ -66,7 +72,7 @@ else
   critical_failed=1
 fi
 
-captive_cmd=':do { :if ([:len [/ip dhcp-server option find where name="capport"]] = 0) do={ /ip dhcp-server option add name="capport" code=114 value="'\''https://wifi.nister.org/api.json'\''" } else={ /ip dhcp-server option set [find where name="capport"] code=114 value="'\''https://wifi.nister.org/api.json'\''" } } on-error={ :log warning "nister: capport refresh failed" }; :foreach pattern in={"captive.apple.com";"connectivitycheck.gstatic.com";"connectivitycheck.android.com";"clients3.google.com";"www.msftconnecttest.com";"ipv6.msftconnecttest.com";"www.msftncsi.com";"detectportal.firefox.com"} do={ :do { /ip firewall address-list remove [find where list="HG3_WG_DST" and comment~$pattern] } on-error={}; :do { /ip firewall address-list remove [find where list="HG3_WG_DST" and address=$pattern] } on-error={}; :do { /ip hotspot walled-garden remove [find where dst-host~$pattern] } on-error={}; :do { /ip hotspot walled-garden ip remove [find where dst-host~$pattern] } on-error={} }'
+captive_cmd=':do { :if ([:len [/ip dhcp-server option find where name="capport"]] = 0) do={ /ip dhcp-server option add name="capport" code=114 value="'\'''"$CAPPORT_API_URL"''\''" } else={ /ip dhcp-server option set [find where name="capport"] code=114 value="'\'''"$CAPPORT_API_URL"''\''" } } on-error={ :log warning "nister: capport refresh failed" }; :foreach pattern in={"captive.apple.com";"connectivitycheck.gstatic.com";"connectivitycheck.android.com";"clients3.google.com";"www.msftconnecttest.com";"ipv6.msftconnecttest.com";"www.msftncsi.com";"detectportal.firefox.com"} do={ :do { /ip firewall address-list remove [find where list="HG3_WG_DST" and comment~$pattern] } on-error={}; :do { /ip firewall address-list remove [find where list="HG3_WG_DST" and address=$pattern] } on-error={}; :do { /ip hotspot walled-garden remove [find where dst-host~$pattern] } on-error={}; :do { /ip hotspot walled-garden ip remove [find where dst-host~$pattern] } on-error={} }'
 if ros "$captive_cmd" >/dev/null 2>&1; then
   log "status=ok action=captive_refreshed"
 else

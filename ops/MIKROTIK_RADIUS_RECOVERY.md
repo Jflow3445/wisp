@@ -50,7 +50,7 @@ The recovered state on 2026-06-01 was:
 - Router primary RADIUS entry points at `10.99.99.1`, uses `src-address=10.10.20.4`, includes hotspot service, and has a short timeout.
 - Router public fallback RADIUS entry points at `209.97.137.68` and does not bind to `10.10.20.4`.
 - Router has `/radius incoming accept=yes port=3799` for CoA/disconnect.
-- DHCP CAPPORT option is `https://wifi.nister.org/api.json`.
+- DHCP CAPPORT option is `https://wifi.nister.org/api.json?v=20260601-remote-refresh`.
 - Public `https://wifi.nister.org/api.json` returns valid static JSON. It must not be a MikroTik template containing `$(...)` macros; public Apache cannot expand those macros.
 - `HG3_WG_DST` contains only infrastructure addresses such as `192.168.88.1` and `209.97.137.68`; it must not contain captive probe domains.
 - FreeRADIUS `Acct-Unique-Session-Id` includes at least NAS IP, MikroTik session ID, client MAC, and username.
@@ -140,6 +140,14 @@ ops/router_exec.sh '/radius print detail; /radius monitor [find] once; /ip dhcp-
 ```
 
 If `HG3_WG_DST` contains `captive.apple.com`, `connectivitycheck.gstatic.com`, `connectivitycheck.android.com`, `clients3.google.com`, `www.msftconnecttest.com`, `ipv6.msftconnecttest.com`, or `www.msftncsi.com`, remove those entries. They suppress the OS captive portal popup.
+
+To remotely nudge clients that cached a bad CAPPORT response, change the DHCP CAPPORT URL to a cache-busted URL and clear only unauthenticated hotspot hosts:
+
+```bash
+ops/router_exec.sh ':do { /ip dhcp-server option set [find where name="capport"] code=114 value="'\''https://wifi.nister.org/api.json?v=20260601-remote-refresh'\''" } on-error={ :put "CAPPORT_SET_FAILED" }; :local unauth [/ip hotspot host find where authorized=no]; :put ("UNAUTH_BEFORE=" . [:len $unauth]); :if ([:len $unauth] > 0) do={ /ip hotspot host remove $unauth; }; :put ("UNAUTH_AFTER=" . [/ip hotspot host print count-only where authorized=no]); :put ("AUTH_ACTIVE=" . [/ip hotspot active print count-only])'
+```
+
+This does not clear the private cache inside every phone OS, but it forces the router to rediscover unauthenticated clients and gives renewing clients a fresh CAPPORT URL without interrupting authenticated users.
 
 ### 3. Refresh Starlink public-IP authorization if needed
 

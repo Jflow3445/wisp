@@ -208,6 +208,10 @@ starlink_sync_content="$(cat nister_radius_starlink_sync.sh)"
 assert_contains "starlink_sync_adopt_failure_exits" "$starlink_sync_content" 'reason=adopt_unknown_failed'
 assert_contains "starlink_sync_restart_failure_visible" "$starlink_sync_content" 'action=restart_after_update'
 
+router_catchup_content="$(cat ops/router_catchup.sh)"
+assert_contains "router_catchup_capport_url_configurable" "$router_catchup_content" 'CAPPORT_API_URL="${CAPPORT_API_URL:-https://wifi.nister.org/api.json?v=20260601-remote-refresh}"'
+assert_contains "router_catchup_capport_url_sanitized" "$router_catchup_content" 'invalid CAPPORT_API_URL: unsafe RouterOS characters'
+
 set_policy_content="$(cat nister_set_policy_and_kick.sh)"
 assert_contains "set_policy_group_validation_active" "$set_policy_content" 'validate_group_name HS_ACTIVE "$HS_ACTIVE"'
 
