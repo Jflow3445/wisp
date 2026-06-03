@@ -10,9 +10,23 @@ HOTSPOT_BASE_URL="${HOTSPOT_BASE_URL:-https://wifi.nister.org/router-sync}"
 SYNC_HOTSPOT_FILES="${SYNC_HOTSPOT_FILES:-0}"
 EXIT_ON_UNREACHABLE="${EXIT_ON_UNREACHABLE:-1}"
 CAPPORT_API_URL="${CAPPORT_API_URL:-https://wifi.nister.org/api.json?v=20260601-remote-refresh}"
+VPS_TUNNEL_IP="${VPS_TUNNEL_IP:-10.99.99.1}"
+WINBOX_PORT="${WINBOX_PORT:-8291}"
+WINBOX_INTERFACE="${WINBOX_INTERFACE:-l2tp-over-vps}"
 
 if [[ "$CAPPORT_API_URL" == *\"* || "$CAPPORT_API_URL" == *";"* || "$CAPPORT_API_URL" == *$'\n'* || "$CAPPORT_API_URL" == *$'\r'* ]]; then
   printf 'invalid CAPPORT_API_URL: unsafe RouterOS characters\n' >&2
+  exit 1
+fi
+for value_name in VPS_TUNNEL_IP WINBOX_INTERFACE; do
+  value="${!value_name}"
+  if [[ "$value" == *\"* || "$value" == *";"* || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    printf 'invalid %s: unsafe RouterOS characters\n' "$value_name" >&2
+    exit 1
+  fi
+done
+if [[ ! "$WINBOX_PORT" =~ ^[0-9]+$ ]]; then
+  printf 'invalid WINBOX_PORT: must be numeric\n' >&2
   exit 1
 fi
 
@@ -69,6 +83,14 @@ if ros "$radius_cmd" >/dev/null 2>&1; then
   log "status=ok action=radius_refreshed"
 else
   log "status=warn action=radius_refresh_failed"
+  critical_failed=1
+fi
+
+management_cmd=':do { :local svc [/ip service find where name="winbox"]; :if ([:len $svc] = 0) do={ :log warning "nister: winbox service missing" } else={ /ip service set [:pick $svc 0] disabled=no port='"$WINBOX_PORT"' address='"$VPS_TUNNEL_IP"'/32 } } on-error={ :log warning "nister: winbox service refresh failed" }; :do { /ip firewall filter remove [find where comment="Allow Winbox from VPS over L2TP"] } on-error={}; :do { :local drop [/ip firewall filter find where comment="DROP WAN -> ROUTER"]; :if ([:len $drop] > 0) do={ /ip firewall filter add chain=input action=accept protocol=tcp src-address='"$VPS_TUNNEL_IP"' in-interface='"$WINBOX_INTERFACE"' dst-port='"$WINBOX_PORT"' comment="Allow Winbox from VPS over L2TP" place-before=$drop } else={ /ip firewall filter add chain=input action=accept protocol=tcp src-address='"$VPS_TUNNEL_IP"' in-interface='"$WINBOX_INTERFACE"' dst-port='"$WINBOX_PORT"' comment="Allow Winbox from VPS over L2TP" } } on-error={ :log warning "nister: winbox firewall refresh failed" }'
+if ros "$management_cmd" >/dev/null 2>&1; then
+  log "status=ok action=management_refreshed"
+else
+  log "status=warn action=management_refresh_failed"
   critical_failed=1
 fi
 

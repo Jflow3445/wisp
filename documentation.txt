@@ -160,6 +160,33 @@ Rule for future changes:
 - Treat pay.nister.org as payment/admin only, not as a captive API fallback.
 - After Apache/vhost changes, run ops/check_api_host_boundary.sh.
 
+F) REMOTE MANAGEMENT BOUNDARY - DO NOT BREAK WINBOX
+
+The remote Winbox path is a production access contract:
+
+- Local operator tunnel:
+  ssh -N -L 127.0.0.1:18291:10.10.20.2:8291 root@209.97.137.68
+
+- Winbox target after the tunnel is open:
+  127.0.0.1:18291
+
+- Router endpoint:
+  10.10.20.2:8291 over the VPS/L2TP tunnel.
+
+- VPS tunnel source allowed by the router:
+  10.99.99.1.
+
+Do not use 10.10.20.2:443 for Winbox. Port 443 is router HTTPS/WebFig and may
+be disabled. Preserving WebFig is not the same as preserving Winbox access.
+
+Rule for future VPN/firewall changes:
+- Keep /ip service winbox enabled on port 8291 and restricted to
+  10.99.99.1/32.
+- Keep the input firewall rule "Allow Winbox from VPS over L2TP" allowing TCP
+  8291 from 10.99.99.1 on l2tp-over-vps before the WAN drop rule.
+- After VPN, tunnel watchdog, router catch-up, /ip service, or input firewall
+  changes, run ops/check_winbox_tunnel.sh.
+
 
 4) DATA MODEL YOU RELY ON
 -------------------------

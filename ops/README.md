@@ -73,5 +73,19 @@ If it prints `not enough permissions`, the router account lacks policy to modify
 If you need local Winbox forwarding:
 
 ```bash
-ssh -N -L 8291:10.10.20.2:8291 root@209.97.137.68
+ssh -N -L 127.0.0.1:18291:10.10.20.2:8291 root@209.97.137.68
+```
+
+Then connect Winbox to `127.0.0.1:18291`.
+
+Do not point a Winbox tunnel at `10.10.20.2:443`. Port `443` is router
+HTTPS/WebFig, not Winbox, and it can be disabled. The production Winbox
+management contract is `10.10.20.2:8291` reachable from VPS tunnel source
+`10.99.99.1`.
+
+After touching VPN, tunnel watchdog, router catch-up, MikroTik `/ip service`,
+or input firewall rules, run:
+
+```bash
+ops/check_winbox_tunnel.sh
 ```

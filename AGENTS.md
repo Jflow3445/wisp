@@ -34,5 +34,12 @@ code lives under `pay-portal/`, but the public hotspot API contract remains
   payment config, Apache routing, or MikroTik deployment scripts.
 - Run `ops/check_api_host_boundary.sh` after touching Apache/vhost routing for
   `api.nister.org`.
+- Preserve the remote Winbox management path. Winbox is
+  `10.10.20.2:8291` through the VPS/L2TP tunnel, not router HTTPS/WebFig
+  `443`. Keep `/ip service winbox` on port `8291` restricted to
+  `10.99.99.1/32`, and keep the input firewall allow rule from
+  `10.99.99.1` over `l2tp-over-vps` to TCP `8291` before the WAN drop rule.
+- Run `ops/check_winbox_tunnel.sh` after touching VPN, tunnel watchdog,
+  router catch-up, MikroTik `/ip service`, or input firewall rules.
 - If deploying captive files, verify the MikroTik file size/timestamp after
   upload. Do not assume SCP output means RouterOS replaced the file.

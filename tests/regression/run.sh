@@ -302,6 +302,14 @@ assert_contains "starlink_sync_restart_failure_visible" "$starlink_sync_content"
 router_catchup_content="$(cat ops/router_catchup.sh)"
 assert_contains "router_catchup_capport_url_configurable" "$router_catchup_content" 'CAPPORT_API_URL="${CAPPORT_API_URL:-https://wifi.nister.org/api.json?v=20260601-remote-refresh}"'
 assert_contains "router_catchup_capport_url_sanitized" "$router_catchup_content" 'invalid CAPPORT_API_URL: unsafe RouterOS characters'
+assert_contains "router_catchup_winbox_port_guardrail" "$router_catchup_content" 'WINBOX_PORT="${WINBOX_PORT:-8291}"'
+assert_contains "router_catchup_winbox_firewall_guardrail" "$router_catchup_content" 'Allow Winbox from VPS over L2TP'
+assert_contains "router_catchup_management_refresh_logged" "$router_catchup_content" 'action=management_refreshed'
+
+winbox_check_content="$(cat ops/check_winbox_tunnel.sh)"
+assert_contains "winbox_check_uses_winbox_port" "$winbox_check_content" 'WINBOX_PORT="${WINBOX_PORT:-8291}"'
+assert_contains "winbox_check_documents_local_forward" "$winbox_check_content" '127.0.0.1:18291'
+assert_not_contains "winbox_check_does_not_use_webfig_port" "$winbox_check_content" '8443:10.10.20.2:443'
 
 set_policy_content="$(cat nister_set_policy_and_kick.sh)"
 assert_contains "set_policy_group_validation_active" "$set_policy_content" 'validate_group_name HS_ACTIVE "$HS_ACTIVE"'
