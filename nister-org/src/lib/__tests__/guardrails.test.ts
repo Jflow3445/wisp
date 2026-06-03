@@ -13,6 +13,7 @@ import {
 
 const projectRoot = process.cwd();
 const sourceRoot = join(projectRoot, "src");
+const capportApiPath = join(projectRoot, "public", "api.json");
 const legacyProductDomain = ["nister", "ai", ".com"].join("");
 const legacyProductName = ["Nister", " ", "AI"].join("");
 const forbiddenPatterns = [new RegExp(legacyProductDomain, "i"), new RegExp(`\\b${legacyProductName}\\b`, "i")];
@@ -47,6 +48,17 @@ test("external links point to the approved Nister Wi-Fi destinations", () => {
   assert.equal(EXTERNAL_LINKS.support, "https://wa.me/233530488905");
   assert.match(EXTERNAL_LINKS.coverageRequest, /^https:\/\/wa\.me\/233530488905\?text=/);
   assert.match(EXTERNAL_LINKS.partnershipRequest, /^https:\/\/wa\.me\/233530488905\?text=/);
+});
+
+test("public CAPPORT API is static compatibility JSON", () => {
+  const payload = JSON.parse(readFileSync(capportApiPath, "utf8"));
+
+  assert.deepEqual(payload, {
+    captive: true,
+    "user-portal-url": "http://192.168.88.1/login",
+    "venue-info-url": "https://wifi.nister.org/",
+    "can-extend-session": false,
+  });
 });
 
 test("support actions use WhatsApp instead of email", () => {

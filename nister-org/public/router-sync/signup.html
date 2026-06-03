@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>NISTER Wi-Fi | Sign up</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="common.css">
+  <style>
+    .card{max-width:520px}
+    .note-box{
+      background:rgba(15,118,110,.08);
+      border:1px solid rgba(15,118,110,.2);
+      color:#0b3c36;
+      border-radius:12px;
+      padding:10px 12px;
+      font-size:12px;
+      margin:10px 0 14px;
+    }
+    .otp-row{display:flex;gap:8px;align-items:center}
+    .otp-row .input{flex:1}
+    .otp-status{font-size:12px;color:#0b3c36;margin:6px 0 0}
+    .btn-mini{
+      height:42px;
+      padding:0 12px;
+      border:1px solid rgba(15,118,110,.35);
+      border-radius:10px;
+      background:#fff;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn-mini[disabled]{opacity:.6;cursor:not-allowed}
+  </style>
+  <script>
+    function qs(k){ return new URLSearchParams(location.search).get(k) || ''; }
+    function detectSiteCode(){
+      var q = (qs('location_code') || qs('site_code') || '').trim();
+      if (q) return q;
+      if (typeof window !== 'undefined' && window.NISTER_SITE_CODE) {
+        return String(window.NISTER_SITE_CODE).trim();
+      }
+      return '';
+    }
+    function showBanner(kind, text){
+      var box = document.getElementById('banner');
+      var span = document.getElementById('banner-text');
+      if (!box || !span) return;
+      box.className = 'banner ' + (kind === 'success' ? 'success' : 'err');
+      span.textContent = text || '';
+      box.style.display = text ? 'block' : 'none';
+    }
+    function signupErrorMessage(code){
+      var c = (code || '').toLowerCase();
+      if (!c) return '';
+      if (c === 'missing_fields') return 'Please fill in your full name, phone number, and password.';
+      if (c === 'invalid_phone') return 'Enter a valid phone number (digits only).';
+      if (c === 'weak_password') return 'Password must be at least 6 characters.';
+      if (c === 'invalid_name') return 'Please enter your full name.';
+      if (c === 'name_too_long') return 'Name is too long. Please shorten it.';
+      if (c === 'account_exists') return 'An account with this phone number already exists. Please log in instead.';
+      if (c === 'otp_required') return 'Verify your phone with OTP before creating your account.';
+      if (c === 'otp_invalid_or_expired') return 'OTP verification expired. Request a new OTP and verify again.';
+      if (c === 'otp_not_requested') return 'Send an OTP code first.';
+      if (c === 'otp_invalid') return 'The OTP code is not correct.';
+      if (c === 'otp_expired') return 'OTP code has expired. Request a new one.';
+      if (c === 'otp_locked') return 'Too many wrong OTP attempts. Request a new code.';
+      if (c === 'cooldown_active') return 'Please wait before requesting another OTP.';
+      if (c === 'rate_limited' || c === 'rate_limited_ip') return 'Too many OTP requests. Please try again shortly.';
+      if (c === 'sms_send_failed') return 'OTP SMS could not be sent. Please try again.';
+      if (c === 'invalid_code_format') return 'Enter a valid OTP code.';
+      if (c === 'invalid_referral_code') return 'Referral code is not valid.';
+      if (c === 'server_error') return 'We could not create your account right now. Please try again later or contact support.';
+      return code;
+    }
+    function apiUrl(path){
+      var f = document.getElementById('signup_form');
+      var action = f ? (f.action || f.getAttribute('action') || '') : '';
+      if (action && /\/hotspot\/signup\.php(?:\?.*)?$/i.test(action)) {
+        return action.replace(/\/hotspot\/signup\.php(?:\?.*)?$/i, path);
+      }
+      var m = action.match(/^(https?:\/\/[^\/]+)/i);
+      var origin = m ? m[1] : location.origin;
+      return origin.replace(/\/+$/,'') + path;
+    }
+    function setOtpStatus(text, ok){
+      var el = document.getElementById('otp_status');
+      if (!el) return;
+      el.textContent = text || '';
+      el.style.color = ok ? '#0b3c36' : '#7f1d1d';
+    }
+    function clearOtpToken(){
+      var t = document.getElementById('otp_token');
+      if (t) t.value = '';
+      setOtpStatus('', true);
+    }
+    var otpTimer = null;
+    function setCooldown(sec){
+      var b = document.getElementById('otp_send_btn');
+      if (!b) return;
+      var left = Math.max(0, sec|0);
+      if (otpTimer) { clearInterval(otpTimer); otpTimer = null; }
+      if (left <= 0) {
+        b.disabled = false;
+        b.textContent = 'Send code';
+        return;
+      }
+      b.disabled = true;
+      b.textContent = 'Resend in ' + left + 's';
+      otpTimer = setInterval(function(){
+        left -= 1;
+        if (left <= 0) {
+          clearInterval(otpTimer); otpTimer = null;
+          b.disabled = false;
+          b.textContent = 'Send code';
+          return;
+        }
+        b.textContent = 'Resend in ' + left + 's';
+      }, 1000);
+    }
+    async function otpSend(){
+      var user = document.getElementById('user');
+      if (!user) return;
+      var username = (user.value || '').trim();
+      if (!username) { showBanner('err', 'Enter your phone number first.'); return; }
+      clearOtpToken();
+      setOtpStatus('', true);
+      try {
+        var r = await fetch(apiUrl('/hotspot/otp_send.php'), {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({username: username})
+        });
+        var j = await r.json();
+        if (!r.ok || !j.ok) {
+          showBanner('err', signupErrorMessage(j.error || 'otp_send_failed'));
+          if (j.cooldown_seconds) setCooldown(j.cooldown_seconds);
+          return;
+        }
+        setCooldown(j.cooldown_seconds || 60);
+        showBanner('success', 'OTP sent. Enter the code from your SMS and tap Verify.');
+      } catch (e) {
+        showBanner('err', 'Could not send OTP right now. Please try again.');
+      }
+    }
+    async function otpVerify(){
+      var user = document.getElementById('user');
+      var code = document.getElementById('otp_code');
+      var token = document.getElementById('otp_token');
+      if (!user || !code || !token) return;
+      var username = (user.value || '').trim();
+      var otp = (code.value || '').trim();
+      if (!username || !otp) { showBanner('err', 'Enter phone number and OTP code.'); return; }
+      try {
+        var r = await fetch(apiUrl('/hotspot/otp_verify.php'), {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({username: username, code: otp})
+        });
+        var j = await r.json();
+        if (!r.ok || !j.ok || !j.signup_token) {
+          token.value = '';
+          setOtpStatus('OTP verification failed.', false);
+          showBanner('err', signupErrorMessage(j.error || 'otp_verify_failed'));
+          return;
+        }
+        token.value = j.signup_token;
+        setOtpStatus('Phone number verified.', true);
+        showBanner('success', 'Phone number verified. You can now create your account.');
+      } catch (e) {
+        token.value = '';
+        setOtpStatus('OTP verification failed.', false);
+        showBanner('err', 'Could not verify OTP right now. Please try again.');
+      }
+    }
+    function bindToggle(btnId, inputId){
+      var btn = document.getElementById(btnId);
+      var input = document.getElementById(inputId);
+      if (!btn || !input) return;
+      btn.addEventListener('click', function(){
+        var isPass = input.type === 'password';
+        input.type = isPass ? 'text' : 'password';
+        btn.textContent = isPass ? 'Hide' : 'Show';
+        btn.setAttribute('aria-pressed', isPass ? 'true' : 'false');
+      });
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+      // Optional redirect target captured for the server, not used for auto-login.
+      document.getElementById('dst').value = qs('dst');
+      var siteCode = detectSiteCode();
+      var lc = document.getElementById('location_code');
+      if (lc) lc.value = siteCode;
+      var loginLink = document.getElementById('login_link');
+      if (loginLink) {
+        var href = 'login.html';
+        if (siteCode) href += '?location_code=' + encodeURIComponent(siteCode);
+        loginLink.setAttribute('href', href);
+      }
+
+      // Optional prefill from querystring
+      var preUser = qs('username');
+      if (preUser) document.getElementById('user').value = preUser;
+
+      var preName = qs('name');
+      if (preName) document.getElementById('name').value = preName;
+
+      // MAC (prefer querystring if present; otherwise MikroTik template token)
+      var mac = qs('mac') || '$(mac)';
+      document.getElementById('mac').value = mac;
+
+      var err = qs('err') || qs('error');
+      if (err) {
+        showBanner('err', signupErrorMessage(err));
+      } else {
+        var msg = qs('msg');
+        if (msg) showBanner('success', msg);
+      }
+
+      bindToggle('toggle_pass', 'pass');
+      var user = document.getElementById('user');
+      if (user) user.addEventListener('input', clearOtpToken);
+      var sendBtn = document.getElementById('otp_send_btn');
+      if (sendBtn) sendBtn.addEventListener('click', otpSend);
+      var verifyBtn = document.getElementById('otp_verify_btn');
+      if (verifyBtn) verifyBtn.addEventListener('click', otpVerify);
+      var form = document.getElementById('signup_form');
+      if (form) {
+        form.addEventListener('submit', function(ev){
+          var token = document.getElementById('otp_token');
+          if (!token || !token.value) {
+            ev.preventDefault();
+            showBanner('err', 'Verify your phone with OTP before creating your account.');
+          }
+        });
+      }
+    });
+  </script>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <div class="logo">
+      <div class="dot"></div>
+      <div class="name">NISTER Wi-Fi</div>
+      <span class="tag">sign up</span>
+    </div>
+    <h2 class="h">Create your account</h2>
+    <p class="sub">Use your phone number and a password. You will use these to log in and buy data.</p>
+
+    <div id="banner" class="banner"><span id="banner-text"></span></div>
+
+    <div class="note-box">Tip: Use the same phone number you want to use for login and payments.</div>
+
+    <!-- Plain HTML form: no AJAX, no auto-login -->
+    <form id="signup_form" action="https://api.nister.org/hotspot/signup.php" data-api-path="/hotspot/signup.php" method="post" target="_top" autocomplete="off">
+      <label class="small" for="name">Full name *</label>
+      <input id="name" name="name" class="input" placeholder="Jane Doe" required>
+      <div style="height:10px"></div>
+
+      <label class="small" for="user">Phone number *</label>
+      <input id="user" name="username" class="input" inputmode="tel" placeholder="0240000000" required>
+      <div style="height:8px"></div>
+      <div class="otp-row">
+        <button class="btn-mini" id="otp_send_btn" type="button">Send code</button>
+      </div>
+      <div style="height:10px"></div>
+
+      <label class="small" for="otp_code">OTP code *</label>
+      <div class="otp-row">
+        <input id="otp_code" class="input" inputmode="numeric" placeholder="Enter 6-digit code">
+        <button class="btn-mini" id="otp_verify_btn" type="button">Verify</button>
+      </div>
+      <div id="otp_status" class="otp-status"></div>
+      <div style="height:10px"></div>
+
+      <label class="small" for="pass">Password *</label>
+      <div class="input-wrap">
+        <input id="pass" name="password" class="input" type="password" autocomplete="new-password" required>
+        <button class="toggle-btn" id="toggle_pass" type="button" aria-pressed="false">Show</button>
+      </div>
+      <div style="height:10px"></div>
+
+      <label class="small" for="referral_code">Referral code (optional)</label>
+      <input id="referral_code" name="referral_code" class="input" placeholder="e.g. AB29KQ7X">
+      <div style="height:16px"></div>
+
+      <!-- Context for the server (no auto-post usage) -->
+      <input type="hidden" id="mac" name="mac" value="$(mac)">
+      <input type="hidden" id="dst" name="dst" value="">
+      <input type="hidden" id="otp_token" name="otp_token" value="">
+      <input type="hidden" id="location_code" name="location_code" value="">
+      <input type="hidden" id="router_ip" name="router_ip" value="$(server-address)">
+      <input type="hidden" id="router_id" name="router_id" value="$(identity)">
+      <input type="hidden" id="link_login_only" name="link_login_only" value="$(link-login-only)">
+      <input type="hidden" id="link_login" name="link_login" value="$(link-login)">
+
+      <button class="btn btn-primary btn-full" type="submit">Create account</button>
+    </form>
+
+    <hr>
+    <div class="center small">Already have an account? <a class="link" id="login_link" href="login.html">Log in</a></div>
+    <div class="support">
+      <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+      <span class="note">Need help signing up? Chat with us.</span>
+    </div>
+    <div class="footer">By creating an account you agree to our Terms.</div>
+  </div>
+</div>
+</body>
+<script src="config.js"></script>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Buy data | NISTER Wi-Fi</title>
+<link rel="stylesheet" href="common.css">
+<script>
+const DEFAULT_PAY_BASE = 'https://pay.nister.org';
+const PAY_HOST_ALLOWLIST = {'pay.nister.org': true};
+function normalizePayBase(base){
+  if (!base) return DEFAULT_PAY_BASE;
+  base = String(base).trim();
+  try {
+    var u = new URL(base, window.location.href);
+    if (u.protocol !== 'https:') return DEFAULT_PAY_BASE;
+    var host = String(u.hostname || '').toLowerCase();
+    if (!PAY_HOST_ALLOWLIST[host]) return DEFAULT_PAY_BASE;
+    if (/\/checkout\/?$/i.test(u.pathname || '')) {
+      u.pathname = '';
+    }
+    return u.origin + (u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/+$/,'') : '');
+  } catch(e) {
+    return DEFAULT_PAY_BASE;
+  }
+}
+function payBase(){
+  if (window.NISTER_CFG && window.NISTER_CFG.pay_base) {
+    return normalizePayBase(window.NISTER_CFG.pay_base);
+  }
+  return normalizePayBase(DEFAULT_PAY_BASE);
+}
+function go(){
+  const qs = new URLSearchParams(location.search);
+  const username = qs.get('username') || '$(username)';
+  const mac = '$(mac)';
+  const ip = '$(ip)';
+  const base = payBase();
+  const params = {username, mac, ip};
+  const url = base.replace(/\/+$/,'') + '/login.php?' + new URLSearchParams(params).toString();
+  location.href = url;
+}
+</script>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <div class="logo"><div class="dot"></div><div class="name">NISTER Wi-Fi</div><span class="tag">payments</span></div>
+    <h2 class="h">Redirecting to payment</h2>
+    <p class="sub">If nothing happens, <a class="link" href="#" onclick="go()">tap here</a> to continue.</p>
+    <div class="support">
+      <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+      <span class="note">If you get stuck, chat with us.</span>
+    </div>
+    <div class="footer">Need help? Return to <a class="link" href="login.html">login</a>.</div>
+  </div>
+</div>
+<script src="config.js"></script>
+<script>
+(function(){
+  var launched = false;
+  function launch(){
+    if (launched) return;
+    launched = true;
+    go();
+  }
+  window.addEventListener('nister-config-ready', launch, { once: true });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(launch, 0); }, { once: true });
+  } else {
+    setTimeout(launch, 0);
+  }
+  // Avoid hanging forever if config fetch stalls.
+  setTimeout(launch, 1200);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>NISTER Wi-Fi | Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="common.css">
+
+  <!-- Keep md5.js in flash/hotspot/ on the router -->
+  <script src="md5.js"></script>
+
+  <style>
+    .card{max-width:520px}
+    .row .btn{flex:1}
+    .helper{
+      margin-top:10px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .check-row{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin-top:8px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .check-row input{width:16px;height:16px}
+  </style>
+
+  <script>
+    // IMPORTANT: no 'use strict' here so RouterOS octal/hex escapes in $(chap-*) work.
+
+    function qs(key){
+      try { return new URLSearchParams(location.search).get(key) || ''; }
+      catch(e){ return ''; }
+    }
+    function detectSiteCode(){
+      var q = (qs('location_code') || qs('site_code') || '').trim();
+      if (q) return q;
+      if (typeof window !== 'undefined' && window.NISTER_SITE_CODE) {
+        return String(window.NISTER_SITE_CODE).trim();
+      }
+      return '';
+    }
+
+    function showBanner(kind, text){
+      var box = document.getElementById('banner');
+      var span = document.getElementById('banner-text');
+      box.className = 'banner ' + (kind === 'success' ? 'success' : 'err');
+      span.textContent = text || '';
+      box.style.display = text ? 'block' : 'none';
+    }
+
+    var loginPending = false;
+    var loginStartAt = 0;
+    var loginTimer = null;
+    var loginBtnText = '';
+    var authFrame = null;
+    var loginCandidates = [];
+    var loginAttempts = [];
+    var loginAttempt = 0;
+    var loginAttemptStartedAt = 0;
+    var loginRawPassword = '';
+    var topLevelFallbackTried = false;
+    var LOGIN_ATTEMPT_WAIT_MS = 3500;
+    var LOGIN_FINAL_WAIT_MS = 6500;
+    var LOGIN_TOTAL_TIMEOUT_MS = 24000;
+
+    function usernameCandidates(raw){
+      var base = (raw || '').trim();
+      if (!base) return [];
+      var out = [base];
+      var d = String(base).replace(/\D+/g, '');
+      if (/^0\d{9}$/.test(d)) {
+        out.push('233' + d.slice(1));
+      } else if (/^233\d{9}$/.test(d)) {
+        out.push('0' + d.slice(3));
+      }
+      var uniq = [];
+      for (var i = 0; i < out.length; i++){
+        var v = String(out[i] || '').trim();
+        if (!v) continue;
+        if (uniq.indexOf(v) !== -1) continue;
+        uniq.push(v);
+      }
+      return uniq;
+    }
+
+    function chapContext(){
+      var chapId   = '$(chap-id)';
+      var chapChal = '$(chap-challenge)';
+      var chapPresent = (
+        chapId !== '' && chapId.indexOf('$(') === -1 &&
+        chapChal !== '' && chapChal.indexOf('$(') === -1
+      );
+      return {
+        id: chapId,
+        challenge: chapChal,
+        present: chapPresent,
+        md5Ready: (typeof hexMD5 === 'function')
+      };
+    }
+
+    function isAppleMobileClient(){
+      try {
+        var ua = String(navigator.userAgent || '');
+        return /(iPhone|iPad|iPod)/.test(ua) && /AppleWebKit/.test(ua);
+      } catch(_) {
+        return false;
+      }
+    }
+
+    function buildLoginAttempts(candidates){
+      var out = [];
+      var chap = chapContext();
+      var appleMobile = isAppleMobileClient();
+      for (var i = 0; i < candidates.length; i++){
+        var u = String(candidates[i] || '').trim();
+        if (!u) continue;
+        if (appleMobile) {
+          out.push({ username: u, mode: 'pap' });
+          if (chap.present && chap.md5Ready) out.push({ username: u, mode: 'chap' });
+          continue;
+        }
+        // Try CHAP first when available, then PAP fallback for HTTPS/PAP profiles.
+        if (chap.present && chap.md5Ready) out.push({ username: u, mode: 'chap' });
+        out.push({ username: u, mode: 'pap' });
+      }
+      return out;
+    }
+
+    function redirectToStatus(){
+      // Send user to status page in THIS tab, avoiding MikroTik interstitial
+      var orig   = '$(link-orig)';
+      var status = '$(link-status)';
+      if (!status || status.indexOf('$(') !== -1) return;
+      var target = status + (orig ? ('?continue=' + encodeURIComponent(orig)) : '');
+      loginPending = false;
+      clearTimeout(loginTimer);
+      try { window.location.replace(target); }
+      catch(e){ window.location = target; }
+    }
+
+    function setLoginPending(pending){
+      var btn = document.querySelector('button[type="submit"]');
+      if (btn){
+        if (!loginBtnText) loginBtnText = btn.textContent;
+        btn.disabled = !!pending;
+        btn.textContent = pending ? 'Signing in...' : loginBtnText;
+      }
+      loginPending = !!pending;
+    }
+
+    function handleLoginError(text){
+      if (!loginPending) return;
+      loginPending = false;
+      clearTimeout(loginTimer);
+      setLoginPending(false);
+      loginCandidates = [];
+      loginAttempts = [];
+      loginAttempt = 0;
+      loginAttemptStartedAt = 0;
+      loginRawPassword = '';
+      showBanner('err', text || 'Phone number or password is incorrect. Please try again.');
+    }
+
+    function tryTopLevelLoginFallback(){
+      if (topLevelFallbackTried) return false;
+      topLevelFallbackTried = true;
+      var attempt = loginAttempts[loginAttempt] || null;
+      if (!attempt || !attempt.username) return false;
+      var action = '$(link-login-only)';
+      if (!action || action.indexOf('$(') !== -1) return false;
+      try{
+        var form = document.createElement('form');
+        form.method = 'post';
+        form.action = action;
+        form.target = '_top';
+        form.style.display = 'none';
+
+        var add = function(name, value){
+          var input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = String(value || '');
+          form.appendChild(input);
+        };
+        add('username', attempt.username);
+        add('password', loginRawPassword); // PAP/HTTPS fallback for strict captive agents
+        add('dst', '$(link-orig)');
+        add('popup', 'false');
+        document.body.appendChild(form);
+        showBanner('success','Finishing login using router fallback...');
+        form.submit();
+        return true;
+      }catch(_){
+        return false;
+      }
+    }
+
+    function maybeTryNextCandidate(){
+      if (!loginPending) return false;
+      if ((Date.now() - (loginAttemptStartedAt || loginStartAt)) < LOGIN_ATTEMPT_WAIT_MS) return false;
+      if (!Array.isArray(loginAttempts) || loginAttempts.length <= 1) return false;
+      if (loginAttempt >= loginAttempts.length - 1) return false;
+      loginAttempt += 1;
+      submitLoginAttempt();
+      return true;
+    }
+
+    function isFinalLoginAttempt(){
+      return Array.isArray(loginAttempts) && loginAttempts.length > 0 &&
+        loginAttempt >= loginAttempts.length - 1;
+    }
+
+    function handlePendingLoginProgress(){
+      if (maybeTryNextCandidate()) return;
+      var attemptElapsed = Date.now() - (loginAttemptStartedAt || loginStartAt);
+      if (isFinalLoginAttempt() && attemptElapsed > LOGIN_FINAL_WAIT_MS){
+        if (!topLevelFallbackTried && tryTopLevelLoginFallback()) return;
+      }
+      if ((Date.now() - loginStartAt) > LOGIN_TOTAL_TIMEOUT_MS){
+        if (!topLevelFallbackTried && tryTopLevelLoginFallback()) return;
+        handleLoginError('The login server did not respond. Please try again.');
+        return;
+      }
+      scheduleLoginCheck();
+    }
+
+    function readAuthFrameResult(){
+      if (!authFrame || !authFrame.contentWindow) return null;
+      try{
+        var win = authFrame.contentWindow;
+        var href = (win.location && win.location.href) ? String(win.location.href) : '';
+        if (!href || href === 'about:blank') return null;
+        var doc = win.document;
+        if (doc){
+          var mk = doc.getElementById('mk-error');
+          if (mk){
+            var raw = (mk.getAttribute('data-error') || mk.textContent || '').trim();
+            if (raw){ return { status:'error', message: raw }; }
+          }
+          var banner = doc.getElementById('banner-text');
+          if (banner && banner.textContent && banner.textContent.trim()){
+            return { status:'error', message: banner.textContent.trim() };
+          }
+          var err = doc.querySelector('.banner.err');
+          if (err && err.textContent && err.textContent.trim()){
+            return { status:'error', message: err.textContent.trim() };
+          }
+        }
+        var lower = href.toLowerCase();
+        if (lower.indexOf('login') === -1 && lower.indexOf('alogin') === -1){
+          return { status:'success' };
+        }
+        return null;
+      }catch(e){
+        return null;
+      }
+    }
+
+    function scheduleLoginCheck(){
+      clearTimeout(loginTimer);
+      loginTimer = setTimeout(checkLoginState, 1100);
+    }
+
+    function checkLoginState(){
+      if (!loginPending) return;
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', 'api.json?_t=' + Date.now(), true);
+      xhr.timeout = 4000;
+      xhr.onreadystatechange = function(){
+        if (xhr.readyState !== 4) return;
+        if (xhr.status >= 200 && xhr.status < 300){
+          try{
+            var j = JSON.parse(xhr.responseText || '{}');
+            if (j && j.captive === false){
+              redirectToStatus();
+              return;
+            }
+          }catch(_){}
+        }
+        handlePendingLoginProgress();
+      };
+      xhr.ontimeout = function(){
+        handlePendingLoginProgress();
+      };
+      xhr.onerror = function(){
+        handlePendingLoginProgress();
+      };
+      try { xhr.send(); } catch(_){
+        handlePendingLoginProgress();
+      }
+    }
+
+    function submitLoginAttempt(){
+      var f = document.forms['miklogin'];  // hidden form posts into hidden iframe
+      if (!f) { handleLoginError('Login form is not available. Please refresh and try again.'); return; }
+      var attempt = loginAttempts[loginAttempt] || null;
+      var u = attempt && attempt.username ? attempt.username : '';
+      if (!u) { handleLoginError('Please enter both username and password.'); return; }
+      loginAttemptStartedAt = Date.now();
+      f.username.value = u;
+      var topLevelLogin = isAppleMobileClient() || isFinalLoginAttempt();
+      f.target = topLevelLogin ? '_top' : 'authframe';
+      if (topLevelLogin) topLevelFallbackTried = true;
+
+      var chap = chapContext();
+      var mode = attempt && attempt.mode ? attempt.mode : 'pap';
+      if (mode === 'chap') {
+        try{
+          if (!chap.present || !chap.md5Ready) throw new Error('chap_unavailable');
+          f.password.value = hexMD5(chap.id + loginRawPassword + chap.challenge);
+        }catch(err){
+          if (maybeTryNextCandidate()) return;
+          handleLoginError('Secure login failed. Please refresh and try again.');
+          return;
+        }
+      } else {
+        f.password.value = loginRawPassword;
+      }
+
+      if (isFinalLoginAttempt()) {
+        showBanner('success','Checking credentials with the router...');
+      } else if (loginAttempt > 0 && mode === 'pap') {
+        showBanner('success','Retrying login using secure HTTPS password mode...');
+      } else if (loginAttempt > 0) {
+        showBanner('success','Trying another login variant...');
+      } else {
+        showBanner('success','Signing you in...');
+      }
+      scheduleLoginCheck();
+      f.submit();
+    }
+
+    function initAuthFrame(){
+      if (authFrame) return;
+      authFrame = document.getElementById('authframe');
+      if (!authFrame) return;
+      authFrame.addEventListener('load', function(){
+        if (!loginPending) return;
+        var res = readAuthFrameResult();
+        if (res && res.status === 'error'){
+          if (maybeTryNextCandidate()) return;
+          handleLoginError(res.message);
+          return;
+        }
+        if (res && res.status === 'success'){
+          redirectToStatus();
+          return;
+        }
+        scheduleLoginCheck();
+      });
+    }
+
+    function doLogin(e){
+      if (e && e.preventDefault) e.preventDefault();
+
+      var uEl = document.getElementById('user');
+      var pEl = document.getElementById('pass');
+      var u = (uEl.value||'').trim();
+      var p = (pEl.value||'');
+
+      if(!u || !p){
+        showBanner('err','Please enter both username and password.');
+        (!u ? uEl : pEl).focus();
+        return false;
+      }
+
+      initAuthFrame();
+      loginStartAt = Date.now();
+      setLoginPending(true);
+      loginCandidates = usernameCandidates(u);
+      loginAttempts = buildLoginAttempts(loginCandidates);
+      loginAttempt = 0;
+      loginAttemptStartedAt = 0;
+      loginRawPassword = p;
+      topLevelFallbackTried = false;
+      if (!loginCandidates.length || !loginAttempts.length) {
+        handleLoginError('Please enter a valid phone number.');
+        return false;
+      }
+
+      persistRemember(u);
+      submitLoginAttempt(); // actual POST happens via hidden iframe
+      return false;
+    }
+
+    function bindToggle(btnId, inputId){
+      var btn = document.getElementById(btnId);
+      var input = document.getElementById(inputId);
+      if (!btn || !input) return;
+      btn.addEventListener('click', function(){
+        var isPass = input.type === 'password';
+        input.type = isPass ? 'text' : 'password';
+        btn.textContent = isPass ? 'Hide' : 'Show';
+        btn.setAttribute('aria-pressed', isPass ? 'true' : 'false');
+      });
+    }
+
+    function loadRemembered(){
+      try{
+        var remember = localStorage.getItem('nister.remember') === '1';
+        var u = localStorage.getItem('nister.username') || '';
+        var box = document.getElementById('remember');
+        if (box) box.checked = remember;
+        if (remember){
+          if (u) document.getElementById('user').value = u;
+        }
+        // Cleanup legacy plaintext password storage from older builds.
+        localStorage.removeItem('nister.password');
+      }catch(_){}
+    }
+
+    function persistRemember(u){
+      try{
+        var box = document.getElementById('remember');
+        if (!box) return;
+        if (box.checked){
+          localStorage.setItem('nister.remember','1');
+          localStorage.setItem('nister.username', u || '');
+        } else {
+          localStorage.removeItem('nister.remember');
+          localStorage.removeItem('nister.username');
+        }
+        localStorage.removeItem('nister.password');
+      }catch(_){}
+    }
+
+    function updateBuyLink(){
+      var u = (document.getElementById('user').value || '').trim();
+      var buy = document.getElementById('buy_link');
+      if (!buy) return;
+      var base = 'pay.html?username=';
+      buy.href = base + encodeURIComponent(u || '$(username)' || '');
+    }
+
+    function updateResetLink(){
+      var u = (document.getElementById('user').value || '').trim();
+      var reset = document.getElementById('reset_link');
+      if (!reset) return;
+      var params = [];
+      if (u) params.push('username=' + encodeURIComponent(u));
+      var mac = '$(mac)';
+      if (mac && mac.indexOf('$(') === -1) params.push('mac=' + encodeURIComponent(mac));
+      var siteCode = detectSiteCode();
+      if (siteCode) params.push('location_code=' + encodeURIComponent(siteCode));
+      reset.href = 'reset-password.html' + (params.length ? ('?' + params.join('&')) : '');
+    }
+
+    function redirectIfLoggedIn(){
+      var loggedIn = '$(logged-in)';
+      var status = '$(link-status)';
+      if (loggedIn && loggedIn.indexOf('$(') === -1 && loggedIn === 'yes' &&
+          status && status.indexOf('$(') === -1) {
+        try { window.location.replace(status); }
+        catch(e){ window.location = status; }
+        return true;
+      }
+      return false;
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      if (typeof hexMD5 !== 'function') {
+        console.warn('md5.js not loaded; falling back to PAP');
+      }
+
+      if (redirectIfLoggedIn()) { return; }
+
+      initAuthFrame();
+
+      loadRemembered();
+
+      // Prefill username (querystring has priority)
+      var pre = qs('username') || '$(username)';
+      if (pre && pre.indexOf('$(') === -1) { document.getElementById('user').value = pre; }
+
+      // Show MikroTik-provided error if any, else friendly message from ?msg=
+      var mkErrEl = document.getElementById('mk-error');
+      var mkErr = mkErrEl ? String(mkErrEl.getAttribute('data-error') || '').trim() : '';
+      if (mkErr && mkErr.indexOf('$(') === -1) {
+        showBanner('err', mkErr);
+      } else {
+        var m = qs('msg');
+        if (m) { showBanner('success', m); }
+      }
+
+      // Keep router happy in case it inspects fields
+      var f = document.forms['miklogin'];
+      f.elements['dst'].value   = '$(link-orig)';
+      f.elements['popup'].value = 'false';
+      var siteCode = detectSiteCode();
+      var signupHref = 'signup.html?dst=' + encodeURIComponent('$(link-orig)');
+      if (siteCode) signupHref += '&location_code=' + encodeURIComponent(siteCode);
+      var signupLinks = document.querySelectorAll('[data-signup-link]');
+      for (var i = 0; i < signupLinks.length; i++) {
+        signupLinks[i].setAttribute('href', signupHref);
+      }
+
+      // Enter on password triggers login
+      document.getElementById('pass').addEventListener('keydown', function(ev){
+        if(ev.key === 'Enter'){ doLogin(ev); }
+      });
+
+      document.getElementById('user').addEventListener('input', function(){
+        updateBuyLink();
+        updateResetLink();
+      });
+      updateBuyLink();
+      updateResetLink();
+      bindToggle('toggle_pass', 'pass');
+    });
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="logo">
+        <div class="dot"></div>
+        <div class="name">NISTER Wi-Fi</div>
+        <span class="tag">login</span>
+      </div>
+
+      <h2 class="h">Welcome back</h2>
+      <p class="sub">Sign in to get online. New here? <a class="link" data-signup-link href="signup.html?dst=$(link-orig)">Create an account</a>.</p>
+
+      <!-- One banner used for success OR error -->
+      <div id="banner" class="banner"><span id="banner-text"></span></div>
+      <div id="mk-error" data-error="$(error)" style="display:none"></div>
+      <noscript><div class="banner err" style="display:block">This page requires JavaScript to log in.</div></noscript>
+
+      <!-- Hidden iframe prevents navigation to MikroTik "Logging in..." page -->
+      <iframe name="authframe" id="authframe" style="display:none;width:0;height:0;border:0"></iframe>
+
+      <!-- Hidden form posting to MikroTik login endpoint (into the iframe) -->
+      <form name="miklogin" action="$(link-login-only)" method="post" target="authframe" accept-charset="utf-8" style="display:none">
+        <input type="hidden" name="username" autocomplete="off">
+        <input type="hidden" name="password" autocomplete="off">
+        <input type="hidden" name="dst" value="">
+        <input type="hidden" name="popup" value="false">
+      </form>
+
+      <!-- Visible form -->
+      <form onsubmit="return doLogin(event)">
+        <label class="small" for="user">Phone number</label>
+        <input id="user" name="username" class="input" inputmode="tel" autocomplete="username" placeholder="0240000000" autofocus>
+
+        <div style="height:10px"></div>
+
+        <label class="small" for="pass">Password</label>
+        <div class="input-wrap">
+          <input id="pass" name="password" class="input" type="password" autocomplete="current-password" placeholder="Your password">
+          <button class="toggle-btn" id="toggle_pass" type="button" aria-pressed="false">Show</button>
+        </div>
+
+        <label class="check-row">
+          <input id="remember" type="checkbox">
+          <span>Remember me on this device</span>
+        </label>
+
+        <div class="helper">If you just signed up, use the same phone number and password.</div>
+
+        <div style="height:14px"></div>
+
+        <button class="btn btn-primary btn-full" type="submit">Log in</button>
+        <div style="height:10px"></div>
+        <a class="btn btn-ghost btn-full" id="reset_link" href="reset-password.html">Reset password</a>
+      </form>
+
+      <hr>
+
+      <div class="row">
+        <a class="btn btn-ghost" data-signup-link href="signup.html?dst=$(link-orig)">Create account</a>
+        <a class="btn btn-ghost" id="buy_link" href="pay.html" target="_top">Buy data</a>
+      </div>
+      <div style="height:10px"></div>
+      <div class="center small">
+        Already online?
+        <a class="link" href="$(link-status)">Check status / logout</a>
+      </div>
+
+      <div class="support">
+        <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
+        <span class="note">Need help logging in? Chat with us.</span>
+      </div>
+
+      <div class="footer">
+        Device: <span class="tag">$(mac)</span> | IP: <span class="tag">$(ip)</span>
+      </div>
+    </div>
+  </div>
+</body>
+<script src="config.js"></script>
+</html>

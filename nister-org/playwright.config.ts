@@ -21,7 +21,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run build && npm run standalone:prepare && set PORT=3020&& set HOSTNAME=127.0.0.1&& npm run start",
+    command: "npm run build && npm run standalone:prepare && PORT=3020 HOSTNAME=127.0.0.1 npm run start",
     url: "http://127.0.0.1:3020",
     reuseExistingServer: true,
     timeout: 180_000,

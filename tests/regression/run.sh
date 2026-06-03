@@ -184,8 +184,61 @@ $_POST = [
 include getcwd() . '/api/hotspot/change_password.php';
 PHP
 )"
-assert_contains "change_password_falls_back_to_https_portal_base" "$change_password_fallback" "https://wifi.nister.org/change-password.html"
+assert_contains "change_password_falls_back_to_router_relative_page" "$change_password_fallback" "/change-password.html"
 assert_not_contains "change_password_rejects_javascript_scheme" "$change_password_fallback" "javascript://wifi.nister.org"
+assert_not_contains "change_password_no_public_wifi_fallback" "$change_password_fallback" "https://wifi.nister.org/change-password.html"
+
+change_password_router_context="$(php_run <<'PHP'
+<?php
+$_SERVER = ['REQUEST_METHOD' => 'POST'];
+$_POST = [
+  'link_login_only' => 'http://192.168.88.1/login',
+];
+include getcwd() . '/api/hotspot/change_password.php';
+PHP
+)"
+assert_contains "change_password_preserves_router_context_base" "$change_password_router_context" "http://192.168.88.1/change-password.html"
+
+reset_password_fallback="$(php_run <<'PHP'
+<?php
+$_SERVER = ['REQUEST_METHOD' => 'POST'];
+$_POST = [
+  'link_login_only' => 'javascript://wifi.nister.org/login',
+];
+include getcwd() . '/api/hotspot/reset_password.php';
+PHP
+)"
+assert_contains "reset_password_falls_back_to_router_relative_page" "$reset_password_fallback" "/reset-password.html"
+assert_not_contains "reset_password_no_public_wifi_fallback" "$reset_password_fallback" "https://wifi.nister.org/reset-password.html"
+
+autopost_fallback="$(php_run <<'PHP'
+<?php
+$_SERVER = ['REQUEST_METHOD' => 'POST'];
+$_POST = [
+  'username' => '233200000000',
+  'password' => 'secret123',
+];
+include getcwd() . '/api/hotspot/autopost.php';
+PHP
+)"
+assert_contains "autopost_without_router_context_uses_relative_login" "$autopost_fallback" 'action="/login"'
+assert_not_contains "autopost_without_router_context_no_public_login" "$autopost_fallback" 'https://wifi.nister.org/login'
+
+autopost_router_context="$(php_run <<'PHP'
+<?php
+$_SERVER = ['REQUEST_METHOD' => 'POST'];
+$_POST = [
+  'username' => '233200000000',
+  'password' => 'secret123',
+  'link_login_only' => 'http://192.168.88.1/login',
+];
+include getcwd() . '/api/hotspot/autopost.php';
+PHP
+)"
+assert_contains "autopost_preserves_router_login_action" "$autopost_router_context" 'action="http://192.168.88.1/login"'
+
+hotspot_fallback_sources="$(cat api/hotspot/change_password.php api/hotspot/reset_password.php api/hotspot/signup.php api/hotspot/autopost.php pay-portal/cron/auto_renew.php pay-portal/purchase.php)"
+assert_not_contains "fallback_sources_no_public_login_html_default" "$hotspot_fallback_sources" "https://wifi.nister.org/login.html"
 
 scope_block="$(awk '/function admin_user_scope_check/,/function admin_emit_scope_error/' pay-portal/admin/api.php)"
 assert_not_contains "admin_scope_check_no_profile_side_effect" "$scope_block" "location_profile_set"

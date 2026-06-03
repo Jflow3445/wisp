@@ -277,7 +277,6 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
       $tpl = trim((string)(sms_setting('SMS_PURCHASE_CONFIRM_TEXT', '') ?? ''));
       if ($tpl !== '') {
         $loginUrl = trim((string)(sms_setting('SMS_LOGIN_URL', '') ?? ''));
-        if ($loginUrl === '') $loginUrl = 'https://wifi.nister.org/login.html';
         $msg = sms_template($tpl, [
           'NAME' => '',
           'MSISDN' => sms_normalize_local($msisdn),

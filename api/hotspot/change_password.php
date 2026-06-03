@@ -6,6 +6,8 @@ error_reporting(E_ERROR | E_PARSE);
 require_once __DIR__ . '/_db.php';
 
 function portal_base_from_link(string $link, string $fallback): string {
+  $link = trim($link);
+  if ($link === '') return $fallback;
   $u = parse_url($link);
   if (!$u || empty($u['scheme']) || empty($u['host'])) return $fallback;
   $scheme = strtolower((string)$u['scheme']);
@@ -22,9 +24,8 @@ function portal_base_from_link(string $link, string $fallback): string {
   return $base;
 }
 
-$defaultLogin = 'https://wifi.nister.org/login';
-$linkLoginOnly = (string)($_POST['link_login_only'] ?? $defaultLogin);
-$PORTAL_BASE = portal_base_from_link($linkLoginOnly, 'https://wifi.nister.org');
+$linkLoginOnly = (string)($_POST['link_login_only'] ?? '');
+$PORTAL_BASE = portal_base_from_link($linkLoginOnly, '');
 $LOGIN_URL = $PORTAL_BASE . '/login.html';
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }

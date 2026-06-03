@@ -9,7 +9,7 @@
     "start": "node .next/standalone/server.js",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"src/**/*.test.ts\"",
+    "test": "tsx --test $(find src -type f -name '*.test.ts' | sort)",
     "test:e2e": "playwright test"
   },
   "dependencies": {

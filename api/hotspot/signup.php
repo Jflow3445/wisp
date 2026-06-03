@@ -21,6 +21,8 @@ try {
 $APP_PDO = (isset($GLOBALS['PDO']) && $GLOBALS['PDO'] instanceof PDO) ? $GLOBALS['PDO'] : null;
 
 function portal_base_from_link(string $link, string $fallback): string {
+  $link = trim($link);
+  if ($link === '') return $fallback;
   $u = parse_url($link);
   if (!$u || empty($u['scheme']) || empty($u['host'])) return $fallback;
   $scheme = strtolower((string)$u['scheme']);
@@ -46,9 +48,8 @@ $otpToken = trim((string)($_POST['otp_token'] ?? ''));
 $referralCode = trim((string)($_POST['referral_code'] ?? ''));
 $locationCodeRaw = trim((string)($_POST['location_code'] ?? $_POST['site_code'] ?? ''));
 
-$defaultLogin = 'https://wifi.nister.org/login';
-$linkLoginOnly = (string)($_POST['link_login_only'] ?? $defaultLogin);
-$PORTAL_BASE = portal_base_from_link($linkLoginOnly, 'https://wifi.nister.org');
+$linkLoginOnly = (string)($_POST['link_login_only'] ?? '');
+$PORTAL_BASE = portal_base_from_link($linkLoginOnly, '');
 
 if ($locationCodeRaw === '' && function_exists('location_resolve_from_router_context')) {
   try {

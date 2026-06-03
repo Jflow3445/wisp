@@ -1,0 +1,6 @@
+{
+  "captive": true,
+  "user-portal-url": "http://192.168.88.1/login",
+  "venue-info-url": "https://wifi.nister.org/",
+  "can-extend-session": false
+}
