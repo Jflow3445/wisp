@@ -37,6 +37,13 @@ Thumbs.db
 *.swo
 *.tmp
 
+# Node/Next generated output
+node_modules/
+.next/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
 # daloradius sensitive runtime config
 wifi-portal/daloradius/app/common/includes/daloradius.conf.php
 wifi-portal/daloradius/app/operators/.htpasswd
