@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $retryAfter = max((int)($ipHit['retry_after'] ?? 0), (int)($userHit['retry_after'] ?? 0));
         $err = login_retry_message($retryAfter > 0 ? $retryAfter : 60);
       } else {
-        $err = 'Login failed. Check your number and password.';
+        $err = 'Login failed. Check the phone number and hotspot password, then try again.';
       }
     }
   }
@@ -124,8 +124,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
       </div>
       <div>
-        <h2>Premium access, kept simple.</h2>
-        <p>Use your hotspot credentials to manage wallet balance, purchases, referrals, and top-ups from one secure portal.</p>
+        <h2>Get back to your WiFi faster.</h2>
+        <p>Use your hotspot login to top up your wallet, buy plans, manage auto-renew, and check rewards in one secure place.</p>
       </div>
       <div class="auth-meta" aria-hidden="true">
         <span>Wallet</span>
@@ -142,9 +142,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     </div>
     <h1>Welcome back</h1>
-    <div class="muted">Use the same credentials as your captive portal login.</div>
+    <div class="muted">Enter the phone number and password you use on the hotspot login page.</div>
     <?php if ($msg === 'logged_out'): ?>
-      <div class="msg ok">You are logged out.</div>
+      <div class="msg ok">You have logged out of the pay portal.</div>
     <?php endif; ?>
     <?php if ($err !== ''): ?>
       <div class="msg err"><?=htmlspecialchars($err, ENT_QUOTES, 'UTF-8')?></div>
@@ -160,14 +160,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="field">
         <label class="label" for="password">Password</label>
         <div class="password-wrap">
-          <input id="password" name="password" type="password" placeholder="Your hotspot password" autocomplete="current-password" required>
+          <input id="password" name="password" type="password" placeholder="Hotspot password" autocomplete="current-password" required>
           <button class="password-toggle" type="button" data-password-toggle="password" aria-controls="password" aria-pressed="false">Show</button>
         </div>
       </div>
-      <button class="btn" type="submit">Login</button>
+      <button class="btn" type="submit">Open my portal</button>
     </form>
     <div class="links">
-      <a href="/portal.php">Back to pay portal</a>
+      <a href="/portal.php">Return to pay portal</a>
     </div>
     </section>
   </main>

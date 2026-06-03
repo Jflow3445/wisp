@@ -29,36 +29,36 @@ export const networkAccessSteps = [
   },
   {
     title: "Open wifi.nister.org",
-    body: "Stay connected to Nister Wi-Fi, then open this address in your browser.",
+    body: "Keep your device on Nister Wi-Fi, then open this address in your browser.",
   },
   {
-    title: "Login",
-    body: "Enter your details, voucher, or phone number when the access page asks for it.",
+    title: "Log in",
+    body: "Enter your phone number, voucher, or access details when the page asks.",
   },
   {
     title: "Browse",
-    body: "Once you are approved, use the internet for study, work, calls, payments, and everyday browsing.",
+    body: "Once access is approved, use the internet for study, work, calls, payments, and everyday browsing.",
   },
 ] as const;
 
 export const networkExperiencePanels = [
   {
     eyebrow: "At a hostel",
-    title: "Find the network and get back to what you came to do.",
+    title: "Get online and get back to what you came to do.",
     body:
-      "Whether you need to study, message home, submit work, stream a class, or make a payment, start by joining Nister Wi-Fi from your device.",
+      "Whether you need to study, message home, submit work, stream a class, or make a payment, start by choosing Nister Wi-Fi on your device.",
   },
   {
     eyebrow: "In a remote area",
-    title: "Stay connected while the login page checks your device.",
+    title: "Stay on Nister Wi-Fi while the access page checks your device.",
     body:
-      "Do not switch back to mobile data during login. The access page can recognize you only while your device is on the local Nister Wi-Fi network.",
+      "Do not switch back to mobile data while logging in. The access page can recognize you only while your device is on the local Nister Wi-Fi network.",
   },
   {
     eyebrow: "Away from coverage",
-    title: "You can read the steps here, but you must be on-site to login.",
+    title: "You can read the steps here, but you must be on-site to log in.",
     body:
-      "If you are seeing this page through mobile data or another internet provider, return to a Nister Wi-Fi location before trying to buy access or check status.",
+      "If you are using mobile data or another internet provider, go to a Nister Wi-Fi location before trying to buy access or check your status.",
   },
 ] as const;
 
@@ -66,7 +66,7 @@ export const networkPreLoginChecks = [
   "You are at a hostel, community location, or coverage area where Nister Wi-Fi is available.",
   "Your phone, tablet, or laptop is connected to Nister Wi-Fi.",
   "You opened wifi.nister.org after joining the Wi-Fi network.",
-  "Your phone number, voucher, or access details are ready if the login page asks for them.",
+  "Your phone number, voucher, or access details are ready if the page asks for them.",
 ] as const;
 
 export const networkTroubleshootingSteps = [
@@ -75,46 +75,46 @@ export const networkTroubleshootingSteps = [
     body: "If your phone returns to mobile data, reconnect to Nister Wi-Fi and refresh wifi.nister.org.",
   },
   {
-    title: "Try the address again",
+    title: "Type the address again",
     body:
-      "Open a fresh browser tab and type wifi.nister.org. Some devices need a manual visit before the login page appears.",
+      "Open a fresh browser tab and type wifi.nister.org. Some devices need a direct visit before the login page appears.",
   },
   {
-    title: "Ask for help with your location",
+    title: "Share your location with support",
     body:
-      "Tell support where you are, what device you are using, and what message you see. That makes the problem easier to find.",
+      "Tell support where you are, what device you are using, and what message you see. Those details make the issue easier to find.",
   },
 ] as const;
 
 export const homeSections = [
   {
     eyebrow: "The access gap",
-    title: "Internet access should not depend on where people live or study.",
+    title: "People should not lose opportunities because the internet stops at their doorstep.",
     body:
-      "About 2.2 billion people remain offline globally, and the rural access gap is still visible: ITU reported 83% urban internet use compared with 48% rural internet use in 2024. For hostels and remote communities, that gap becomes lost study time, harder communication, and fewer digital opportunities.",
+      "About 2.2 billion people remain offline globally, and the rural access gap is still visible: ITU reported 83% urban internet use compared with 48% rural internet use in 2024. In hostels and remote communities, that gap shows up as lost study time, missed messages, harder payments, and fewer digital opportunities.",
   },
   {
     eyebrow: "What Nister Wi-Fi provides",
-    title: "Managed connectivity for places standard providers often overlook.",
+    title: "Shared Wi-Fi that is easier to find, use, and support.",
     body:
-      "Nister Wi-Fi provides practical internet access for hostels and remote communities where connectivity needs to be shared, supportable, and simple for users to understand.",
+      "Nister Wi-Fi provides practical internet access for hostels and remote communities where people need a clear way to get online and operators need a network experience they can explain.",
   },
   {
     eyebrow: "For hostels",
-    title: "A clearer Wi-Fi experience for residents and operators.",
+    title: "Less confusion for residents. A cleaner flow for operators.",
     body:
-      "Hostel residents need dependable access for study, communication, research, and daily services. Operators need a structured network experience that reduces confusion around login, payment, and access instructions.",
+      "Residents need internet for study, communication, research, and daily services. Hostel operators need clear log-in, payment, and access instructions so support questions do not become the whole Wi-Fi experience.",
   },
   {
     eyebrow: "For remote communities",
-    title: "Connectivity that can support daily life beyond city centers.",
+    title: "A practical connection point for daily life beyond city centers.",
     body:
-      "Remote communities need internet access models that can work in real conditions. Nister Wi-Fi focuses on practical coverage points that help people learn, communicate, work, and reach essential digital services.",
+      "Remote communities need access models that can work in real conditions. Nister Wi-Fi focuses on coverage points that help people learn, communicate, work, and reach essential digital services.",
   },
   {
     eyebrow: "Expansion case",
-    title: "Why this, why now.",
+    title: "The case for focused Wi-Fi expansion.",
     body:
-      "Reliable internet access is now a foundation for learning, work, payments, public information, and community participation. Targeted Wi-Fi deployments can help close access gaps for hostels and remote communities when supported by the right partners.",
+      "Reliable internet access now supports learning, work, payments, public information, and community participation. Targeted Wi-Fi deployments can help close access gaps for hostels and remote communities when the right partners support them.",
   },
 ] as const;

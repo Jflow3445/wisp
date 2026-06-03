@@ -193,11 +193,11 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
       if ($paystackSecret === '') $paystackSecret = (string)$get('PAYSTACK_SECRET', '');
       $paystackTopup = $truthy($get('PAYSTACK_ENABLED', '0'), false) && $paystackSecret !== '';
       if ($paystackTopup && $manualTopup) {
-        $topupMessage = 'Not enough balance. Top up with Paystack or manual MoMo and try again.';
+        $topupMessage = 'Not enough balance. Top up with Momo Pay or Manual Payment and try again.';
       } elseif ($paystackTopup) {
-        $topupMessage = 'Not enough balance. Top up with Paystack and try again.';
+        $topupMessage = 'Not enough balance. Top up with Momo Pay and try again.';
       } elseif ($manualTopup) {
-        $topupMessage = 'Not enough balance. Please deposit via MoMo and try again.';
+        $topupMessage = 'Not enough balance. Use Manual Payment to top up and try again.';
       } else {
         $topupMessage = 'Not enough balance. Top-up is temporarily unavailable.';
       }

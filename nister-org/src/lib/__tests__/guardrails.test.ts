@@ -74,7 +74,7 @@ test("support actions use WhatsApp instead of email", () => {
 test("network access steps explain the required public flow", () => {
   assert.deepEqual(
     networkAccessSteps.map((step) => step.title),
-    ["Connect to Nister Wi-Fi", "Open wifi.nister.org", "Login", "Browse"],
+    ["Connect to Nister Wi-Fi", "Open wifi.nister.org", "Log in", "Browse"],
   );
 });
 

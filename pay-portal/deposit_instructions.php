@@ -20,7 +20,7 @@ $get = static function(string $k, $def=null) use ($s, $ENV) {
 };
 $manualEnabledRaw = strtolower(trim((string)$get('TOPUP_MANUAL_ENABLED', '1')));
 if (!in_array($manualEnabledRaw, ['1','true','yes','y','on','enabled'], true)) {
-  echo '<div class="muted">Manual top-up is currently unavailable.</div>';
+  echo '<div class="muted">Manual Payment is currently unavailable. Please try Momo Pay or contact support.</div>';
   exit;
 }
 
@@ -45,7 +45,7 @@ $waHref = 'https://wa.me/' . $waDigits . '?text=' . rawurlencode($waText);
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 ?>
 <div>
-  <p class="muted" style="margin:0 0 6px">Send funds to:</p>
+  <p class="muted" style="margin:0 0 6px">Send MoMo to this account, then submit the receipt details below:</p>
   <ul style="margin:0 0 8px 18px">
     <li><b>Network:</b> <?=h($network)?></li>
     <li><b>Name:</b> <?=h($name)?></li>
@@ -53,15 +53,15 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
   </ul>
 
   <p style="margin:0 0 10px">
-    After payment, enter the <b>sender phone</b>, <b>amount</b>, and the <b>Transaction ID</b> from your MoMo/SMS receipt.
+    After payment, enter the <b>sender phone</b>, <b>exact amount</b>, and <b>Transaction ID</b> from your MoMo SMS so we can match and credit your wallet.
   </p>
-  <p style="margin:0 0 10px"><b>Minimum top up:</b> GHS <?=h(number_format($minCents / 100, 2, '.', ''))?></p>
+  <p style="margin:0 0 10px"><b>Minimum top up:</b> GHS <?=h(number_format($minCents / 100, 2, '.', ''))?>. Keep the SMS until your wallet balance updates.</p>
 
   <div style="margin-top:10px">
     <a href="<?=$waHref?>" target="_blank" rel="noopener"
        class="nister-wa-btn"
        style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;padding:10px 14px;border:1px solid rgba(148,163,184,.35);border-radius:12px;">
-      <span>WhatsApp Support</span>
+      <span>Ask WhatsApp support</span>
       <span style="opacity:.75">(<?=h($number)?>)</span>
     </a>
   </div>

@@ -4,11 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL("https://nister.org"),
   title: {
-    default: "Nister Wi-Fi | Internet Access For Hostels And Remote Communities",
+    default: "Nister Wi-Fi | Shared Internet Access For Hostels And Remote Communities",
     template: "%s | Nister Wi-Fi",
   },
   description:
-    "Nister Wi-Fi provides practical internet access for hostels and remote communities where dependable connectivity is needed most.",
+    "Nister Wi-Fi helps hostel residents and remote communities get online for study, work, calls, payments, and daily services.",
   icons: {
     icon: [
       { url: "/nister-browser-icon.svg", type: "image/svg+xml" },
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Nister Wi-Fi",
-    description: "Practical internet access for hostels and remote communities.",
+    description: "Shared internet access for hostels and remote communities.",
     url: "https://nister.org",
     siteName: "Nister Wi-Fi",
     type: "website",

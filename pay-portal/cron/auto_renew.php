@@ -285,8 +285,11 @@ $tz = new DateTimeZone(date_default_timezone_get());
 $now = new DateTimeImmutable('now', $tz);
 $thresholds = fetch_thresholds();
 
+$autoRenewLocationSelect = column_exists($PDO, 'auto_renew_settings', 'location_id')
+  ? 'location_id'
+  : 'NULL AS location_id';
 $st = $PDO->prepare(
-  "SELECT msisdn, location_id, plan_code, enabled, last_attempt_at, last_renew_at, last_error
+  "SELECT msisdn, {$autoRenewLocationSelect}, plan_code, enabled, last_attempt_at, last_renew_at, last_error
    FROM auto_renew_settings
    WHERE enabled=1
    ORDER BY updated_at ASC

@@ -13,17 +13,17 @@ function UnknownHostFallback() {
       <SiteNav active="home" />
       <section className="fallback-section shell">
         <p className="eyebrow">Nister Wi-Fi</p>
-        <h1>Use the official Nister Wi-Fi domains.</h1>
+        <h1>Open Nister Wi-Fi from the right address.</h1>
         <p>
-          This standalone app serves the public Nister Wi-Fi website at nister.org and the network access guide at
-          wifi.nister.org.
+          Use nister.org to learn about coverage and partnerships. Use wifi.nister.org when you are on-site and need to
+          connect, log in, or manage access.
         </p>
         <div className="button-row">
           <a className="button button-primary" href="https://nister.org/">
             Open Nister Wi-Fi
           </a>
           <a className="button button-secondary" href="https://wifi.nister.org/">
-            Network Instructions
+            Get Online
           </a>
         </div>
       </section>

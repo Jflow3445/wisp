@@ -42,9 +42,9 @@ if (is_file($indexPath)) {
 </head>
 <body>
   <div class="card">
-    <h1>Portal is unavailable</h1>
-    <p class="muted">Login succeeded, but the portal home page is missing on this server.</p>
-    <p class="muted">Use the actions below while the deployment is being corrected.</p>
+    <h1>Pay portal is unavailable</h1>
+    <p class="muted">You are logged in, but the wallet and plan page is missing on this server.</p>
+    <p class="muted">Use these links while support fixes the deployment.</p>
     <div class="row">
       <a class="btn primary" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Open login</a>
       <a class="btn" href="/logout.php">Logout</a>

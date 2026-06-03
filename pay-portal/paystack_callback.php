@@ -9,7 +9,7 @@ require_once __DIR__.'/lib/paystack.php';
 $reference = trim((string)($_GET['reference'] ?? $_GET['trxref'] ?? ''));
 $state = 'error';
 $title = 'Payment not confirmed';
-$message = 'We could not confirm this Paystack payment. Please return to your wallet and try again.';
+$message = 'We could not confirm this MoMo Pay payment yet. Return to your wallet or refresh this status page.';
 $amount = '';
 $detail = '';
 
@@ -19,16 +19,16 @@ if ($reference !== '') {
     $gatewayStatus = strtolower((string)($result['gateway_status'] ?? ''));
     if (!empty($result['credited'])) {
       $state = 'success';
-      $title = 'Top-up complete';
+      $title = 'Wallet credited';
       $message = !empty($result['credited_now'])
-        ? 'Your wallet has been credited.'
-        : 'This payment was already credited earlier.';
+        ? 'Your payment was confirmed and your wallet balance has been updated.'
+        : 'This payment was already credited to your wallet earlier.';
       $amount = isset($result['amount_cents']) ? number_format(((int)$result['amount_cents']) / 100, 2) : '';
       $detail = 'Reference: ' . (string)($result['reference'] ?? $reference);
     } elseif (in_array($gatewayStatus, ['pending','ongoing','processing','abandoned'], true)) {
       $state = 'pending';
       $title = 'Payment still pending';
-      $message = 'Paystack has not marked this transaction successful yet. You can refresh this page or return to the portal.';
+      $message = 'MoMo Pay has not marked this transaction successful yet. Refresh this page, or return to the portal and check your wallet later.';
       $detail = 'Reference: ' . (string)($result['reference'] ?? $reference);
     } else {
       $detail = 'Reference: ' . (string)($result['reference'] ?? $reference);
@@ -39,7 +39,7 @@ if ($reference !== '') {
     $detail = 'Reference: ' . $reference;
   }
 } else {
-  $message = 'Paystack did not return a transaction reference.';
+  $message = 'MoMo Pay did not return a transaction reference. Return to your wallet and start the payment again.';
 }
 
 $e = static fn($v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -49,7 +49,7 @@ $e = static fn($v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nister WiFi | Paystack</title>
+  <title>Nister WiFi | Payment Status</title>
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">

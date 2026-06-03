@@ -140,12 +140,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="mark"><span></span></div>
         <div>
           <div class="brand-name">Nister WiFi</div>
-          <div class="brand-tag">Admin Portal</div>
+          <div class="brand-tag">Admin console</div>
         </div>
       </div>
       <div>
-        <h2>Operations command center.</h2>
-        <p>Review deposits, watch service health, manage users, and keep the network running from a single controlled workspace.</p>
+        <h2>Run payments and network access.</h2>
+        <p>Review deposits, check service health, manage user access, and keep each site online from one controlled workspace.</p>
       </div>
       <div class="auth-meta" aria-hidden="true">
         <span>Billing</span>
@@ -158,14 +158,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="mark"><span></span></div>
       <div>
         <div class="brand-name">Nister WiFi</div>
-        <div class="brand-tag">Admin Portal</div>
+        <div class="brand-tag">Admin console</div>
       </div>
     </div>
-    <h1>Nister Admin</h1>
-    <div class="muted">Sign in to manage payments and approvals.</div>
+    <h1>Admin sign-in</h1>
+    <div class="muted">Use your operator account to manage deposits, users, plans, and network status.</div>
 
     <?php if ($msg==='logged_out'): ?>
-      <div class="ok">You have been logged out.</div>
+      <div class="ok">Signed out. Sign in again to continue.</div>
     <?php endif; ?>
 
     <?php if ($err!==''): ?>
@@ -182,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <button class="password-toggle" type="button" data-password-toggle="p" aria-controls="p" aria-pressed="false">Show</button>
       </div>
 
-      <button class="btn" type="submit">Login</button>
+      <button class="btn" type="submit">Sign in</button>
     </form>
     </section>
   </main>

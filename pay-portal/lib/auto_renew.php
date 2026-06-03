@@ -5,6 +5,56 @@ require_once __DIR__.'/db.php';
 require_once __DIR__.'/common.php';
 require_once __DIR__.'/location.php';
 
+function auto_renew_table_exists(PDO $pdo, string $table): bool {
+  $st = $pdo->prepare(
+    "SELECT 1 FROM information_schema.tables
+     WHERE table_schema = DATABASE() AND table_name = :t LIMIT 1"
+  );
+  $st->execute([':t' => $table]);
+  return (bool)$st->fetchColumn();
+}
+
+function auto_renew_column_exists(PDO $pdo, string $table, string $column): bool {
+  $st = $pdo->prepare(
+    "SELECT 1 FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c LIMIT 1"
+  );
+  $st->execute([':t' => $table, ':c' => $column]);
+  return (bool)$st->fetchColumn();
+}
+
+function auto_renew_index_exists(PDO $pdo, string $table, string $index): bool {
+  $st = $pdo->prepare(
+    "SELECT 1 FROM information_schema.statistics
+     WHERE table_schema = DATABASE() AND table_name = :t AND index_name = :i LIMIT 1"
+  );
+  $st->execute([':t' => $table, ':i' => $index]);
+  return (bool)$st->fetchColumn();
+}
+
+function auto_renew_has_location_column(): bool {
+  global $PDO;
+  try {
+    return auto_renew_column_exists($PDO, 'auto_renew_settings', 'location_id');
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
+function auto_renew_ensure_location_column(PDO $pdo): bool {
+  if (!auto_renew_table_exists($pdo, 'auto_renew_settings')) return false;
+  if (!auto_renew_column_exists($pdo, 'auto_renew_settings', 'location_id')) {
+    $pdo->exec("ALTER TABLE auto_renew_settings ADD COLUMN location_id INT NULL AFTER msisdn");
+  }
+  if (
+    auto_renew_column_exists($pdo, 'auto_renew_settings', 'location_id') &&
+    !auto_renew_index_exists($pdo, 'auto_renew_settings', 'idx_auto_renew_location')
+  ) {
+    $pdo->exec("ALTER TABLE auto_renew_settings ADD KEY idx_auto_renew_location (location_id)");
+  }
+  return auto_renew_column_exists($pdo, 'auto_renew_settings', 'location_id');
+}
+
 function auto_renew_bootstrap(): void {
   static $ready = false;
   if ($ready) return;
@@ -25,15 +75,11 @@ function auto_renew_bootstrap(): void {
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
   try {
-    location_add_column_if_missing(
-      $PDO,
-      'auto_renew_settings',
-      'location_id',
-      "`location_id` INT NULL AFTER `msisdn`, ADD KEY `idx_auto_renew_location` (`location_id`)"
-    );
-    $defaultLoc = location_default_id();
-    $PDO->prepare("UPDATE auto_renew_settings SET location_id=:l WHERE location_id IS NULL")
-      ->execute([':l' => $defaultLoc]);
+    if (auto_renew_ensure_location_column($PDO)) {
+      $defaultLoc = location_default_id();
+      $PDO->prepare("UPDATE auto_renew_settings SET location_id=:l WHERE location_id IS NULL")
+        ->execute([':l' => $defaultLoc]);
+    }
   } catch (Throwable $e) {
     // non-fatal
   }
@@ -59,6 +105,10 @@ function auto_renew_get(string $rawMsisdn, ?int $locationId = null): array {
 
   $st = $PDO->prepare("SELECT location_id, enabled, plan_code, updated_at, last_renew_at, last_attempt_at, last_error
                        FROM auto_renew_settings WHERE msisdn=:m LIMIT 1");
+  if (!auto_renew_has_location_column()) {
+    $st = $PDO->prepare("SELECT NULL AS location_id, enabled, plan_code, updated_at, last_renew_at, last_attempt_at, last_error
+                         FROM auto_renew_settings WHERE msisdn=:m LIMIT 1");
+  }
   $st->execute([':m' => $msisdn]);
   $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
   if (!$row) {
@@ -74,7 +124,7 @@ function auto_renew_get(string $rawMsisdn, ?int $locationId = null): array {
   }
 
   $rowLoc = (int)($row['location_id'] ?? 0);
-  if ($locationId !== null && $locationId > 0 && $rowLoc !== $locationId) {
+  if (auto_renew_has_location_column() && $locationId !== null && $locationId > 0 && $rowLoc !== $locationId) {
     try {
       $PDO->prepare("UPDATE auto_renew_settings SET location_id=:l WHERE msisdn=:m")
         ->execute([':l' => $locationId, ':m' => $msisdn]);
@@ -115,17 +165,30 @@ function auto_renew_set(string $rawMsisdn, bool $enabled, ?string $planCode = nu
     $locationId = location_default_id();
   }
 
-  $st = $PDO->prepare(
-    "INSERT INTO auto_renew_settings (msisdn, location_id, enabled, plan_code, created_at, updated_at)
-     VALUES (:m, :l, :e, :p, NOW(), NOW())
-     ON DUPLICATE KEY UPDATE location_id=VALUES(location_id), enabled=VALUES(enabled), plan_code=VALUES(plan_code), updated_at=NOW()"
-  );
-  $st->execute([
-    ':m'=>$msisdn,
-    ':l'=>$locationId,
-    ':e'=>$enabled ? 1 : 0,
-    ':p'=>$planCode,
-  ]);
+  if (auto_renew_has_location_column()) {
+    $st = $PDO->prepare(
+      "INSERT INTO auto_renew_settings (msisdn, location_id, enabled, plan_code, created_at, updated_at)
+       VALUES (:m, :l, :e, :p, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE location_id=VALUES(location_id), enabled=VALUES(enabled), plan_code=VALUES(plan_code), updated_at=NOW()"
+    );
+    $st->execute([
+      ':m'=>$msisdn,
+      ':l'=>$locationId,
+      ':e'=>$enabled ? 1 : 0,
+      ':p'=>$planCode,
+    ]);
+  } else {
+    $st = $PDO->prepare(
+      "INSERT INTO auto_renew_settings (msisdn, enabled, plan_code, created_at, updated_at)
+       VALUES (:m, :e, :p, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE enabled=VALUES(enabled), plan_code=VALUES(plan_code), updated_at=NOW()"
+    );
+    $st->execute([
+      ':m'=>$msisdn,
+      ':e'=>$enabled ? 1 : 0,
+      ':p'=>$planCode,
+    ]);
+  }
 
   return auto_renew_get($msisdn, $locationId);
 }

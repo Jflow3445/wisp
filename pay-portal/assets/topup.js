@@ -132,7 +132,7 @@
     root.innerHTML = '';
     PLAN_CACHE = Array.isArray(plans) ? plans.slice() : [];
     if (!window.NISTER_LOGGED_IN) {
-      root.appendChild(ce('div',{className:'muted', textContent:'Login to view and buy plans.'}));
+      root.appendChild(ce('div',{className:'muted', textContent:'Login to view prices and buy a plan.'}));
       return;
     }
     if(!Array.isArray(plans) || plans.length===0){
@@ -171,13 +171,13 @@
       if (value) details.appendChild(ce('div',{className:'plan-detail', textContent:value}));
       body.appendChild(details);
       var foot = ce('div',{className:'plan-foot'});
-      var btn = ce('button',{className:'buy-btn', textContent:'Activate plan'});
+      var btn = ce('button',{className:'buy-btn', textContent:'Buy with wallet'});
       if (code) btn.dataset.code = code;
       btn.addEventListener('click', async function(){
         if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return; }
         if(!code){ alert('Invalid plan.'); return; }
-        if(!confirm('Confirm purchase of '+(p.name||code)+'?')) return;
-        var autoRenewChoice = confirm('Auto-renew this data when near expiry or exhaustion?');
+        if(!confirm('Buy '+(p.name||code)+' with your wallet balance?')) return;
+        var autoRenewChoice = confirm('Turn on auto-renew for this plan so it renews when your data is low or your time is almost finished?');
         var old=this.textContent; this.disabled=true; this.textContent='Buying...';
         try{
           var resp = await fetch('purchase.php', {
@@ -190,15 +190,15 @@
           var j = await resp.json().catch(function(){ return {ok:false,error:'Invalid JSON'}; });
           if(!resp.ok || !j.ok){
             var msg = (j && (j.message || j.error)) || resp.statusText || 'Error';
-            alert('Purchase failed: ' + msg);
+            alert('Plan purchase failed: ' + msg);
           }
           else {
             try{
               await setAutoRenewPreference(!!autoRenewChoice, code);
             }catch(e){
-              alert('Purchase ok, but auto-renew update failed: ' + e.message);
+              alert('Plan bought, but auto-renew could not be saved: ' + e.message);
             }
-            alert('Purchase successful.');
+            alert('Plan bought. Your access should activate right away.');
             callRefreshUser();
           }
         }catch(e){ alert('Network error: '+e.message); }
@@ -265,19 +265,19 @@
     var planSel = $('#auto_renew_plan');
     var enabled = !!(enabledEl && enabledEl.checked);
     var planCode = planSel ? (planSel.value || '') : '';
-    if (enabled && !planCode) { alert('Select a plan to auto-renew.'); return; }
+    if (enabled && !planCode) { alert('Choose the plan you want auto-renew to buy.'); return; }
 
     var btn = $('#auto_renew_save');
     var old = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
     try{
       var info = $('#auto_renew_info');
-      if (info) info.textContent = 'Saving auto-renew...';
+      if (info) info.textContent = 'Saving your auto-renew choice...';
       await setAutoRenewPreference(enabled, planCode);
-      if (info) info.textContent = 'Auto-renew saved.';
+      if (info) info.textContent = 'Auto-renew saved. Keep enough wallet balance for the next renewal.';
       callRefreshUser();
     }catch(e){
-      alert('Auto-renew update failed: ' + e.message);
+      alert('Auto-renew could not be saved: ' + e.message);
     }finally{
       if (btn) { btn.disabled = false; btn.textContent = old || 'Save'; }
     }
@@ -292,7 +292,7 @@
     var info = $('#auto_renew_info');
     if (!window.NISTER_LOGGED_IN) {
       if (controls) hide(controls);
-      if (info) info.textContent = 'Login to enable auto-renew.';
+      if (info) info.textContent = 'Login to choose an auto-renew plan.';
       if (badge) { badge.textContent = 'Off'; badge.className = 'pill soft'; }
       return;
     }
@@ -335,17 +335,17 @@
     var bal = (j && j.balance_cents) ? j.balance_cents : 0;
     var canAfford = price > 0 && bal >= price;
     if (info) {
-      if (!enabled) info.textContent = 'Auto-renew is off.';
-      else if (!selected) info.textContent = 'Choose a plan to auto-renew.';
-      else if (canAfford) info.textContent = 'Wallet can cover ' + (selected.name || selected.code || 'this plan') + '.';
-      else info.textContent = 'Top up to cover ' + (selected.name || selected.code || 'this plan') + ' (' + money(price) + ').';
+      if (!enabled) info.textContent = 'Auto-renew is off. Turn it on to keep this plan running from your wallet.';
+      else if (!selected) info.textContent = 'Choose the plan your wallet should renew.';
+      else if (canAfford) info.textContent = 'Your wallet can cover the next ' + (selected.name || selected.code || 'plan') + ' renewal.';
+      else info.textContent = 'Top up at least ' + money(price) + ' before renewal for ' + (selected.name || selected.code || 'this plan') + '.';
     }
   }
   function renderLedger(ledger){
     var root = $('#recent'); if(!root) return;
     root.innerHTML = '';
     if(!Array.isArray(ledger) || ledger.length===0){
-      root.appendChild(ce('li',{className:'muted', textContent:'No recent transactions.'}));
+      root.appendChild(ce('li',{className:'muted', textContent:'No recent wallet activity yet.'}));
       return;
     }
     ledger.slice(0,5).forEach(function(L){
@@ -421,28 +421,28 @@
 
     var minExample = (MIN_TOPUP_CENTS / 100).toFixed(2).replace(/\.00$/, '');
     md.innerHTML =
-      '<h3 style="margin:0 0 8px">Top up wallet</h3>'
+      '<h3 style="margin:0 0 8px">Top up your wallet</h3>'
       + '<div class="nister-alert nister-ok" id="n_ok"></div>'
       + '<div class="nister-alert nister-err" id="n_err"></div>'
       + '<div class="nister-modebar" id="n_modes">'
       + '<button type="button" id="n_mode_paystack" data-mode="paystack">Momo Pay</button>'
       + '<button type="button" id="n_mode_manual" data-mode="manual">Manual Payment</button>'
       + '</div>'
-      + '<div id="n_disabled" class="nister-empty">Top-up is currently unavailable.</div>'
+      + '<div id="n_disabled" class="nister-empty">Top-up is currently unavailable. Please contact WhatsApp support.</div>'
       + '<section id="n_paystack" class="nister-pane">'
-      + '<div class="nister-pay-head"><div><strong>Automated payment</strong><span>Fast wallet top-up with instant confirmation.</span></div><span class="nister-secure">Verified</span></div>'
+      + '<div class="nister-pay-head"><div><strong>Pay now with MoMo</strong><span>Use Momo Pay for the fastest wallet credit after confirmation.</span></div><span class="nister-secure">Verified</span></div>'
       + '<div class="nister-row" style="margin:12px 0"><input class="nister-input" id="ps_amount" inputmode="decimal" placeholder="Amount (GHS) e.g. ' + minExample + '"></div>'
       + '<div class="muted nister-min">Minimum top up: <span id="n_min_ps">' + money(MIN_TOPUP_CENTS) + '</span></div>'
       + '<button class="nister-btn nister-primary nister-wide" id="ps_submit" type="button">Make Payment</button>'
       + '</section>'
       + '<section id="n_manual" class="nister-pane">'
-      + '<div id="n_instr" class="muted" style="margin:6px 0 10px">Loading instructions...</div>'
-      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_msisdn" placeholder="Your number (auto)" autocomplete="tel"></div>'
-      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_momo" placeholder="MoMo number used (MTN only)"></div>'
-      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_txid" placeholder="Transaction ID / Reference"></div>'
+      + '<div id="n_instr" class="muted" style="margin:6px 0 10px">Loading payment instructions...</div>'
+      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_msisdn" placeholder="Account phone number" autocomplete="tel"></div>'
+      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_momo" placeholder="MoMo sender number (MTN only)"></div>'
+      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_txid" placeholder="Transaction ID from SMS"></div>'
       + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_amount" inputmode="decimal" placeholder="Amount (GHS) e.g. ' + minExample + '"></div>'
       + '<div class="muted nister-min">Minimum top up: <span id="n_min_manual">' + money(MIN_TOPUP_CENTS) + '</span></div>'
-      + '<button class="nister-btn nister-primary nister-wide" id="n_submit" type="button">Submit manual top-up</button>'
+      + '<button class="nister-btn nister-primary nister-wide" id="n_submit" type="button">Send for wallet credit</button>'
       + '</section>'
       + '<div class="nister-actions"><button class="nister-btn nister-ghost" id="n_cancel" type="button">Close</button></div>';
 
@@ -460,7 +460,7 @@
           if (/^\s*\{/.test(String(html||''))) throw new Error('unexpected_json');
           instr.innerHTML = html;
         })
-        .catch(function(){ instr.textContent = 'Send MTN MoMo to 0598544768. After payment, submit the details below.'; });
+        .catch(function(){ instr.textContent = 'Send MTN MoMo to 0598544768. After payment, enter the Transaction ID, sender number, and exact amount below.'; });
     }
     function updateMinimumLabels(){
       var minPs = $('#n_min_ps'), minManual = $('#n_min_manual');
@@ -522,10 +522,10 @@
       if(ok) ok.style.display='none';
       if(err){ err.style.display='none'; err.textContent=''; }
 
-      if(!msisdn || !txid || !amtStr){ if(err){ err.textContent='Please fill TxID and Amount.'; err.style.display='block'; } return; }
+      if(!msisdn || !txid || !amtStr){ if(err){ err.textContent='Enter your account number, Transaction ID, and amount.'; err.style.display='block'; } return; }
 
       var amount_cents = parseAmountCents(amtStr);
-      if(!(amount_cents>0)){ if(err){ err.textContent='Amount must be a number > 0.'; err.style.display='block'; } return; }
+      if(!(amount_cents>0)){ if(err){ err.textContent='Enter a valid amount greater than 0.'; err.style.display='block'; } return; }
       if(amount_cents < MIN_TOPUP_CENTS){ if(err){ err.textContent='Minimum top up is ' + money(MIN_TOPUP_CENTS) + '.'; err.style.display='block'; } return; }
 
       var payload = {
@@ -537,10 +537,10 @@
         notes: 'Front page top-up request'
       };
 
-      var btn=this, old=btn.textContent; btn.disabled=true; btn.textContent='Submitting...';
+      var btn=this, old=btn.textContent; btn.disabled=true; btn.textContent='Sending...';
       try{
         var res = await postDeposit(payload);
-        if(ok){ ok.textContent = 'Submitted. Request ID: '+ (res.request_id||res.ref||'-'); ok.style.display='block'; }
+        if(ok){ ok.textContent = 'Payment details sent. Request ID: '+ (res.request_id||res.ref||'-') + '. We will credit your wallet after review.'; ok.style.display='block'; }
         setTimeout(closeModal, 1000);
       }catch(e){
         var msg = e.message || 'Submit failed.';
@@ -549,9 +549,9 @@
         } else if (e.code === 'manual_topup_disabled') {
           msg = 'Manual top-up is currently unavailable.';
         } else if (e.code === 'db_config_missing' || e.code === 'db_connect_failed' || e.code === 'db_error') {
-          msg = 'Payment service is temporarily unavailable. Please try again shortly.';
+          msg = 'Payment service is temporarily unavailable. Please try again shortly or contact support.';
         }
-        if(err){ err.textContent = 'Submit failed: '+msg; err.style.display='block'; }
+        if(err){ err.textContent = 'Could not send payment details: '+msg; err.style.display='block'; }
       }finally{
         btn.disabled=false; btn.textContent=old;
       }
@@ -564,16 +564,16 @@
       if(err){ err.style.display='none'; err.textContent=''; }
 
       var amount_cents = parseAmountCents(amtStr);
-      if(!(amount_cents>0)){ if(err){ err.textContent='Amount must be a number > 0.'; err.style.display='block'; } return; }
+      if(!(amount_cents>0)){ if(err){ err.textContent='Enter a valid amount greater than 0.'; err.style.display='block'; } return; }
       if(amount_cents < MIN_TOPUP_CENTS){ if(err){ err.textContent='Minimum top up is ' + money(MIN_TOPUP_CENTS) + '.'; err.style.display='block'; } return; }
 
-      var btn=this, old=btn.textContent; btn.disabled=true; btn.textContent='Opening payment...';
+      var btn=this, old=btn.textContent; btn.disabled=true; btn.textContent='Opening Momo Pay...';
       try{
         var res = await postPaystackInitialize({amount_cents: amount_cents});
         if (!res.authorization_url) throw new Error('authorization_url_missing');
         window.location.href = res.authorization_url;
       }catch(e){
-        var msg = e.message || 'Paystack checkout failed.';
+        var msg = e.message || 'Momo Pay checkout failed.';
         if (e.code === 'paystack_disabled') msg = 'Momo Pay is currently unavailable.';
         else if (e.code === 'paystack_not_configured') msg = 'Momo Pay is not configured yet.';
         else if (e.code === 'min_amount' && e.data && e.data.min_ghs) msg = 'Minimum top up is GHS ' + Number(e.data.min_ghs).toFixed(2) + '.';

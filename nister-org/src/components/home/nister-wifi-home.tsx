@@ -5,15 +5,15 @@ import { SiteNav } from "@/components/shared/site-nav";
 const proofCards = [
   {
     value: "2.2B",
-    label: "people still offline globally",
+    label: "people still offline",
   },
   {
     value: "83%",
-    label: "urban internet use in 2024",
+    label: "urban internet use",
   },
   {
     value: "48%",
-    label: "rural internet use in 2024",
+    label: "rural internet use",
   },
 ] as const;
 
@@ -21,17 +21,17 @@ const serviceCards = [
   {
     title: "Hostel Wi-Fi",
     body:
-      "Structured access for student hostels where residents need internet for learning, communication, research, and daily digital services.",
+      "Clear shared access for student hostels where residents need internet for learning, communication, research, and daily services.",
   },
   {
     title: "Remote Community Access",
     body:
-      "Practical connectivity points for areas where dependable internet is difficult to obtain, maintain, or afford through standard service channels.",
+      "Practical connection points for areas where dependable internet is hard to get, maintain, or afford through standard service channels.",
   },
   {
-    title: "Clear User Path",
+    title: "Clear Access Path",
     body:
-      "Simple public instructions: connect to Nister Wi-Fi, open wifi.nister.org, login, and use the network after authentication.",
+      "Simple public instructions: connect to Nister Wi-Fi, open wifi.nister.org, log in, and use the network after access is approved.",
   },
 ] as const;
 
@@ -45,19 +45,19 @@ export function NisterWifiHome() {
       <section className="hero-section">
         <div className="shell hero-grid">
           <div className="hero-copy">
-            <p className="eyebrow">Connectivity where it changes daily life</p>
-            <h1>Internet access should not depend on where people live or study.</h1>
+            <p className="eyebrow">Wi-Fi for study, work, and daily life</p>
+            <h1>Get dependable internet closer to where people live and study.</h1>
             <p className="hero-lede">
-              Across hostels and remote communities, unreliable or unaffordable internet limits study, communication,
-              work, and access to basic digital services. Nister Wi-Fi builds practical connectivity for places that
-              need dependable access.
+              Hostel residents need to submit work, call home, research, pay, and stay connected. Remote communities
+              need the same chance. Nister Wi-Fi brings practical shared access to places where getting online is still
+              harder than it should be.
             </p>
             <div className="button-row">
               <a className="button button-primary" href={EXTERNAL_LINKS.coverageRequest}>
                 Request Coverage
               </a>
               <a className="button button-secondary" href={EXTERNAL_LINKS.network}>
-                How To Access The Network
+                Get Online
               </a>
             </div>
           </div>
@@ -162,15 +162,15 @@ export function NisterWifiHome() {
           <div className="expansion-list">
             <div>
               <strong>Why this</strong>
-              <span>Internet access now affects learning, work, services, and community participation.</span>
+              <span>People rely on internet access for learning, work, services, and community participation.</span>
             </div>
             <div>
               <strong>Why Nister Wi-Fi</strong>
-              <span>The service focuses on places where shared, supportable connectivity can make immediate sense.</span>
+              <span>The service focuses on places where shared, supportable connectivity can be understood and used.</span>
             </div>
             <div>
               <strong>Why now</strong>
-              <span>Targeted deployments can help close gaps that broad market coverage does not solve quickly enough.</span>
+              <span>Focused deployments can help close gaps that broad market coverage does not solve quickly enough.</span>
             </div>
           </div>
         </div>
@@ -180,7 +180,7 @@ export function NisterWifiHome() {
         <div className="shell">
           <div className="section-heading compact">
             <p className="eyebrow">How access works</p>
-            <h2>Simple enough for first-time users.</h2>
+            <h2>A short path from seeing the network to using it.</h2>
           </div>
           <div className="steps-grid">
             {networkAccessSteps.map((step, index) => (
@@ -198,10 +198,10 @@ export function NisterWifiHome() {
         <div className="shell cta-panel">
           <div>
             <p className="eyebrow">Partnerships and coverage requests</p>
-            <h2>Bring reliable Wi-Fi to the places that need it.</h2>
+            <h2>Bring Wi-Fi closer to residents and communities that need it.</h2>
             <p>
-              For hostel connectivity, remote-area access, grant conversations, or deployment partnerships, reach the
-              Nister Wi-Fi team.
+              For hostel connectivity, remote-area access, grant conversations, or deployment partnerships, talk to the
+              Nister Wi-Fi team about the location and the need.
             </p>
           </div>
           <div className="button-row">

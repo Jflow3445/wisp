@@ -242,7 +242,7 @@ if ($siteCode !== null && $siteCode !== '') {
         <div class="mark"><span></span></div>
         <div class="brand-text">
           <span class="name">Nister WiFi</span>
-          <span class="tag">Account Portal</span>
+          <span class="tag">Pay and manage WiFi</span>
         </div>
       </div>
       <nav class="user-top-actions" aria-label="Account actions">
@@ -288,18 +288,18 @@ if ($siteCode !== null && $siteCode !== '') {
                 <span class="tag">Pay Portal</span>
               </div>
             </div>
-            <h1>Your account workspace.</h1>
-            <p class="lead">Wallet balance, active access, plan purchases, rewards, and support in one place.</p>
+            <h1>Stay connected without the back and forth.</h1>
+            <p class="lead">Check your wallet, buy a plan, turn on auto-renew, track rewards, and reach support from one secure portal.</p>
             <div class="hero-actions">
-              <a class="btn primary" data-menu-link href="#wallet_section">Wallet</a>
-              <a class="btn ghost" data-menu-link href="#plans_section">Browse plans</a>
+              <a class="btn primary" data-menu-link href="#wallet_section">Top up wallet</a>
+              <a class="btn ghost" data-menu-link href="#plans_section">Choose a plan</a>
               <?php if (!$loggedIn): ?>
                 <a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login to your account</a>
               <?php endif; ?>
             </div>
             <div class="trust">
-              <div class="trust-item">Secure payments</div>
-              <div class="trust-item">Instant activation</div>
+              <div class="trust-item">Pay with MoMo</div>
+              <div class="trust-item">Plans activate instantly</div>
               <div class="trust-item">WhatsApp support</div>
             </div>
           </div>
@@ -312,7 +312,7 @@ if ($siteCode !== null && $siteCode !== '') {
               <?php if (!$loggedIn): ?>
                 <div class="callout" style="margin-bottom:12px">
                   <div class="callout-title">Login required</div>
-                  <div class="sub">Please sign in with the same password you use on the captive portal to access wallet and purchases.</div>
+                  <div class="sub">Sign in with your hotspot number and password to see your wallet, plans, and purchases.</div>
                   <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
                 </div>
               <?php endif; ?>
@@ -336,7 +336,7 @@ if ($siteCode !== null && $siteCode !== '') {
               </div>
               <div class="support">
                 <a id="wa_link" class="link" href="<?=htmlspecialchars($waHref, ENT_QUOTES, 'UTF-8')?>" target="_blank" rel="noopener">WhatsApp support</a>
-                <span class="sub">Support team replies quickly during working hours.</span>
+                <span class="sub">Need help with a payment or plan? Message support with your phone number and Transaction ID.</span>
                 <?php if ($loggedIn): ?>
                   <a class="link" href="/logout.php">Logout</a>
                 <?php endif; ?>
@@ -351,16 +351,16 @@ if ($siteCode !== null && $siteCode !== '') {
               <h3>Wallet and auto-renew</h3>
               <span class="pill soft" id="auto_renew_badge">Off</span>
             </div>
-            <p class="muted">Automatically renew when your data is nearly finished or your plan is about to expire, as long as your wallet can cover the plan price.</p>
+            <p class="muted">Keep money in your wallet so your next plan can renew before your data finishes or your time expires.</p>
             <?php if (!$loggedIn): ?>
               <div class="callout">
                 <div class="callout-title">Login required</div>
-                <div class="sub">Sign in to enable auto-renew for your account.</div>
+                <div class="sub">Sign in to choose the plan your wallet should renew automatically.</div>
               </div>
             <?php endif; ?>
             <div class="manual" id="auto_renew_controls"<?= $loggedIn ? '' : ' style="display:none"' ?>>
               <label class="sub" style="display:flex;align-items:center;gap:8px">
-                <input type="checkbox" id="auto_renew_enabled"> Enable auto-renew
+                <input type="checkbox" id="auto_renew_enabled"> Renew this plan automatically
               </label>
               <select id="auto_renew_plan" class="input" aria-label="Auto renew plan"></select>
               <button class="btn outline" id="auto_renew_save" type="button">Save</button>
@@ -370,16 +370,16 @@ if ($siteCode !== null && $siteCode !== '') {
 
           <div class="card highlight">
             <div class="card-head">
-              <h3>Manual top up</h3>
+              <h3>Top up your wallet</h3>
               <span class="pill soft">MoMo</span>
             </div>
-            <p>Use the Top up button after sending payment. We will review and credit your wallet. Minimum top up is <b>GHS <?=htmlspecialchars(number_format($minTopupCents / 100, 2, '.', ''), ENT_QUOTES, 'UTF-8')?></b>.</p>
+            <p>Use Momo Pay for automated confirmation, or use Manual Payment after sending MoMo and keeping the receipt details. Minimum top up is <b>GHS <?=htmlspecialchars(number_format($minTopupCents / 100, 2, '.', ''), ENT_QUOTES, 'UTF-8')?></b>.</p>
             <div class="callout">
               <div class="callout-title">Top-up checklist</div>
               <ul>
-                <li>Use the same number as your account.</li>
-                <li>Keep your Transaction ID.</li>
-                <li>Submit the exact amount you sent.</li>
+                <li>Pay from the number you want credited.</li>
+                <li>Keep the Transaction ID from your MoMo SMS.</li>
+                <li>Enter the exact amount you sent.</li>
               </ul>
             </div>
           </div>
@@ -388,13 +388,13 @@ if ($siteCode !== null && $siteCode !== '') {
         <section class="section user-section portal-panel" id="plans_section">
           <div class="section-head">
             <div>
-              <h2>Choose a plan</h2>
-              <p class="muted">Plans are activated immediately after purchase.</p>
+              <h2>Choose your next plan</h2>
+              <p class="muted">Buy with your wallet balance and get online right away.</p>
             </div>
-            <div class="pill soft">Wallet checkout</div>
+            <div class="pill soft">Paid from wallet</div>
           </div>
           <div id="plans" class="plans-grid">
-            <div class="muted"><?= $loggedIn ? 'Loading plans…' : 'Login to view and buy plans.' ?></div>
+            <div class="muted"><?= $loggedIn ? 'Loading plans...' : 'Login to view prices and buy a plan.' ?></div>
           </div>
         </section>
 
@@ -402,7 +402,7 @@ if ($siteCode !== null && $siteCode !== '') {
           <div class="section-head">
             <div>
               <h2>Referral rewards</h2>
-              <p class="muted">Track your invite code and released bonuses.</p>
+              <p class="muted">Share your code, then track pending and released bonus credit.</p>
             </div>
             <div class="pill">Earn</div>
           </div>
@@ -414,14 +414,14 @@ if ($siteCode !== null && $siteCode !== '') {
             <?php if (!$loggedIn): ?>
               <div class="callout" style="margin-bottom:12px">
                 <div class="callout-title">Login required</div>
-                <div class="sub">Log in to view your referral code and rewards.</div>
+                <div class="sub">Log in to copy your referral code and see earned credit.</div>
                 <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
               </div>
             <?php endif; ?>
             <div class="field">
               <div class="label">Your referral code</div>
               <div id="ref_code" class="value"><?= $loggedIn ? 'N/A' : 'Login to view' ?></div>
-              <div class="sub" id="ref_hint">Share this code with friends to earn bonus credit.</div>
+              <div class="sub" id="ref_hint">Share this code with friends. Released rewards become wallet credit.</div>
             </div>
             <div id="ref_actions" style="margin:8px 0 12px<?= $loggedIn ? '' : ';display:none' ?>">
               <button class="btn outline" id="ref_copy_btn" type="button">Copy code</button>
@@ -453,21 +453,21 @@ if ($siteCode !== null && $siteCode !== '') {
           <div class="card steps">
             <h3>Support</h3>
             <ol>
-              <li>Load your phone number.</li>
-              <li>Top up wallet if needed.</li>
-              <li>Choose a plan.</li>
-              <li>Get online right away.</li>
+              <li>Log in with your hotspot number.</li>
+              <li>Top up your wallet if the balance is low.</li>
+              <li>Choose a plan and pay from wallet.</li>
+              <li>Use WhatsApp support if a payment needs checking.</li>
             </ol>
-            <div class="note">Tip: Open your portal link from WhatsApp to auto-load your number.</div>
+            <div class="note">Tip: Keep your MoMo Transaction ID until the wallet credit appears.</div>
           </div>
         </section>
 
         <footer class="footer">
           <div>
             <span class="brand-mini">Nister WiFi</span>
-            <span class="muted">Payments and wallet portal</span>
+            <span class="muted">Wallet, plans, and support</span>
           </div>
-          <div class="muted">Need help? WhatsApp support is available.</div>
+          <div class="muted">Need help? Send your phone number and Transaction ID on WhatsApp.</div>
         </footer>
       </main>
     </div>
@@ -478,6 +478,6 @@ if ($siteCode !== null && $siteCode !== '') {
     window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
     window.NISTER_MIN_TOPUP_CENTS = <?= (int)$minTopupCents ?>;
   </script>
-  <script src="assets/topup.js?v=18"></script>
+  <script src="assets/topup.js?v=19"></script>
 </body>
 </html>

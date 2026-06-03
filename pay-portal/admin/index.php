@@ -226,20 +226,20 @@ $ADMIN_CSRF = admin_csrf_token();
     </div>
     <div class="actions">
       <div class="site-switch">
-        <label for="site_selector">Site Scope</label>
+        <label for="site_selector">Working site</label>
         <select id="site_selector">
           <option value="all">All sites</option>
         </select>
       </div>
-      <button class="btn" id="refresh_btn" type="button">Refresh</button>
-      <a class="btn" href="/admin/index.php?logout=1">Logout</a>
+      <button class="btn" id="refresh_btn" type="button">Refresh data</button>
+      <a class="btn" href="/admin/index.php?logout=1">Sign out</a>
     </div>
   </div>
 
   <div class="layout">
     <aside class="side">
       <div class="side-card">
-        <div class="muted" style="margin-bottom:8px;font-weight:600">Menu</div>
+        <div class="muted" style="margin-bottom:8px;font-weight:600">Admin sections</div>
         <div class="menu" id="menu">
           <button class="btn" data-section="overview" type="button" onclick="setSection('overview')">Overview</button>
           <button class="btn" data-section="billing" type="button" onclick="setSection('billing')">Billing</button>
@@ -256,8 +256,8 @@ $ADMIN_CSRF = admin_csrf_token();
 
   <div class="card" data-section="overview">
     <div class="section-head">
-      <h2>Business Overview</h2>
-      <span class="badge">Live metrics</span>
+      <h2>Operations overview</h2>
+      <span class="badge">Current snapshot</span>
     </div>
     <div class="grid">
       <div class="kpi">
@@ -287,7 +287,7 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </div>
     <div class="section-head" style="margin-top:14px">
-      <h3>Network Health</h3>
+      <h3>Network health</h3>
       <span class="badge" id="health_updated">Last check: -</span>
     </div>
     <div class="grid" id="health_grid">
@@ -322,8 +322,8 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </div>
     <div class="section-head" style="margin-top:14px">
-      <h3>Enforcement Health</h3>
-      <div class="muted">Policy/application truth from accounting + enforcement signals.</div>
+      <h3>Access enforcement</h3>
+      <div class="muted">Confirm that paid users can browse and limited users stay limited.</div>
     </div>
     <div class="grid" id="enforcement_grid">
       <div class="kpi compact">
@@ -361,8 +361,8 @@ $ADMIN_CSRF = admin_csrf_token();
 
   <div class="card" data-section="settings">
     <div class="section-head">
-      <h2>Portal Settings</h2>
-      <div class="muted">Configure API base and support contact details shown to users.</div>
+      <h2>Portal settings</h2>
+      <div class="muted">Control payment methods, support contacts, referral rules, and SMS templates shown to customers.</div>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -378,31 +378,31 @@ $ADMIN_CSRF = admin_csrf_token();
         <input id="set_whatsapp" type="text" placeholder="233598544768">
       </div>
       <div class="field">
-        <label for="set_topup_network">Top up network</label>
+        <label for="set_topup_network">Manual top-up network</label>
         <input id="set_topup_network" type="text" placeholder="MTN Ghana">
       </div>
       <div class="field">
-        <label for="set_topup_name">Top up name</label>
+        <label for="set_topup_name">Manual top-up account name</label>
         <input id="set_topup_name" type="text" placeholder="GRASAG-UHAS">
       </div>
       <div class="field">
-        <label for="set_topup_number">Top up number</label>
+        <label for="set_topup_number">Manual top-up number</label>
         <input id="set_topup_number" type="text" placeholder="0530488905">
       </div>
       <div class="field">
-        <label for="set_topup_text">Top up WhatsApp text</label>
+        <label for="set_topup_text">Support WhatsApp starter text</label>
         <input id="set_topup_text" type="text" placeholder="Hi, I need assistance with Nister Wifi">
       </div>
       <div class="field">
-        <label for="set_topup_min">Minimum top up (GHS)</label>
+        <label for="set_topup_min">Minimum top-up amount (GHS)</label>
         <input id="set_topup_min" type="text" placeholder="30.00">
       </div>
       <div class="field">
-        <label>Manual payment</label>
+        <label>Manual MoMo top-ups</label>
         <label class="check"><input id="set_topup_manual_enabled" type="checkbox"> Accept manual MoMo top-ups</label>
       </div>
       <div class="field">
-        <label>Paystack payment</label>
+        <label>Paystack top-ups</label>
         <label class="check"><input id="set_paystack_enabled" type="checkbox"> Accept automated Paystack top-ups</label>
       </div>
       <div class="field">
@@ -531,16 +531,16 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </div>
     <div class="tool-actions">
-      <button class="btn approve" id="settings_save" type="button">Save Settings</button>
-      <button class="btn" id="settings_reload" type="button">Reload</button>
+      <button class="btn approve" id="settings_save" type="button">Save settings</button>
+      <button class="btn" id="settings_reload" type="button">Reload settings</button>
     </div>
-    <div class="note" id="settings_status">Settings load on refresh.</div>
+    <div class="note" id="settings_status">Refresh loads the saved settings into this form.</div>
   </div>
 
   <div class="card" data-section="settings">
     <div class="section-head">
-      <h2>Sites & Routers</h2>
-      <div class="muted">Define locations and map each hEXS/router once by IP/exporter.</div>
+      <h2>Sites and routers</h2>
+      <div class="muted">Create each service site and map its router by stable identity, NAS IP, or exporter IP.</div>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -561,9 +561,9 @@ $ADMIN_CSRF = admin_csrf_token();
       </label>
     </div>
     <div class="tool-actions">
-      <button class="btn approve" id="site_save_btn" type="button">Save Site</button>
+      <button class="btn approve" id="site_save_btn" type="button">Save site</button>
     </div>
-    <div class="note" id="site_admin_status">Create or update site records.</div>
+    <div class="note" id="site_admin_status">Create a site or update the selected site record.</div>
 
     <div class="form-grid" style="margin-top:14px">
       <div class="field">
@@ -571,7 +571,7 @@ $ADMIN_CSRF = admin_csrf_token();
         <select id="map_location_id"></select>
       </div>
       <div class="field">
-        <label for="map_nas_ip">Router IP (optional, static NAS-IP / server-address)</label>
+        <label for="map_nas_ip">NAS IP (optional, static NAS-IP / server-address)</label>
         <input id="map_nas_ip" type="text" placeholder="41.x.x.x">
       </div>
       <div class="field">
@@ -579,7 +579,7 @@ $ADMIN_CSRF = admin_csrf_token();
         <input id="map_exporter_ip" type="text" placeholder="192.168.1.21">
       </div>
       <div class="field">
-        <label for="map_exporter_id">Router identity / Exporter ID (recommended for dynamic IP)</label>
+        <label for="map_exporter_id">Router identity / Exporter ID (best for dynamic IP)</label>
         <input id="map_exporter_id" type="text" placeholder="hEXS-KUMASI-01">
       </div>
       <div class="field">
@@ -592,10 +592,10 @@ $ADMIN_CSRF = admin_csrf_token();
       </label>
     </div>
     <div class="tool-actions">
-      <button class="btn approve" id="map_save_btn" type="button">Save Router Map</button>
-      <button class="btn" id="map_reload_btn" type="button">Reload Maps</button>
+      <button class="btn approve" id="map_save_btn" type="button">Save router mapping</button>
+      <button class="btn" id="map_reload_btn" type="button">Reload mappings</button>
     </div>
-    <div class="note" id="map_admin_status">Map each router once. For dynamic WAN IP, use Exporter ID as the stable key. New signups auto-detect location from this map.</div>
+    <div class="note" id="map_admin_status">Map each router once. Use Exporter ID for dynamic WAN IP. New signups use this map to pick the right site.</div>
     <div class="table-wrap" style="margin-top:10px">
       <table class="table" id="map_tbl">
         <thead>
@@ -607,13 +607,13 @@ $ADMIN_CSRF = admin_csrf_token();
       </table>
     </div>
     <div class="section-head" style="margin-top:14px">
-      <h3>Detected Routers (Unassigned)</h3>
-      <div class="muted">Auto-detected from hotspot/router requests. Assign each to a site.</div>
+      <h3>Unassigned detected routers</h3>
+      <div class="muted">Router fingerprints found in hotspot requests. Assign each one to its site.</div>
     </div>
     <div class="tool-actions">
-      <button class="btn" id="detected_reload_btn" type="button">Reload Detected</button>
+      <button class="btn" id="detected_reload_btn" type="button">Reload detected routers</button>
     </div>
-    <div class="note" id="detected_admin_status">Unassigned router fingerprints will appear here automatically.</div>
+    <div class="note" id="detected_admin_status">New unassigned router fingerprints appear here automatically.</div>
     <div class="table-wrap" style="margin-top:10px">
       <table class="table" id="detected_tbl">
         <thead>
@@ -628,8 +628,8 @@ $ADMIN_CSRF = admin_csrf_token();
 
   <div class="card" data-section="billing">
     <div class="section-head">
-      <h2>Payments</h2>
-      <div class="muted">Approve or decline with notes for audit trail.</div>
+      <h2>Payment review</h2>
+      <div class="muted">Approve confirmed deposits or decline bad ones with notes for the audit trail.</div>
     </div>
     <div class="grid">
       <div class="kpi"><div class="label">Pending (count)</div><div class="value" id="pay_pending_cnt">0</div></div>
@@ -644,8 +644,8 @@ $ADMIN_CSRF = admin_csrf_token();
 
   <div class="card" data-section="billing">
     <div class="section-head">
-      <h2>Purchases</h2>
-      <div class="muted">Applied plans and sales health.</div>
+      <h2>Plan purchases</h2>
+      <div class="muted">Track plan sales, pending activation, and failed purchases.</div>
     </div>
     <div class="grid">
       <div class="kpi"><div class="label">Total sales</div><div class="value" id="purchase_total">GHS 0.00</div></div>
@@ -658,8 +658,8 @@ $ADMIN_CSRF = admin_csrf_token();
 
   <div class="card" data-section="plans">
     <div class="section-head">
-      <h2>Plan Management</h2>
-      <div class="muted">Create, update, or retire storefront plans.</div>
+      <h2>Plan catalog</h2>
+      <div class="muted">Create, edit, or retire the plans customers can buy for the selected site.</div>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -667,7 +667,7 @@ $ADMIN_CSRF = admin_csrf_token();
         <input id="plan_code" type="text" placeholder="WEEKEND_5GB">
       </div>
       <div class="field">
-        <label for="plan_name">Display name</label>
+        <label for="plan_name">Customer-facing name</label>
         <input id="plan_name" type="text" placeholder="Weekend 5GB">
       </div>
       <div class="field">
@@ -679,7 +679,7 @@ $ADMIN_CSRF = admin_csrf_token();
         <input id="plan_days" type="text" placeholder="30">
       </div>
       <div class="field">
-        <label for="plan_data">Data (GB)</label>
+        <label for="plan_data">Data allowance (GB)</label>
         <input id="plan_data" type="text" placeholder="Leave empty for unlimited">
       </div>
       <div class="field">
@@ -696,11 +696,11 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </div>
     <div class="tool-actions">
-      <button class="btn approve" id="plan_save" type="button">Save Plan</button>
-      <button class="btn" id="plan_reset" type="button">Reset</button>
+      <button class="btn approve" id="plan_save" type="button">Save plan</button>
+      <button class="btn" id="plan_reset" type="button">Clear form</button>
     </div>
-    <div class="hint">Plan codes allow letters, numbers, "_" and "-". Groups starting with "HS_" are protected.</div>
-    <div class="note" id="plan_status">No plan changes yet.</div>
+    <div class="hint">Plan codes allow letters, numbers, "_" and "-". Address lists starting with "HS_" are protected system groups.</div>
+    <div class="note" id="plan_status">Select a site to review or edit its plan catalog.</div>
     <div class="table-wrap">
       <table class="table" id="plans_tbl">
         <thead>
@@ -708,15 +708,15 @@ $ADMIN_CSRF = admin_csrf_token();
             <th>Code</th><th>Name</th><th>Price</th><th>Days</th><th>Data</th><th>Rate</th><th>Address list</th><th>Status</th><th>Action</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="9" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="9" class="muted">Loading plan catalog...</td></tr></tbody>
       </table>
     </div>
   </div>
 
   <div class="card" data-section="billing">
     <div class="section-head">
-      <h2>Top Plans (30 days)</h2>
-      <div class="muted">Most used plans in the last 30 days.</div>
+      <h2>Top plans, last 30 days</h2>
+      <div class="muted">See which plans customers buy most and how much they bring in.</div>
     </div>
     <div class="table-wrap">
       <table class="table small" id="top_plans_tbl">
@@ -725,15 +725,15 @@ $ADMIN_CSRF = admin_csrf_token();
             <th>Plan</th><th>Count</th><th>Revenue</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="3" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="3" class="muted">Loading top plans...</td></tr></tbody>
       </table>
     </div>
   </div>
 
   <div class="card" data-section="billing">
     <div class="section-head">
-      <h2>Daily Totals (14 days)</h2>
-      <div class="muted">Approved payments vs applied purchases.</div>
+      <h2>Daily money flow, last 14 days</h2>
+      <div class="muted">Compare approved deposits with plans actually applied.</div>
     </div>
     <div class="table-wrap">
       <table class="table small" id="series_tbl">
@@ -742,15 +742,15 @@ $ADMIN_CSRF = admin_csrf_token();
             <th>Date</th><th>Payments approved</th><th>Purchases applied</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="3" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="3" class="muted">Loading daily totals...</td></tr></tbody>
       </table>
     </div>
   </div>
 
   <div class="card" data-section="billing">
     <div class="section-head">
-      <h2>Pending Deposits</h2>
-      <div class="muted">Review and confirm top ups.</div>
+      <h2>Pending deposits</h2>
+      <div class="muted">Match incoming top-ups to requests before crediting wallets.</div>
     </div>
     <div class="table-wrap">
       <table class="table" id="pending_tbl">
@@ -759,7 +759,7 @@ $ADMIN_CSRF = admin_csrf_token();
             <th>Ref</th><th>MSISDN</th><th>Amount</th><th>Method</th><th>Payer</th><th>Notes</th><th>When</th><th>Action</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="8" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="8" class="muted">Loading pending deposits...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -767,11 +767,11 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="alerts">
     <div class="section-head">
       <h2>Alerts</h2>
-      <div class="muted">CoA failures and limit events.</div>
+      <div class="muted">Watch CoA failures, limit events, and health outages that need operator action.</div>
     </div>
     <div class="form-grid" style="margin-bottom:10px">
       <div class="field">
-        <label class="check"><input id="alerts_auto_retry" type="checkbox"> Auto‑retry CoA fails on refresh</label>
+        <label class="check"><input id="alerts_auto_retry" type="checkbox"> Auto-retry unacked CoA failures on refresh</label>
       </div>
     </div>
     <div class="table-wrap">
@@ -781,12 +781,12 @@ $ADMIN_CSRF = admin_csrf_token();
             <th>When</th><th>Type</th><th>User</th><th>Site</th><th>Message</th><th>From</th><th>Action</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="7" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="7" class="muted">Loading alerts...</td></tr></tbody>
       </table>
     </div>
     <div class="section-head" style="margin-top:14px">
       <h3>Downtime timeline</h3>
-      <div class="muted">Health outages detected by cron checks.</div>
+      <div class="muted">Health outages detected by scheduled checks.</div>
     </div>
     <div class="table-wrap">
       <table class="table small" id="health_downtime_tbl">
@@ -795,23 +795,23 @@ $ADMIN_CSRF = admin_csrf_token();
             <th>Start</th><th>End</th><th>Minutes</th><th>Reason</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="4" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="4" class="muted">Loading downtime events...</td></tr></tbody>
       </table>
     </div>
   </div>
 
   <div class="card" data-section="users">
     <div class="section-head">
-      <h2>User States</h2>
-      <div class="muted">Expiry/quota status per user (HS_* only).</div>
+      <h2>User access states</h2>
+      <div class="muted">Scan expiry, quota, rate, and HS_* policy state for each user.</div>
     </div>
     <div class="form-grid" style="margin-bottom:10px">
       <div class="field">
-        <label for="state_search">Search MSISDN</label>
+        <label for="state_search">Find MSISDN</label>
         <input id="state_search" type="text" placeholder="233xxxxxxxxx or 0xxxxxxxxx">
       </div>
       <div class="field">
-        <label for="state_group">Group</label>
+        <label for="state_group">HS_* group</label>
         <select id="state_group">
           <option value="">All</option>
           <option value="HS_ACTIVE">HS_ACTIVE</option>
@@ -833,15 +833,15 @@ $ADMIN_CSRF = admin_csrf_token();
             <th>User</th><th>Group</th><th>Expires</th><th>Quota</th><th>Used</th><th>Window</th><th>Expired</th><th>Exhausted</th><th>Rate</th><th>Action</th>
           </tr>
         </thead>
-        <tbody><tr><td colspan="10" class="muted">Loading...</td></tr></tbody>
+        <tbody><tr><td colspan="10" class="muted">Loading user states...</td></tr></tbody>
       </table>
     </div>
   </div>
 
   <div class="card" data-section="users">
     <div class="section-head">
-      <h2>User Tools</h2>
-      <div class="muted">Lookup users, apply actions, delete access records, or fully purge user data.</div>
+      <h2>User tools</h2>
+      <div class="muted">Lookup a user, adjust wallet or access, reset login, disconnect sessions, or remove records.</div>
     </div>
     <div class="split">
       <div>
@@ -851,11 +851,11 @@ $ADMIN_CSRF = admin_csrf_token();
             <input id="tool_msisdn" type="text" placeholder="233xxxxxxxxx">
           </div>
           <div class="field">
-            <label for="tool_ip">Force kick IP</label>
+            <label for="tool_ip">Session IP to disconnect</label>
             <input id="tool_ip" type="text" placeholder="192.168.88.x">
           </div>
           <div class="field">
-            <label for="tool_amount">Amount (GHS)</label>
+            <label for="tool_amount">Wallet amount (GHS)</label>
             <input id="tool_amount" type="text" placeholder="0.00">
           </div>
           <div class="field">
@@ -863,7 +863,7 @@ $ADMIN_CSRF = admin_csrf_token();
             <input id="tool_plan" type="text" placeholder="PLAN_CODE">
           </div>
           <div class="field">
-            <label for="tool_notes">Notes</label>
+            <label for="tool_notes">Audit notes</label>
             <input id="tool_notes" type="text" placeholder="Optional">
           </div>
           <div class="field">
@@ -914,32 +914,32 @@ $ADMIN_CSRF = admin_csrf_token();
           </div>
         </div>
         <div class="tool-actions">
-          <button class="btn" id="tool_lookup" type="button">Lookup</button>
-          <button class="btn" id="tool_reset_login" type="button">Reset Login</button>
-          <button class="btn approve" id="tool_credit" type="button">Credit Wallet</button>
-          <button class="btn decline" id="tool_debit" type="button">Deduct Wallet</button>
-          <button class="btn" id="tool_apply" type="button">Apply Plan</button>
+          <button class="btn" id="tool_lookup" type="button">Lookup user</button>
+          <button class="btn" id="tool_reset_login" type="button">Reset login</button>
+          <button class="btn approve" id="tool_credit" type="button">Credit wallet</button>
+          <button class="btn decline" id="tool_debit" type="button">Deduct wallet</button>
+          <button class="btn" id="tool_apply" type="button">Apply plan</button>
           <button class="btn decline" id="tool_disconnect" type="button">Disconnect</button>
-          <button class="btn decline" id="tool_force_kick_ip" type="button">Force Kick by IP</button>
-          <button class="btn approve" id="tool_set_password" type="button">Set Password</button>
-          <button class="btn decline" id="tool_delete_user" type="button">Delete User (Access)</button>
-          <button class="btn decline" id="tool_purge_user" type="button">Full Purge User</button>
+          <button class="btn decline" id="tool_force_kick_ip" type="button">Disconnect by IP</button>
+          <button class="btn approve" id="tool_set_password" type="button">Set password</button>
+          <button class="btn decline" id="tool_delete_user" type="button">Delete access records</button>
+          <button class="btn decline" id="tool_purge_user" type="button">Full purge user</button>
         </div>
         <div class="tool-actions">
-          <button class="btn" id="tool_set_expiry" type="button">Set Expiry</button>
-          <button class="btn" id="tool_add_quota" type="button">Add Quota</button>
-          <button class="btn" id="tool_set_quota" type="button">Set Quota</button>
-          <button class="btn" id="tool_clear_quota" type="button">Clear Quota</button>
-          <button class="btn" id="tool_set_addr" type="button">Set Address List</button>
-          <button class="btn" id="tool_set_rate" type="button">Set Rate</button>
-          <button class="btn" id="tool_set_group" type="button">Set Group</button>
-          <button class="btn" id="tool_assign_location" type="button">Assign User to Site</button>
+          <button class="btn" id="tool_set_expiry" type="button">Set expiry</button>
+          <button class="btn" id="tool_add_quota" type="button">Add quota</button>
+          <button class="btn" id="tool_set_quota" type="button">Set quota</button>
+          <button class="btn" id="tool_clear_quota" type="button">Clear quota</button>
+          <button class="btn" id="tool_set_addr" type="button">Set address list</button>
+          <button class="btn" id="tool_set_rate" type="button">Set rate</button>
+          <button class="btn" id="tool_set_group" type="button">Set group</button>
+          <button class="btn" id="tool_assign_location" type="button">Assign user to site</button>
           <button class="btn decline" id="tool_reset_nopaid" type="button">Reset to HS_NOPAID</button>
         </div>
-        <div class="note" id="tool_status">No user loaded.</div>
+        <div class="note" id="tool_status">Enter an MSISDN and look up the user before running actions.</div>
       </div>
       <div>
-        <div id="user_snapshot" class="note">No user loaded.</div>
+        <div id="user_snapshot" class="note">Lookup results will show wallet, plan, quota, and recent activity here.</div>
         <div id="user_meta" class="meta"></div>
         <div class="table-wrap" id="user_ledger_wrap">
           <table class="table small" id="user_ledger_tbl">
@@ -956,8 +956,8 @@ $ADMIN_CSRF = admin_csrf_token();
   </div>
   <div class="card" data-section="users">
     <div class="section-head">
-      <h2>Promo Runner</h2>
-      <div class="muted">Grant expiring promo wallet credit or bonus data by audience.</div>
+      <h2>Promo runner</h2>
+      <div class="muted">Grant expiring wallet credit or bonus data to a targeted user audience.</div>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -968,7 +968,7 @@ $ADMIN_CSRF = admin_csrf_token();
         </select>
       </div>
       <div class="field">
-        <label for="promo_scope">Audience</label>
+        <label for="promo_scope">Target audience</label>
         <select id="promo_scope">
           <option value="all">All users</option>
           <option value="group">User group</option>
@@ -976,11 +976,11 @@ $ADMIN_CSRF = admin_csrf_token();
         </select>
       </div>
       <div class="field">
-        <label for="promo_group">Group (for group audience)</label>
+        <label for="promo_group">HS_* group for group audience</label>
         <input id="promo_group" type="text" placeholder="HS_ACTIVE">
       </div>
       <div class="field">
-        <label for="promo_recent_days">Recent days (for recent audience)</label>
+        <label for="promo_recent_days">Registered within days</label>
         <input id="promo_recent_days" type="text" placeholder="7">
       </div>
       <div class="field">
@@ -1005,14 +1005,14 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </div>
     <div class="tool-actions">
-      <button class="btn approve" id="promo_run" type="button">Run Promo</button>
+      <button class="btn approve" id="promo_run" type="button">Run promo</button>
     </div>
-    <div class="note" id="promo_status">No promo run yet.</div>
+    <div class="note" id="promo_status">Choose an audience, value, and expiry before running a promo.</div>
   </div>
   <div class="card" data-section="forensics">
     <div class="section-head">
-      <h2>Starlink Daily Usage Check</h2>
-      <div class="muted">UTC day totals from MikroTik NetFlow.</div>
+      <h2>Starlink daily usage check</h2>
+      <div class="muted">Compare Starlink's UTC day total with user traffic captured from MikroTik NetFlow.</div>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -1024,12 +1024,12 @@ $ADMIN_CSRF = admin_csrf_token();
         <input id="flow_day_starlink_gb" type="text" placeholder="6.7">
       </div>
       <div class="field">
-        <label for="flow_day_lag">Today lag minutes</label>
+        <label for="flow_day_lag">Live-day lag minutes</label>
         <input id="flow_day_lag" type="number" min="0" max="180" step="1" value="10">
       </div>
     </div>
     <div class="tool-actions">
-      <button class="btn approve" id="flow_day_run" type="button">Calculate Daily Usage</button>
+      <button class="btn approve" id="flow_day_run" type="button">Calculate daily usage</button>
     </div>
     <div class="grid tight" style="margin-top:10px">
       <div class="kpi compact">
@@ -1069,12 +1069,12 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </div>
     <div class="meta" id="flow_day_window">Window: -</div>
-    <div class="note" id="flow_day_status">Choose the Starlink date and calculate.</div>
+    <div class="note" id="flow_day_status">Choose the Starlink UTC date, then calculate the user-side total.</div>
   </div>
   <div class="card" data-section="forensics">
     <div class="section-head">
-      <h2>Traffic Forensics Export</h2>
-      <div class="muted">Export destination IP evidence for legal investigations (all users or per user).</div>
+      <h2>Traffic forensics export</h2>
+      <div class="muted">Export destination IP evidence for investigations by all users, raw flow, or one MSISDN.</div>
     </div>
     <div class="grid tight">
       <div class="kpi compact">
@@ -1108,18 +1108,18 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </div>
     <div class="tool-actions">
-      <button class="btn approve" id="flow_export_all" type="button">Export Forensic CSV (All)</button>
-      <button class="btn approve" id="flow_export_user" type="button">Export Forensic CSV (Per User)</button>
-      <button class="btn" id="flow_export_raw" type="button">Export Raw NetFlow CSV</button>
-      <button class="btn" id="flow_refresh" type="button">Refresh Collector Status</button>
+      <button class="btn approve" id="flow_export_all" type="button">Export mapped CSV</button>
+      <button class="btn approve" id="flow_export_user" type="button">Export user CSV</button>
+      <button class="btn" id="flow_export_raw" type="button">Export raw NetFlow CSV</button>
+      <button class="btn" id="flow_refresh" type="button">Refresh collector status</button>
     </div>
-    <div class="note" id="flow_status_note">Set a window, then export. Use per-user export for direct attribution.</div>
+    <div class="note" id="flow_status_note">Set a UTC window before exporting. Use user CSV when direct MSISDN attribution is required.</div>
     <div class="hint">Per-user export maps NetFlow records to RADIUS sessions by client IP and timestamp.</div>
   </div>
   <div class="card" data-section="users">
     <div class="section-head">
-      <h2>SMS Broadcast</h2>
-      <div class="muted">Send SMS to all users, a group, or specific numbers.</div>
+      <h2>SMS broadcast</h2>
+      <div class="muted">Send operational messages to a specific list, all users, or one HS_* group.</div>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -1146,7 +1146,7 @@ $ADMIN_CSRF = admin_csrf_token();
     </div>
     <div class="form-grid">
       <div class="field">
-        <label for="sms_recipients">Recipients (comma / space separated)</label>
+        <label for="sms_recipients">Recipient numbers (comma or space separated)</label>
         <textarea id="sms_recipients" placeholder="0241234567, 0201234567"></textarea>
       </div>
       <div class="field">
@@ -1155,9 +1155,9 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </div>
     <div class="tool-actions">
-      <button class="btn approve" id="sms_send" type="button">Send SMS</button>
+      <button class="btn approve" id="sms_send" type="button">Send SMS now</button>
     </div>
-    <div class="note" id="sms_status">SMS will use the configured gateway settings from Portal Settings.</div>
+    <div class="note" id="sms_status">Messages use the SMS gateway settings saved in Portal settings.</div>
   </div>
     </main>
   </div>
@@ -1477,7 +1477,7 @@ async function loadFlowDailyUsage(){
     if (u.expected_files > 0 && cov < 0.95) {
       setFlowDayStatus('Capture coverage is low, so this day may undercount real Starlink usage.', 'error');
     } else {
-      setFlowDayStatus('Use “All users combined” as the user-side total to compare against Starlink’s UTC daily usage.', 'success');
+      setFlowDayStatus('Use All users combined as the user-side total to compare against Starlink UTC daily usage.', 'success');
     }
   } catch (err) {
     setFlowDayStatus('Daily usage calculation failed.', 'error');
@@ -1727,7 +1727,7 @@ function renderLocationMaps(items){
   const tb = document.querySelector('#map_tbl tbody');
   if (!tb) return;
   if (!Array.isArray(items) || items.length === 0) {
-    tb.innerHTML = '<tr><td colspan="8" class="muted">No mappings.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="8" class="muted">No router mappings for the current site scope.</td></tr>';
     return;
   }
   tb.innerHTML = items.map((row)=>{
@@ -2129,7 +2129,7 @@ function renderTopPlans(plans){
   const tb = document.querySelector('#top_plans_tbl tbody');
   if (!tb) return;
   if (!Array.isArray(plans) || plans.length === 0){
-    tb.innerHTML = '<tr><td colspan="3" class="muted">No applied plans yet.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="3" class="muted">No applied plan purchases in this period.</td></tr>';
     return;
   }
   tb.innerHTML = plans.map(p=>`<tr>
@@ -2154,7 +2154,7 @@ function renderSeries(paySeries, purSeries){
     .sort((a,b)=>b.localeCompare(a))
     .slice(0,14);
   if (dates.length === 0){
-    tb.innerHTML = '<tr><td colspan="3" class="muted">No activity yet.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="3" class="muted">No approved payments or applied purchases in this period.</td></tr>';
     return;
   }
   tb.innerHTML = dates.map(d=>`<tr>
@@ -2168,7 +2168,7 @@ function renderAlerts(rows){
   const tb = document.querySelector('#alerts_tbl tbody');
   if (!tb) return;
   if (!rows || rows.length === 0) {
-    tb.innerHTML = '<tr><td colspan="7" class="muted">No alerts.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" class="muted">No open alerts for this scope.</td></tr>';
     return;
   }
   tb.innerHTML = rows.map(r => `<tr>
@@ -2206,7 +2206,7 @@ function renderUserStates(rows){
   const tb = document.querySelector('#user_states_tbl tbody');
   if (!tb) return;
   if (!rows || rows.length === 0) {
-    tb.innerHTML = '<tr><td colspan="10" class="muted">No users.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" class="muted">No users match the current filters.</td></tr>';
     return;
   }
   tb.innerHTML = rows.map(r => `<tr>
@@ -2325,7 +2325,7 @@ function renderPlans(plans){
   if (!tb) return;
   adminPlansByCode = {};
   if (!Array.isArray(plans) || plans.length === 0){
-    tb.innerHTML = '<tr><td colspan="9" class="muted">No plans configured.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" class="muted">No plans configured for this site.</td></tr>';
     return;
   }
   plans.forEach(p=>{
@@ -2370,7 +2370,7 @@ function renderPlansBySite(groups){
     rows.push(`<tr><td colspan="9"><strong>${safe(siteLabel)}</strong></td></tr>`);
     const plans = Array.isArray(site?.plans) ? site.plans : [];
     if (!plans.length) {
-      rows.push('<tr><td colspan="9" class="muted">No plans for this site.</td></tr>');
+      rows.push('<tr><td colspan="9" class="muted">No plans configured for this site.</td></tr>');
       return;
     }
     plans.forEach((p)=>{
@@ -2617,7 +2617,7 @@ async function loadPending(){
   tb.innerHTML = '';
   const arr = (j.ok && Array.isArray(j.pending)) ? j.pending : [];
   if(arr.length === 0){
-    tb.innerHTML = '<tr><td colspan="8" class="muted">No pending deposits.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="8" class="muted">No deposits waiting for review.</td></tr>';
     return;
   }
   tb.innerHTML = arr.map(rowHTML).join('');

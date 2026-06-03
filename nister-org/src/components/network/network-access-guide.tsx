@@ -16,19 +16,19 @@ export function NetworkAccessGuide() {
       <section className="network-hero">
         <div className="shell network-hero-grid network-hero-grid-premium">
           <div className="network-hero-copy">
-            <p className="eyebrow">Nister Wi-Fi help</p>
-            <h1>Get online where you are.</h1>
+            <p className="eyebrow">Nister Wi-Fi access help</p>
+            <h1>Get online at your hostel or community location.</h1>
             <p className="network-hero-lede">
-              Need internet for study, work, calls, payments, or everyday browsing? If you can see Nister Wi-Fi at your
-              hostel or community location, you are close. Connect to the network, open wifi.nister.org, login, and
-              start using the internet.
+              Need internet for study, work, calls, payments, or everyday browsing? If you can see Nister Wi-Fi on your
+              device, start there. Connect to the network, open wifi.nister.org, log in, and use the internet after your
+              access is approved.
             </p>
             <div className="button-row">
               <a className="button button-primary" href={EXTERNAL_LINKS.login}>
-                Login / Manage Access
+                Log In / Manage Access
               </a>
-              <a className="button button-secondary" href={EXTERNAL_LINKS.main}>
-                Back To Nister Wi-Fi
+              <a className="button button-secondary" href={EXTERNAL_LINKS.coverageRequest}>
+                Request Coverage
               </a>
             </div>
             <div className="network-hero-assurance" aria-label="Access context">
@@ -76,8 +76,8 @@ export function NetworkAccessGuide() {
             <p className="eyebrow">Start here</p>
             <h2>Start here if you need internet now.</h2>
             <p>
-              This page is for the moment when you are trying to get online. It tells you what to connect to, what to
-              open, what to expect, and what to try if the login page does not show up.
+              This page is for the moment when you are trying to get online. It shows what to connect to, what to open,
+              what to expect, and what to try if the login page does not appear.
             </p>
           </div>
           <div className="network-experience-grid">
@@ -96,10 +96,10 @@ export function NetworkAccessGuide() {
         <div className="shell network-check-grid">
           <div>
             <p className="eyebrow">Quick check</p>
-            <h2>Check these before you login.</h2>
+            <h2>Check these before you log in.</h2>
             <p>
-              If the page does not move forward, the issue is usually connection order. Make sure your device is already
-              on Nister Wi-Fi before you try to login, pay, or check your access.
+              If the page does not move forward, the issue is often connection order. Make sure your device is already
+              on Nister Wi-Fi before you try to log in, pay, or check your access.
             </p>
           </div>
           <div className="network-check-card">
@@ -120,8 +120,8 @@ export function NetworkAccessGuide() {
               <p className="eyebrow">Trouble logging in?</p>
               <h2>If the login page does not open.</h2>
               <p>
-                Try these steps before you give up. They are written for the most common moments when a device can see
-                Wi-Fi but has not reached the login page yet.
+                Try these steps before asking for help. They cover the common moment when a device can see Wi-Fi but has
+                not reached the login page yet.
               </p>
             </div>
             <a className="button button-primary button-on-light" href={EXTERNAL_LINKS.support}>
@@ -149,7 +149,7 @@ export function NetworkAccessGuide() {
             <strong>On-site flow</strong>
             <span>Connect to Nister Wi-Fi</span>
             <span>Open wifi.nister.org</span>
-            <span>Login</span>
+            <span>Log in</span>
             <span>Use the internet</span>
           </div>
         </div>

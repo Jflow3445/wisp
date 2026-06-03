@@ -21,9 +21,9 @@ export function SiteNav({ active }: SiteNavProps) {
             Home
           </a>
           <a aria-current={active === "network" ? "page" : undefined} href={EXTERNAL_LINKS.network}>
-            Network
+            Get Online
           </a>
-          <a href={EXTERNAL_LINKS.login}>Login</a>
+          <a href={EXTERNAL_LINKS.login}>Manage Access</a>
         </nav>
       </div>
     </header>
