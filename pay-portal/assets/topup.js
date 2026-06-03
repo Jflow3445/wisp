@@ -425,15 +425,15 @@
       + '<div class="nister-alert nister-ok" id="n_ok"></div>'
       + '<div class="nister-alert nister-err" id="n_err"></div>'
       + '<div class="nister-modebar" id="n_modes">'
-      + '<button type="button" id="n_mode_paystack" data-mode="paystack">Paystack</button>'
-      + '<button type="button" id="n_mode_manual" data-mode="manual">Manual MoMo</button>'
+      + '<button type="button" id="n_mode_paystack" data-mode="paystack">Momo Pay</button>'
+      + '<button type="button" id="n_mode_manual" data-mode="manual">Manual Payment</button>'
       + '</div>'
       + '<div id="n_disabled" class="nister-empty">Top-up is currently unavailable.</div>'
       + '<section id="n_paystack" class="nister-pane">'
-      + '<div class="nister-pay-head"><div><strong>Automated payment</strong><span>Card, mobile money, or bank transfer through Paystack.</span></div><span class="nister-secure">Verified</span></div>'
+      + '<div class="nister-pay-head"><div><strong>Automated payment</strong><span>Fast wallet top-up with instant confirmation.</span></div><span class="nister-secure">Verified</span></div>'
       + '<div class="nister-row" style="margin:12px 0"><input class="nister-input" id="ps_amount" inputmode="decimal" placeholder="Amount (GHS) e.g. ' + minExample + '"></div>'
       + '<div class="muted nister-min">Minimum top up: <span id="n_min_ps">' + money(MIN_TOPUP_CENTS) + '</span></div>'
-      + '<button class="nister-btn nister-primary nister-wide" id="ps_submit" type="button">Pay with Paystack</button>'
+      + '<button class="nister-btn nister-primary nister-wide" id="ps_submit" type="button">Make Payment</button>'
       + '</section>'
       + '<section id="n_manual" class="nister-pane">'
       + '<div id="n_instr" class="muted" style="margin:6px 0 10px">Loading instructions...</div>'
@@ -567,15 +567,15 @@
       if(!(amount_cents>0)){ if(err){ err.textContent='Amount must be a number > 0.'; err.style.display='block'; } return; }
       if(amount_cents < MIN_TOPUP_CENTS){ if(err){ err.textContent='Minimum top up is ' + money(MIN_TOPUP_CENTS) + '.'; err.style.display='block'; } return; }
 
-      var btn=this, old=btn.textContent; btn.disabled=true; btn.textContent='Opening Paystack...';
+      var btn=this, old=btn.textContent; btn.disabled=true; btn.textContent='Opening payment...';
       try{
         var res = await postPaystackInitialize({amount_cents: amount_cents});
         if (!res.authorization_url) throw new Error('authorization_url_missing');
         window.location.href = res.authorization_url;
       }catch(e){
         var msg = e.message || 'Paystack checkout failed.';
-        if (e.code === 'paystack_disabled') msg = 'Paystack payment is currently unavailable.';
-        else if (e.code === 'paystack_not_configured') msg = 'Paystack payment is not configured yet.';
+        if (e.code === 'paystack_disabled') msg = 'Momo Pay is currently unavailable.';
+        else if (e.code === 'paystack_not_configured') msg = 'Momo Pay is not configured yet.';
         else if (e.code === 'min_amount' && e.data && e.data.min_ghs) msg = 'Minimum top up is GHS ' + Number(e.data.min_ghs).toFixed(2) + '.';
         if(err){ err.textContent = msg; err.style.display='block'; }
       }finally{
