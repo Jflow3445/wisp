@@ -22,6 +22,9 @@ if (is_file($indexPath)) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nister WiFi | Portal</title>
+  <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <style>
     :root{
       --bg:#f4f1ea;--ink:#1c2329;--muted:#5f6a76;--accent:#0f766e;--card:#fffdfa;--line:#e2d6c8;--shadow:0 20px 60px rgba(27,35,42,.12);--radius:18px;--font:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;

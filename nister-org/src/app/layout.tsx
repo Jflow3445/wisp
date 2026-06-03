@@ -9,6 +9,13 @@ export const metadata: Metadata = {
   },
   description:
     "Nister Wi-Fi provides practical internet access for hostels and remote communities where dependable connectivity is needed most.",
+  icons: {
+    icon: [
+      { url: "/nister-browser-icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
   openGraph: {
     title: "Nister Wi-Fi",
     description: "Practical internet access for hostels and remote communities.",
