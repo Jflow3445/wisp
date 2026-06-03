@@ -73,6 +73,47 @@
     }
     return j;
   }
+  async function fetchTopupConfig(){
+    var fallback = {
+      ok: true,
+      manual_enabled: true,
+      paystack_enabled: false,
+      currency: 'GHS',
+      min_topup_cents: MIN_TOPUP_CENTS
+    };
+    try{
+      var r = await fetch('topup_config.php', {cache:'no-store', credentials:'same-origin'});
+      var j = await r.json().catch(function(){ return null; });
+      if (!r.ok || !j || !j.ok) return fallback;
+      if (Number(j.min_topup_cents) > 0) MIN_TOPUP_CENTS = Number(j.min_topup_cents);
+      return j;
+    }catch(_){
+      return fallback;
+    }
+  }
+  async function postPaystackInitialize(payload){
+    var r = await fetch('paystack_initialize.php', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify(payload)
+    });
+    if (r.status === 401) { window.location.href = '/login.php'; return {ok:false,error:'unauthorized'}; }
+    var j = await r.json().catch(function(){ return {ok:false,error:'invalid json'}; });
+    if(!r.ok || !j.ok){
+      var msg = (j && (j.message || j.error)) || ('HTTP '+r.status);
+      var err = new Error(msg);
+      err.code = j && j.error;
+      err.data = j;
+      throw err;
+    }
+    return j;
+  }
+  function parseAmountCents(raw){
+    var n = Number(String(raw || '').replace(/[^\d.]/g, ''));
+    if (!isFinite(n) || n <= 0) return 0;
+    return Math.round(n * 100);
+  }
 
   // ---------- renderers ----------
   function renderActive(active){
@@ -148,7 +189,7 @@
           if (resp.status === 401) { window.location.href = '/login.php'; return; }
           var j = await resp.json().catch(function(){ return {ok:false,error:'Invalid JSON'}; });
           if(!resp.ok || !j.ok){
-            var msg = (j && (j.error || j.message)) || resp.statusText || 'Error';
+            var msg = (j && (j.message || j.error)) || resp.statusText || 'Error';
             alert('Purchase failed: ' + msg);
           }
           else {
@@ -357,7 +398,7 @@
 
     // ensure CSS
     if (!document.querySelector('link[href*="topup.css"]')) {
-      var l=document.createElement('link'); l.rel='stylesheet'; l.href='assets/topup.css?v=9'; document.head.appendChild(l);
+      var l=document.createElement('link'); l.rel='stylesheet'; l.href='assets/topup.css?v=10'; document.head.appendChild(l);
     }
 
     var fab = ce('div',{className:'nister-fab'});
@@ -383,16 +424,33 @@
       '<h3 style="margin:0 0 8px">Top up wallet</h3>'
       + '<div class="nister-alert nister-ok" id="n_ok"></div>'
       + '<div class="nister-alert nister-err" id="n_err"></div>'
+      + '<div class="nister-modebar" id="n_modes">'
+      + '<button type="button" id="n_mode_paystack" data-mode="paystack">Paystack</button>'
+      + '<button type="button" id="n_mode_manual" data-mode="manual">Manual MoMo</button>'
+      + '</div>'
+      + '<div id="n_disabled" class="nister-empty">Top-up is currently unavailable.</div>'
+      + '<section id="n_paystack" class="nister-pane">'
+      + '<div class="nister-pay-head"><div><strong>Automated payment</strong><span>Card, mobile money, or bank transfer through Paystack.</span></div><span class="nister-secure">Verified</span></div>'
+      + '<div class="nister-row" style="margin:12px 0"><input class="nister-input" id="ps_amount" inputmode="decimal" placeholder="Amount (GHS) e.g. ' + minExample + '"></div>'
+      + '<div class="muted nister-min">Minimum top up: <span id="n_min_ps">' + money(MIN_TOPUP_CENTS) + '</span></div>'
+      + '<button class="nister-btn nister-primary nister-wide" id="ps_submit" type="button">Pay with Paystack</button>'
+      + '</section>'
+      + '<section id="n_manual" class="nister-pane">'
       + '<div id="n_instr" class="muted" style="margin:6px 0 10px">Loading instructions...</div>'
       + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_msisdn" placeholder="Your number (auto)" autocomplete="tel"></div>'
-      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_momo"   placeholder="MoMo number used (MTN only)"></div>'
-      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_txid"   placeholder="Transaction ID / Reference"></div>'
-      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_amount" placeholder="Amount (GHS) e.g. ' + minExample + '"></div>'
-      + '<div class="muted" style="margin:-6px 0 10px">Minimum top up: ' + money(MIN_TOPUP_CENTS) + '</div>'
-      + '<div class="nister-actions"><button class="nister-btn nister-ghost" id="n_cancel">Close</button><button class="nister-btn nister-primary" id="n_submit">Submit Top-Up</button></div>';
+      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_momo" placeholder="MoMo number used (MTN only)"></div>'
+      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_txid" placeholder="Transaction ID / Reference"></div>'
+      + '<div class="nister-row" style="margin:10px 0"><input class="nister-input" id="in_amount" inputmode="decimal" placeholder="Amount (GHS) e.g. ' + minExample + '"></div>'
+      + '<div class="muted nister-min">Minimum top up: <span id="n_min_manual">' + money(MIN_TOPUP_CENTS) + '</span></div>'
+      + '<button class="nister-btn nister-primary nister-wide" id="n_submit" type="button">Submit manual top-up</button>'
+      + '</section>'
+      + '<div class="nister-actions"><button class="nister-btn nister-ghost" id="n_cancel" type="button">Close</button></div>';
 
-    var instr = $('#n_instr');
-    if (instr) {
+    var instrLoaded = false;
+    function loadManualInstructions(){
+      var instr = $('#n_instr');
+      if (!instr || instrLoaded) return;
+      instrLoaded = true;
       fetch('deposit_instructions.php', {cache:'no-store'})
         .then(function(r){
           if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -404,6 +462,38 @@
         })
         .catch(function(){ instr.textContent = 'Send MTN MoMo to 0598544768. After payment, submit the details below.'; });
     }
+    function updateMinimumLabels(){
+      var minPs = $('#n_min_ps'), minManual = $('#n_min_manual');
+      if (minPs) minPs.textContent = money(MIN_TOPUP_CENTS);
+      if (minManual) minManual.textContent = money(MIN_TOPUP_CENTS);
+    }
+    function setTopupMode(mode){
+      var ps = $('#n_paystack'), manual = $('#n_manual');
+      var bPs = $('#n_mode_paystack'), bManual = $('#n_mode_manual');
+      var isPs = mode === 'paystack';
+      if (ps) ps.style.display = isPs ? '' : 'none';
+      if (manual) manual.style.display = isPs ? 'none' : '';
+      if (bPs) bPs.classList.toggle('active', isPs);
+      if (bManual) bManual.classList.toggle('active', !isPs);
+      if (!isPs) loadManualInstructions();
+    }
+    function configureTopupModes(cfg){
+      cfg = cfg || {};
+      var manualEnabled = cfg.manual_enabled !== false && cfg.manual_enabled !== 0 && cfg.manual_enabled !== '0';
+      var paystackEnabled = cfg.paystack_enabled === true || cfg.paystack_enabled === 1 || cfg.paystack_enabled === '1';
+      var modes = $('#n_modes'), disabled = $('#n_disabled');
+      var ps = $('#n_paystack'), manual = $('#n_manual');
+      var bPs = $('#n_mode_paystack'), bManual = $('#n_mode_manual');
+      updateMinimumLabels();
+      if (bPs) bPs.style.display = paystackEnabled ? '' : 'none';
+      if (bManual) bManual.style.display = manualEnabled ? '' : 'none';
+      if (modes) modes.style.display = (paystackEnabled && manualEnabled) ? 'grid' : 'none';
+      if (disabled) disabled.style.display = (!paystackEnabled && !manualEnabled) ? '' : 'none';
+      if (!paystackEnabled && ps) ps.style.display = 'none';
+      if (!manualEnabled && manual) manual.style.display = 'none';
+      if (paystackEnabled) setTopupMode('paystack');
+      else if (manualEnabled) setTopupMode('manual');
+    }
 
     function openModal(){
       if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return; }
@@ -411,6 +501,7 @@
       var x = $('#in_msisdn'); if (x) { x.value = raw; x.readOnly = true; }
       var ok=$('#n_ok'), err=$('#n_err'); if(ok) ok.style.display='none'; if(err){err.style.display='none'; err.textContent='';}
       show(bd);
+      fetchTopupConfig().then(configureTopupModes);
     }
     function closeModal(){ hide(bd); }
 
@@ -418,6 +509,8 @@
     var topupNow = document.getElementById('topup_now');
     if (topupNow) topupNow.addEventListener('click', openModal);
     $('#n_cancel').addEventListener('click', closeModal);
+    $('#n_mode_paystack').addEventListener('click', function(){ setTopupMode('paystack'); });
+    $('#n_mode_manual').addEventListener('click', function(){ setTopupMode('manual'); });
 
     $('#n_submit').addEventListener('click', async function(){
       var msisdn = ($('#in_msisdn')&&$('#in_msisdn').value||'').trim();
@@ -431,7 +524,7 @@
 
       if(!msisdn || !txid || !amtStr){ if(err){ err.textContent='Please fill TxID and Amount.'; err.style.display='block'; } return; }
 
-      var amount_cents = Math.round(parseFloat(amtStr)*100);
+      var amount_cents = parseAmountCents(amtStr);
       if(!(amount_cents>0)){ if(err){ err.textContent='Amount must be a number > 0.'; err.style.display='block'; } return; }
       if(amount_cents < MIN_TOPUP_CENTS){ if(err){ err.textContent='Minimum top up is ' + money(MIN_TOPUP_CENTS) + '.'; err.style.display='block'; } return; }
 
@@ -453,6 +546,8 @@
         var msg = e.message || 'Submit failed.';
         if (e.code === 'min_amount' && e.data && e.data.min_ghs) {
           msg = 'Minimum top up is GHS ' + Number(e.data.min_ghs).toFixed(2) + '.';
+        } else if (e.code === 'manual_topup_disabled') {
+          msg = 'Manual top-up is currently unavailable.';
         } else if (e.code === 'db_config_missing' || e.code === 'db_connect_failed' || e.code === 'db_error') {
           msg = 'Payment service is temporarily unavailable. Please try again shortly.';
         }
@@ -461,6 +556,33 @@
         btn.disabled=false; btn.textContent=old;
       }
     });
+
+    $('#ps_submit').addEventListener('click', async function(){
+      var amtStr = ($('#ps_amount')&&$('#ps_amount').value||'').trim();
+      var ok=$('#n_ok'), err=$('#n_err');
+      if(ok) ok.style.display='none';
+      if(err){ err.style.display='none'; err.textContent=''; }
+
+      var amount_cents = parseAmountCents(amtStr);
+      if(!(amount_cents>0)){ if(err){ err.textContent='Amount must be a number > 0.'; err.style.display='block'; } return; }
+      if(amount_cents < MIN_TOPUP_CENTS){ if(err){ err.textContent='Minimum top up is ' + money(MIN_TOPUP_CENTS) + '.'; err.style.display='block'; } return; }
+
+      var btn=this, old=btn.textContent; btn.disabled=true; btn.textContent='Opening Paystack...';
+      try{
+        var res = await postPaystackInitialize({amount_cents: amount_cents});
+        if (!res.authorization_url) throw new Error('authorization_url_missing');
+        window.location.href = res.authorization_url;
+      }catch(e){
+        var msg = e.message || 'Paystack checkout failed.';
+        if (e.code === 'paystack_disabled') msg = 'Paystack payment is currently unavailable.';
+        else if (e.code === 'paystack_not_configured') msg = 'Paystack payment is not configured yet.';
+        else if (e.code === 'min_amount' && e.data && e.data.min_ghs) msg = 'Minimum top up is GHS ' + Number(e.data.min_ghs).toFixed(2) + '.';
+        if(err){ err.textContent = msg; err.style.display='block'; }
+      }finally{
+        btn.disabled=false; btn.textContent=old;
+      }
+    });
+    configureTopupModes({manual_enabled:true, paystack_enabled:false});
   }
 
   function bindPortalMenu(){

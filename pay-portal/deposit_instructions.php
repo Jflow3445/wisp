@@ -18,6 +18,11 @@ $get = static function(string $k, $def=null) use ($s, $ENV) {
   if ($v !== false && $v !== '') return $v;
   return $def;
 };
+$manualEnabledRaw = strtolower(trim((string)$get('TOPUP_MANUAL_ENABLED', '1')));
+if (!in_array($manualEnabledRaw, ['1','true','yes','y','on','enabled'], true)) {
+  echo '<div class="muted">Manual top-up is currently unavailable.</div>';
+  exit;
+}
 
 $network = (string)$get('TOPUP_NETWORK', 'MTN Ghana');
 $name    = (string)$get('TOPUP_NAME', 'GRASAG-UHAS');

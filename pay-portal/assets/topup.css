@@ -37,7 +37,7 @@ body.pay-portal .nister-fab{display:none}
   z-index:70;
 }
 .nister-modal{
-  width:min(640px,92vw);
+  width:min(680px,92vw);
   background:linear-gradient(180deg,#fffdf8,#fff8ee);
   border:1px solid rgba(229,215,197,.92);
   border-radius:24px;
@@ -50,6 +50,70 @@ body.pay-portal .nister-fab{display:none}
   margin:0 0 6px;
 }
 .nister-modal .muted{color:var(--muted,#5f6a76)}
+.nister-modebar{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin:12px 0 14px;
+  padding:5px;
+  border:1px solid #e4d3bd;
+  border-radius:16px;
+  background:rgba(255,255,255,.7);
+}
+.nister-modebar button{
+  border:0;
+  border-radius:12px;
+  padding:11px 12px;
+  cursor:pointer;
+  background:transparent;
+  color:var(--muted,#5f6a76);
+  font-weight:800;
+  font-family:var(--font-body,"Sora",sans-serif);
+}
+.nister-modebar button.active{
+  color:#fff;
+  background:linear-gradient(135deg,var(--premium-teal,#0f766e),var(--premium-teal-2,#13a091));
+  box-shadow:0 10px 24px rgba(15,118,110,.2);
+}
+.nister-pane{
+  display:block;
+  margin-top:10px;
+}
+.nister-empty{
+  display:none;
+  border:1px dashed #d7c4ad;
+  border-radius:16px;
+  padding:16px;
+  color:var(--muted,#5f6a76);
+  background:rgba(255,255,255,.55);
+}
+.nister-pay-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  margin-bottom:4px;
+}
+.nister-pay-head strong{
+  display:block;
+  margin-bottom:3px;
+}
+.nister-pay-head span{
+  display:block;
+  color:var(--muted,#5f6a76);
+  font-size:.92rem;
+  line-height:1.45;
+}
+.nister-pay-head .nister-secure{
+  flex:0 0 auto;
+  border:1px solid rgba(15,118,110,.22);
+  border-radius:999px;
+  padding:5px 9px;
+  color:var(--premium-teal,#0f766e);
+  background:rgba(15,118,110,.08);
+  font-size:.76rem;
+  font-weight:800;
+}
 .nister-row{display:flex;gap:10px;align-items:center}
 .nister-row>*{flex:1}
 .nister-input{
@@ -72,6 +136,7 @@ body.pay-portal .nister-fab{display:none}
   justify-content:flex-end;
   margin-top:14px;
 }
+.nister-min{margin:-4px 0 12px;font-size:.9rem}
 .nister-btn{
   border:0;
   border-radius:14px;
@@ -87,6 +152,10 @@ body.pay-portal .nister-fab{display:none}
 }
 .nister-primary{
   background:linear-gradient(135deg,var(--premium-teal,#0f766e),var(--premium-teal-2,#13a091));
+}
+.nister-wide{
+  width:100%;
+  justify-content:center;
 }
 .nister-alert{
   display:none;
@@ -116,4 +185,5 @@ body.pay-portal .nister-fab{display:none}
 @media (max-width:520px){
   .nister-fab{display:none}
   .nister-actions{flex-direction:column}
+  .nister-pay-head{flex-direction:column}
 }

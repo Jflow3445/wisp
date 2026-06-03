@@ -39,6 +39,13 @@ if (!nister_is_same_origin_request()) {
   exit;
 }
 
+$manualEnabledRaw = strtolower(trim((string)(settings_get('TOPUP_MANUAL_ENABLED', '1') ?? '1')));
+if (!in_array($manualEnabledRaw, ['1','true','yes','y','on','enabled'], true)) {
+  http_response_code(403);
+  echo json_encode(['ok'=>false,'error'=>'manual_topup_disabled'], JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 // Merge JSON into $_POST for convenience
 try {
   $ct = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';

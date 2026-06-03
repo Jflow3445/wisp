@@ -184,9 +184,26 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
       };
       $topupNumber = (string)$get('TOPUP_NUMBER','0530488905');
       $topupName   = (string)$get('TOPUP_NAME','GRASAG-UHAS');
+      $truthy = static function($v, bool $default=false): bool {
+        if ($v === null || $v === '') return $default;
+        return in_array(strtolower(trim((string)$v)), ['1','true','yes','y','on','enabled'], true);
+      };
+      $manualTopup = $truthy($get('TOPUP_MANUAL_ENABLED', '1'), true);
+      $paystackSecret = (string)$get('PAYSTACK_SECRET_KEY', '');
+      if ($paystackSecret === '') $paystackSecret = (string)$get('PAYSTACK_SECRET', '');
+      $paystackTopup = $truthy($get('PAYSTACK_ENABLED', '0'), false) && $paystackSecret !== '';
+      if ($paystackTopup && $manualTopup) {
+        $topupMessage = 'Not enough balance. Top up with Paystack or manual MoMo and try again.';
+      } elseif ($paystackTopup) {
+        $topupMessage = 'Not enough balance. Top up with Paystack and try again.';
+      } elseif ($manualTopup) {
+        $topupMessage = 'Not enough balance. Please deposit via MoMo and try again.';
+      } else {
+        $topupMessage = 'Not enough balance. Top-up is temporarily unavailable.';
+      }
       json_out([
         'ok'=>false,'error'=>'insufficient_funds',
-        'message'=>'Not enough balance. Please deposit via MoMo and try again.',
+        'message'=>$topupMessage,
         'momo_number'=>$topupNumber,'momo_names'=>[$topupName],
         'need_cents'=>$price
       ],402);

@@ -3,6 +3,7 @@ declare(strict_types=1);
 /* POST/JSON: msisdn, amount, method(momo|cash|bank|other), payer_name?, notes?(include Txn ID) */
 require_once __DIR__.'/../lib/db.php';
 require_once __DIR__.'/../lib/common.php';
+require_once __DIR__.'/../lib/settings.php';
 
 $ENV = app_boot();
 $allowLegacy = filter_var((string)($ENV['ALLOW_LEGACY_MANUAL_SUBMIT'] ?? getenv('ALLOW_LEGACY_MANUAL_SUBMIT') ?: ''), FILTER_VALIDATE_BOOLEAN);
@@ -16,6 +17,10 @@ if ($reqMethod !== 'POST') {
 }
 if (!nister_is_same_origin_request()) {
   json_out(['ok'=>false,'error'=>'origin_not_allowed'], 403);
+}
+$manualEnabledRaw = strtolower(trim((string)(settings_get('TOPUP_MANUAL_ENABLED', '1') ?? '1')));
+if (!in_array($manualEnabledRaw, ['1','true','yes','y','on','enabled'], true)) {
+  json_out(['ok'=>false,'error'=>'manual_topup_disabled'], 403);
 }
 
 $manualToken = trim((string)($ENV['MANUAL_SUBMIT_TOKEN'] ?? $ENV['APP_SECRET'] ?? ''));

@@ -272,6 +272,12 @@ function settings_allowed_keys(): array {
     'TOPUP_NUMBER',
     'TOPUP_WA_TEXT',
     'TOPUP_MIN_CENTS',
+    'TOPUP_MANUAL_ENABLED',
+    'PAYSTACK_ENABLED',
+    'PAYSTACK_PUBLIC_KEY',
+    'PAYSTACK_SECRET_KEY',
+    'PAYSTACK_CURRENCY',
+    'PAYSTACK_CALLBACK_URL',
     'MNOTIFY_BASE',
     'MNOTIFY_API_KEY',
     'MNOTIFY_SENDER',
@@ -311,8 +317,16 @@ function settings_allowed_keys(): array {
 
 function normalize_setting_value(string $k, ?string $v): string {
   $v = trim((string)$v);
-  if ($k === 'HOTSPOT_API_BASE' || $k === 'PAY_BASE') {
+  if ($k === 'HOTSPOT_API_BASE' || $k === 'PAY_BASE' || $k === 'PAYSTACK_CALLBACK_URL') {
     $v = rtrim($v, '/');
+  }
+  if (in_array($k, ['TOPUP_MANUAL_ENABLED','PAYSTACK_ENABLED'], true)) {
+    $s = strtolower($v);
+    return in_array($s, ['1','true','yes','y','on','enabled'], true) ? '1' : '0';
+  }
+  if ($k === 'PAYSTACK_CURRENCY') {
+    $v = strtoupper(preg_replace('/[^A-Za-z]/', '', $v));
+    return $v !== '' ? substr($v, 0, 3) : 'GHS';
   }
   if ($k === 'MNOTIFY_BASE') {
     $v = rtrim($v, '/');
@@ -333,6 +347,17 @@ function normalize_setting_value(string $k, ?string $v): string {
     $v = preg_replace('/[^\d.]/', '', $v);
   }
   return $v;
+}
+
+function admin_env_value(array $keys, string $default=''): string {
+  global $ENV;
+  foreach ($keys as $key) {
+    if (isset($ENV[$key]) && trim((string)$ENV[$key]) !== '') return trim((string)$ENV[$key]);
+    if (isset($_ENV[$key]) && trim((string)$_ENV[$key]) !== '') return trim((string)$_ENV[$key]);
+    $v = getenv($key);
+    if ($v !== false && trim((string)$v) !== '') return trim((string)$v);
+  }
+  return $default;
 }
 
 function bytes_from_input(array $in): ?int {
@@ -824,8 +849,24 @@ try {
       $keys = settings_allowed_keys();
       $out = [];
       foreach ($keys as $k) {
-        $out[$k] = settings_get($k, '') ?? '';
+        if ($k === 'PAYSTACK_SECRET_KEY') {
+          $out[$k] = '';
+          continue;
+        }
+        $value = settings_get($k, null);
+        if (($value === null || $value === '') && $k === 'PAYSTACK_PUBLIC_KEY') {
+          $value = admin_env_value(['PAYSTACK_PUBLIC_KEY','PAYSTACK_PUBLIC']);
+        }
+        if (($value === null || $value === '') && $k === 'PAYSTACK_CURRENCY') {
+          $value = admin_env_value(['PAYSTACK_CURRENCY','CURRENCY'], 'GHS');
+        }
+        $out[$k] = $value ?? '';
       }
+      $secret = settings_get('PAYSTACK_SECRET_KEY', '') ?? '';
+      if ($secret === '') {
+        $secret = admin_env_value(['PAYSTACK_SECRET_KEY','PAYSTACK_SECRET']);
+      }
+      $out['PAYSTACK_SECRET_KEY_SET'] = $secret !== '' ? '1' : '0';
       echo json_encode(['ok'=>true,'settings'=>$out]);
       break;
     }

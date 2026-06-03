@@ -387,6 +387,31 @@ $ADMIN_CSRF = admin_csrf_token();
         <input id="set_topup_min" type="text" placeholder="30.00">
       </div>
       <div class="field">
+        <label>Manual payment</label>
+        <label class="check"><input id="set_topup_manual_enabled" type="checkbox"> Accept manual MoMo top-ups</label>
+      </div>
+      <div class="field">
+        <label>Paystack payment</label>
+        <label class="check"><input id="set_paystack_enabled" type="checkbox"> Accept automated Paystack top-ups</label>
+      </div>
+      <div class="field">
+        <label for="set_paystack_public">Paystack public key</label>
+        <input id="set_paystack_public" type="text" placeholder="pk_live_...">
+      </div>
+      <div class="field">
+        <label for="set_paystack_secret">Paystack secret key</label>
+        <input id="set_paystack_secret" type="password" placeholder="Leave blank to keep existing">
+        <div class="hint" id="set_paystack_secret_hint">Secret key is never shown after saving.</div>
+      </div>
+      <div class="field">
+        <label for="set_paystack_currency">Paystack currency</label>
+        <input id="set_paystack_currency" type="text" placeholder="GHS">
+      </div>
+      <div class="field">
+        <label for="set_paystack_callback">Paystack callback URL</label>
+        <input id="set_paystack_callback" type="text" placeholder="https://pay.nister.org/paystack_callback.php">
+      </div>
+      <div class="field">
         <label for="set_referral_rate">Referral rate (%)</label>
         <input id="set_referral_rate" type="text" placeholder="10">
       </div>
@@ -2385,6 +2410,7 @@ async function loadSettings(){
   }
   const s = j.settings || {};
   const set = (id, val)=>{ const el = document.getElementById(id); if (el) el.value = val || ''; };
+  const setChecked = (id, val)=>{ const el = document.getElementById(id); if (el) el.checked = String(val || '') === '1'; };
   set('set_api_base', s.HOTSPOT_API_BASE || '');
   set('set_pay_base', s.PAY_BASE || '');
   set('set_whatsapp', s.WHATSAPP_SUPPORT || '');
@@ -2393,6 +2419,16 @@ async function loadSettings(){
   set('set_topup_number', s.TOPUP_NUMBER || '');
   set('set_topup_text', s.TOPUP_WA_TEXT || '');
   set('set_topup_min', centsToAmount(s.TOPUP_MIN_CENTS || ''));
+  setChecked('set_topup_manual_enabled', s.TOPUP_MANUAL_ENABLED === '' ? '1' : s.TOPUP_MANUAL_ENABLED);
+  setChecked('set_paystack_enabled', s.PAYSTACK_ENABLED || '0');
+  set('set_paystack_public', s.PAYSTACK_PUBLIC_KEY || '');
+  set('set_paystack_secret', '');
+  set('set_paystack_currency', s.PAYSTACK_CURRENCY || 'GHS');
+  set('set_paystack_callback', s.PAYSTACK_CALLBACK_URL || '');
+  const pskHint = document.getElementById('set_paystack_secret_hint');
+  if (pskHint) pskHint.textContent = String(s.PAYSTACK_SECRET_KEY_SET || '') === '1'
+    ? 'A secret key is saved. Leave blank to keep it.'
+    : 'No Paystack secret key is saved yet.';
   set('set_referral_rate', bpsToPercent(s.REFERRAL_RATE_BPS || ''));
   set('set_referral_monthly', centsToAmount(s.REFERRAL_MONTHLY_CAP_CENTS || ''));
   set('set_referral_lifetime', centsToAmount(s.REFERRAL_LIFETIME_CAP_CENTS || ''));
@@ -2427,6 +2463,7 @@ async function saveSettings(){
   const referralRateRaw = toolValue('set_referral_rate');
   const referralMonthlyRaw = toolValue('set_referral_monthly');
   const referralLifetimeRaw = toolValue('set_referral_lifetime');
+  const checkboxValue = (id)=>{ const el = document.getElementById(id); return el && el.checked ? '1' : '0'; };
   const body = {
     HOTSPOT_API_BASE: toolValue('set_api_base'),
     PAY_BASE: toolValue('set_pay_base'),
@@ -2436,6 +2473,11 @@ async function saveSettings(){
     TOPUP_NUMBER: toolValue('set_topup_number'),
     TOPUP_WA_TEXT: toolValue('set_topup_text'),
     TOPUP_MIN_CENTS: minTopupRaw ? String(parseAmountCents(minTopupRaw)) : '',
+    TOPUP_MANUAL_ENABLED: checkboxValue('set_topup_manual_enabled'),
+    PAYSTACK_ENABLED: checkboxValue('set_paystack_enabled'),
+    PAYSTACK_PUBLIC_KEY: toolValue('set_paystack_public'),
+    PAYSTACK_CURRENCY: toolValue('set_paystack_currency') || 'GHS',
+    PAYSTACK_CALLBACK_URL: toolValue('set_paystack_callback'),
     REFERRAL_RATE_BPS: referralRateRaw ? percentToBps(referralRateRaw) : '',
     REFERRAL_MONTHLY_CAP_CENTS: referralMonthlyRaw ? String(parseAmountCents(referralMonthlyRaw)) : '',
     REFERRAL_LIFETIME_CAP_CENTS: referralLifetimeRaw ? String(parseAmountCents(referralLifetimeRaw)) : '',
@@ -2463,12 +2505,20 @@ async function saveSettings(){
     SMS_INACTIVE_TEXT: toolValue('set_sms_inactive'),
     SMS_INACTIVE_DAYS: toolValue('set_sms_inactive_days'),
   };
+  const paystackSecret = toolValue('set_paystack_secret');
+  if (paystackSecret) body.PAYSTACK_SECRET_KEY = paystackSecret;
   setSettingsStatus('Saving...');
   const j = await api('settings_save', body);
   if (!j.ok){
     const msg = j.detail ? (j.error + ': ' + j.detail) : (j.error || 'Save failed.');
     setSettingsStatus(msg, 'error');
     return;
+  }
+  if (paystackSecret) {
+    const psk = document.getElementById('set_paystack_secret');
+    if (psk) psk.value = '';
+    const pskHint = document.getElementById('set_paystack_secret_hint');
+    if (pskHint) pskHint.textContent = 'A secret key is saved. Leave blank to keep it.';
   }
   setSettingsStatus('Settings saved.', 'success');
 }
