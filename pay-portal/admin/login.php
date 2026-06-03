@@ -105,6 +105,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       font-size:1rem;
     }
     input:focus{outline:3px solid rgba(15,118,110,.18);border-color:var(--accent)}
+    .password-wrap{position:relative}
+    .password-wrap input{padding-right:78px}
+    .password-toggle{
+      position:absolute;right:8px;top:50%;transform:translateY(-50%);
+      border:1px solid var(--line);border-radius:10px;background:#fffefb;color:var(--accent);
+      font-weight:800;font-size:.82rem;padding:7px 10px;cursor:pointer;
+    }
+    .password-toggle:focus{outline:3px solid rgba(15,118,110,.18)}
     .btn{
       margin-top:1rem;
       width:100%;
@@ -166,11 +174,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <input id="u" name="u" type="text" required autofocus>
 
       <label for="p">Password</label>
-      <input id="p" name="p" type="password" required>
+      <div class="password-wrap">
+        <input id="p" name="p" type="password" autocomplete="current-password" required>
+        <button class="password-toggle" type="button" data-password-toggle="p" aria-controls="p" aria-pressed="false">Show</button>
+      </div>
 
       <button class="btn" type="submit">Login</button>
     </form>
     </section>
   </main>
+  <script>
+    (function(){
+      var btn = document.querySelector('[data-password-toggle]');
+      if (!btn) return;
+      var input = document.getElementById(btn.getAttribute('data-password-toggle'));
+      if (!input) return;
+      btn.addEventListener('click', function(){
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.textContent = show ? 'Hide' : 'Show';
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      });
+    })();
+  </script>
 </body>
 </html>

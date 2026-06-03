@@ -120,6 +120,14 @@ $ADMIN_CSRF = admin_csrf_token();
     width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;
     font-family:var(--font-body);font-size:.95rem;
   }
+  .password-wrap{position:relative}
+  .password-wrap input{padding-right:78px}
+  .password-toggle{
+    position:absolute;right:7px;top:50%;transform:translateY(-50%);
+    border:1px solid var(--line);border-radius:10px;background:#fffefb;color:var(--accent);
+    font-family:var(--font-body);font-size:.78rem;font-weight:800;padding:6px 9px;cursor:pointer;
+  }
+  .password-toggle:focus{outline:3px solid rgba(15,118,110,.18)}
   .field select,
   .field textarea{
     width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;
@@ -400,7 +408,10 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
       <div class="field">
         <label for="set_paystack_secret">Paystack secret key</label>
-        <input id="set_paystack_secret" type="password" placeholder="Leave blank to keep existing">
+        <div class="password-wrap">
+          <input id="set_paystack_secret" type="password" placeholder="Leave blank to keep existing" autocomplete="off">
+          <button class="password-toggle" type="button" data-password-toggle="set_paystack_secret" aria-controls="set_paystack_secret" aria-pressed="false">Show</button>
+        </div>
         <div class="hint" id="set_paystack_secret_hint">Secret key is never shown after saving.</div>
       </div>
       <div class="field">
@@ -854,11 +865,17 @@ $ADMIN_CSRF = admin_csrf_token();
           </div>
           <div class="field">
             <label for="tool_new_password">New password</label>
-            <input id="tool_new_password" type="text" placeholder="Set a new password">
+            <div class="password-wrap">
+              <input id="tool_new_password" type="password" placeholder="Set a new password" autocomplete="new-password">
+              <button class="password-toggle" type="button" data-password-toggle="tool_new_password" aria-controls="tool_new_password" aria-pressed="false">Show</button>
+            </div>
           </div>
           <div class="field">
             <label for="tool_new_password2">Confirm password</label>
-            <input id="tool_new_password2" type="text" placeholder="Re-enter password">
+            <div class="password-wrap">
+              <input id="tool_new_password2" type="password" placeholder="Re-enter password" autocomplete="new-password">
+              <button class="password-toggle" type="button" data-password-toggle="tool_new_password2" aria-controls="tool_new_password2" aria-pressed="false">Show</button>
+            </div>
           </div>
           <div class="field">
             <label for="tool_expiry">Expiry date (YYYY-MM-DD HH:MM:SS)</label>
@@ -2516,7 +2533,15 @@ async function saveSettings(){
   }
   if (paystackSecret) {
     const psk = document.getElementById('set_paystack_secret');
-    if (psk) psk.value = '';
+    if (psk) {
+      psk.value = '';
+      psk.type = 'password';
+    }
+    const pskToggle = document.querySelector('[data-password-toggle="set_paystack_secret"]');
+    if (pskToggle) {
+      pskToggle.textContent = 'Show';
+      pskToggle.setAttribute('aria-pressed', 'false');
+    }
     const pskHint = document.getElementById('set_paystack_secret_hint');
     if (pskHint) pskHint.textContent = 'A secret key is saved. Leave blank to keep it.';
   }
@@ -3347,6 +3372,22 @@ async function sendSms(){
   setSmsStatus(`SMS sent to ${j.recipients || 0} recipients${siteNote}${extra}.`, 'success');
 }
 
+function bindPasswordToggles(){
+  document.querySelectorAll('[data-password-toggle]').forEach((btn)=>{
+    if (btn.dataset.bound === '1') return;
+    const id = btn.getAttribute('data-password-toggle') || '';
+    const input = id ? document.getElementById(id) : null;
+    if (!input) return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', ()=>{
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? 'Hide' : 'Show';
+      btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+    });
+  });
+}
+
 async function refreshAll(){
   const btn = document.getElementById('refresh_btn');
   if (btn) btn.disabled = true;
@@ -3367,6 +3408,7 @@ async function refreshAll(){
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   initMenu();
+  bindPasswordToggles();
   initFlowWindowDefaults();
   initFlowDayDefaults();
   await refreshAll();

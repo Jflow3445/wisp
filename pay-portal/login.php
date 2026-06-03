@@ -93,6 +93,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .label{display:block;margin-bottom:6px;color:var(--muted);font-size:.85rem}
     input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:1rem}
     input:focus{outline:3px solid rgba(15,118,110,.18);border-color:var(--accent)}
+    .password-wrap{position:relative}
+    .password-wrap input{padding-right:78px}
+    .password-toggle{
+      position:absolute;right:8px;top:50%;transform:translateY(-50%);
+      border:1px solid var(--line);border-radius:10px;background:#fffefb;color:var(--accent);
+      font-weight:800;font-size:.82rem;padding:7px 10px;cursor:pointer;
+    }
+    .password-toggle:focus{outline:3px solid rgba(15,118,110,.18)}
     .btn{appearance:none;border:0;border-radius:12px;padding:12px 16px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,var(--accent),#0f8a7f);color:#fff;width:100%;min-height:46px;box-shadow:0 12px 24px rgba(15,118,110,.22)}
     .msg{padding:10px 12px;border-radius:12px;margin-bottom:12px;font-size:.9rem}
     .msg.err{background:#fff0f0;border:1px solid #f2b8b8;color:#842029}
@@ -148,7 +156,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
       <div class="field">
         <label class="label" for="password">Password</label>
-        <input id="password" name="password" type="password" placeholder="Your hotspot password" required>
+        <div class="password-wrap">
+          <input id="password" name="password" type="password" placeholder="Your hotspot password" autocomplete="current-password" required>
+          <button class="password-toggle" type="button" data-password-toggle="password" aria-controls="password" aria-pressed="false">Show</button>
+        </div>
       </div>
       <button class="btn" type="submit">Login</button>
     </form>
@@ -157,5 +168,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
     </section>
   </main>
+  <script>
+    (function(){
+      var btn = document.querySelector('[data-password-toggle]');
+      if (!btn) return;
+      var input = document.getElementById(btn.getAttribute('data-password-toggle'));
+      if (!input) return;
+      btn.addEventListener('click', function(){
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.textContent = show ? 'Hide' : 'Show';
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      });
+    })();
+  </script>
 </body>
 </html>
