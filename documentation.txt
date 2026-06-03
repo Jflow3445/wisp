@@ -141,9 +141,9 @@ These hostnames are product contracts, not just convenient deployment paths:
   autopost bridges, and hotspot status must prefer this host.
 
 - pay.nister.org:
-  Payment portal and admin portal. It serves payment/config surfaces and may be
-  a status fallback only. Do not make it the primary host for captive API
-  services just because some PHP implementation files live under pay-portal/.
+  Payment portal and admin portal. It serves payment/config surfaces only. Do
+  not use it as a captive API fallback; fallback hosts must implement the same
+  API contract as the primary host.
 
 - wifi.nister.org:
   Public Wi-Fi site plus CAPPORT /api.json. It is not a backend API host.
@@ -153,8 +153,9 @@ These hostnames are product contracts, not just convenient deployment paths:
 
 Rule for future changes:
 - Keep hotspot/config.js API defaults on https://api.nister.org.
-- Keep captive status.html trying api.nister.org before pay.nister.org.
-- Treat pay.nister.org as payment/admin first and API fallback only.
+- Keep captive status.html API candidates on api.nister.org or router-local
+  same-origin only.
+- Treat pay.nister.org as payment/admin only, not as a captive API fallback.
 
 
 4) DATA MODEL YOU RELY ON

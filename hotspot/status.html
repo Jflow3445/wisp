@@ -257,15 +257,11 @@ function apiCandidates(username){
   var apiOverride = safeApiBase(qs('api'));
   var cfgApi = (window.NISTER_CFG && window.NISTER_CFG.api_base) ? window.NISTER_CFG.api_base : '';
   var safeCfg = safeApiBase(cfgApi);
-  var cfgPay = (window.NISTER_CFG && window.NISTER_CFG.pay_base) ? window.NISTER_CFG.pay_base : '';
-  var safePay = safePayBase(cfgPay);
   var sameOrigin = sameOriginApiBase();
   var raw = [
     apiOverride,
     safeCfg,
     'https://api.nister.org',
-    safePay,
-    'https://pay.nister.org',
     sameOrigin
   ];
   if (location.protocol !== 'https:') raw.push('http://api.nister.org');

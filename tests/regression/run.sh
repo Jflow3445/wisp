@@ -166,14 +166,19 @@ assert_contains "status_allows_valid_token" "$status_with_token" '"error":"usern
 
 status_page_content="$(cat hotspot/status.html)"
 router_status_page_content="$(cat nister-org/public/router-sync/status.html)"
-status_api_before_pay=$"'https://api.nister.org',
-    safePay,
-    'https://pay.nister.org'"
+status_candidates_block="$(awk '/function apiCandidates\(username\)/,/function pickPayLoginUrl/' hotspot/status.html)"
+router_status_candidates_block="$(awk '/function apiCandidates\(username\)/,/function pickPayLoginUrl/' nister-org/public/router-sync/status.html)"
 assert_contains "status_page_prefers_api_base" "$status_page_content" "var base = (apiOverride || safeCfg || 'https://api.nister.org')"
-assert_contains "status_page_candidates_keep_api_before_pay" "$status_page_content" "$status_api_before_pay"
+assert_contains "status_page_candidates_use_api_host" "$status_candidates_block" "'https://api.nister.org'"
+assert_contains "status_page_candidates_keep_router_local_context" "$status_candidates_block" "sameOrigin"
+assert_not_contains "status_page_candidates_do_not_use_pay_host" "$status_candidates_block" "pay.nister.org"
+assert_not_contains "status_page_candidates_do_not_use_pay_base" "$status_candidates_block" "safePay"
 assert_not_contains "status_page_must_not_default_to_pay_api" "$status_page_content" "var base = (apiOverride || safePay || 'https://pay.nister.org')"
 assert_contains "router_status_page_prefers_api_base" "$router_status_page_content" "var base = (apiOverride || safeCfg || 'https://api.nister.org')"
-assert_contains "router_status_candidates_keep_api_before_pay" "$router_status_page_content" "$status_api_before_pay"
+assert_contains "router_status_candidates_use_api_host" "$router_status_candidates_block" "'https://api.nister.org'"
+assert_contains "router_status_candidates_keep_router_local_context" "$router_status_candidates_block" "sameOrigin"
+assert_not_contains "router_status_candidates_do_not_use_pay_host" "$router_status_candidates_block" "pay.nister.org"
+assert_not_contains "router_status_candidates_do_not_use_pay_base" "$router_status_candidates_block" "safePay"
 assert_not_contains "router_status_must_not_default_to_pay_api" "$router_status_page_content" "var base = (apiOverride || safePay || 'https://pay.nister.org')"
 
 hotspot_config_content="$(cat hotspot/config.js nister-org/public/router-sync/config.js)"
