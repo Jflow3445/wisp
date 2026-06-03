@@ -131,17 +131,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .err{color:#b91c1c;margin:.6rem 0}
     .ok{color:#15803d;margin:.6rem 0}
   </style>
-  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
+  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
 </head>
 <body class="admin-auth">
   <main class="auth-shell">
     <section class="auth-brand" aria-label="Nister admin portal">
-      <div class="brand-row">
-        <div class="mark"><span></span></div>
-        <div>
-          <div class="brand-name">Nister WiFi</div>
-          <div class="brand-tag">Admin console</div>
-        </div>
+      <div class="auth-brand-top">
+        <a class="brand-row auth-brand-link" href="https://nister.org/" aria-label="Nister Wi-Fi home">
+          <div class="mark"><span></span></div>
+          <div>
+            <div class="brand-name">Nister Wi-Fi</div>
+            <div class="brand-tag">Admin console</div>
+          </div>
+        </a>
+        <nav class="nister-auth-nav" aria-label="Nister site navigation">
+          <a href="https://nister.org/">Home</a>
+          <a href="https://wifi.nister.org/">Get Online</a>
+          <a href="https://pay.nister.org/">Manage Access</a>
+        </nav>
       </div>
       <div>
         <h2>Run payments and network access.</h2>
@@ -157,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="brand-row">
       <div class="mark"><span></span></div>
       <div>
-        <div class="brand-name">Nister WiFi</div>
+        <div class="brand-name">Nister Wi-Fi</div>
         <div class="brand-tag">Admin console</div>
       </div>
     </div>

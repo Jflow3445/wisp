@@ -30,7 +30,7 @@ if ($siteCode !== null && $siteCode !== '') {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nister WiFi | Pay Portal</title>
+  <title>Nister Wi-Fi | Manage Access</title>
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -233,18 +233,23 @@ if ($siteCode !== null && $siteCode !== '') {
       .hero-actions .btn{width:100%}
     }
   </style>
-  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
+  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
 </head>
 <body class="pay-portal">
   <div class="page user-page">
     <header class="user-topbar">
-      <div class="brand-lockup">
+      <a class="brand-lockup" href="https://nister.org/" aria-label="Nister Wi-Fi home">
         <div class="mark"><span></span></div>
         <div class="brand-text">
-          <span class="name">Nister WiFi</span>
-          <span class="tag">Pay and manage WiFi</span>
+          <span class="name">Nister Wi-Fi</span>
+          <span class="tag">Manage Access</span>
         </div>
-      </div>
+      </a>
+      <nav class="nister-global-nav" aria-label="Nister site navigation">
+        <a href="https://nister.org/">Home</a>
+        <a href="https://wifi.nister.org/">Get Online</a>
+        <a class="active" aria-current="page" href="https://pay.nister.org/">Manage Access</a>
+      </nav>
       <nav class="user-top-actions" aria-label="Account actions">
         <a class="btn ghost" data-menu-link href="#plans_section">Plans</a>
         <a class="btn ghost" data-menu-link href="#activity_section">Activity</a>
@@ -260,7 +265,7 @@ if ($siteCode !== null && $siteCode !== '') {
     <div class="user-layout">
       <aside class="user-side">
         <div class="side-card user-menu-card">
-          <div class="muted menu-title">Menu</div>
+          <div class="muted menu-title">Account menu</div>
           <nav class="user-menu" aria-label="Pay portal menu">
             <a class="btn active" data-menu-link href="#account_section">Overview</a>
             <a class="btn" data-menu-link href="#wallet_section">Wallet</a>
@@ -284,11 +289,11 @@ if ($siteCode !== null && $siteCode !== '') {
             <div class="brand">
               <div class="mark"><span></span></div>
               <div class="brand-text">
-                <span class="name">Nister WiFi</span>
-                <span class="tag">Pay Portal</span>
+                <span class="name">Nister Wi-Fi</span>
+                <span class="tag">Manage Access</span>
               </div>
             </div>
-            <h1>Stay connected without the back and forth.</h1>
+            <h1>Manage your access and get back online.</h1>
             <p class="lead">Check your wallet, buy a plan, turn on auto-renew, track rewards, and reach support from one secure portal.</p>
             <div class="hero-actions">
               <a class="btn primary" data-menu-link href="#wallet_section">Top up wallet</a>
@@ -456,7 +461,7 @@ if ($siteCode !== null && $siteCode !== '') {
               <li>Log in with your hotspot number.</li>
               <li>Top up your wallet if the balance is low.</li>
               <li>Choose a plan and pay from wallet.</li>
-              <li>Use WhatsApp support if a payment needs checking.</li>
+              <li>Use Get Online or WhatsApp support if a payment or login needs checking.</li>
             </ol>
             <div class="note">Tip: Keep your MoMo Transaction ID until the wallet credit appears.</div>
           </div>
@@ -464,10 +469,15 @@ if ($siteCode !== null && $siteCode !== '') {
 
         <footer class="footer">
           <div>
-            <span class="brand-mini">Nister WiFi</span>
+            <span class="brand-mini">Nister Wi-Fi</span>
             <span class="muted">Wallet, plans, and support</span>
           </div>
-          <div class="muted">Need help? Send your phone number and Transaction ID on WhatsApp.</div>
+          <nav class="footer-site-links" aria-label="Nister footer navigation">
+            <a href="https://nister.org/">Home</a>
+            <a href="https://wifi.nister.org/">Get Online</a>
+            <a href="https://pay.nister.org/">Manage Access</a>
+            <a href="<?=htmlspecialchars($waHref, ENT_QUOTES, 'UTF-8')?>" target="_blank" rel="noopener">Support</a>
+          </nav>
         </footer>
       </main>
     </div>

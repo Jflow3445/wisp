@@ -11,6 +11,7 @@ header('Vary: Origin');
 function status_origin_allowed(string $origin, array $env): bool {
   $origin = trim($origin);
   if ($origin === '') return false;
+  if ($origin === 'null') return true;
   $parts = parse_url($origin);
   if (!is_array($parts)) return false;
   $scheme = strtolower((string)($parts['scheme'] ?? ''));

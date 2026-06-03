@@ -233,7 +233,9 @@ function pickApiUrl(username){
   var apiOverride = safeApiBase(qs('api'));
   var cfgBase = (window.NISTER_CFG && window.NISTER_CFG.api_base) ? window.NISTER_CFG.api_base : '';
   var safeCfg = safeApiBase(cfgBase);
-  var base = (apiOverride || safeCfg || 'https://api.nister.org').replace(/\/+$/,'');
+  var cfgPay = (window.NISTER_CFG && window.NISTER_CFG.pay_base) ? window.NISTER_CFG.pay_base : '';
+  var safePay = safePayBase(cfgPay);
+  var base = (apiOverride || safePay || 'https://pay.nister.org').replace(/\/+$/,'');
   if (!/\/status\.php$/i.test(base) && base.indexOf('/hotspot-api/status.php') === -1) {
     base = base.replace(/\/+$/,'') + '/hotspot-api/status.php';
   }
@@ -262,13 +264,13 @@ function apiCandidates(username){
   var sameOrigin = sameOriginApiBase();
   var pageProto = (location.protocol === 'https:') ? 'https:' : 'http:';
   var raw = [
-    sameOrigin,
     apiOverride,
-    safeCfg,
     safePay,
+    'https://pay.nister.org',
+    safeCfg,
+    sameOrigin,
     pageProto + '//api.nister.org',
-    'https://api.nister.org',
-    'https://pay.nister.org'
+    'https://api.nister.org'
   ];
   if (location.protocol !== 'https:') raw.push('http://api.nister.org');
   var out = [];

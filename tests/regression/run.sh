@@ -116,6 +116,22 @@ PHP
 )"
 assert_contains "status_trusted_origin_without_token_reaches_validation" "$status_trusted_origin_without_token" '"error":"username required"'
 
+status_null_origin_without_token="$(php_run <<'PHP'
+<?php
+putenv('DB_DSN=sqlite::memory:');
+putenv('DB_USER=test');
+putenv('DB_PASS=test');
+putenv('HOTSPOT_STATUS_TOKEN=regression-secret');
+$_SERVER = [
+  'REQUEST_METHOD' => 'GET',
+  'HTTP_ORIGIN' => 'null',
+];
+$_GET = [];
+include getcwd() . '/pay-portal/hotspot-api/status.php';
+PHP
+)"
+assert_contains "status_null_origin_without_token_reaches_validation" "$status_null_origin_without_token" '"error":"username required"'
+
 status_no_origin_without_token="$(php_run <<'PHP'
 <?php
 putenv('DB_DSN=sqlite::memory:');

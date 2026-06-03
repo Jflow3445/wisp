@@ -61,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nister WiFi | Login</title>
+  <title>Nister Wi-Fi | Manage Access Login</title>
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -111,20 +111,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .links{margin-top:14px;text-align:center;font-size:.9rem}
     .links a{color:var(--accent);text-decoration:none;font-weight:600}
   </style>
-  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
+  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
 </head>
 <body class="pay-auth">
   <main class="auth-shell">
-    <section class="auth-brand" aria-label="Nister WiFi pay portal">
-      <div class="brand-row">
-        <div class="mark"><span></span></div>
-        <div>
-          <div class="brand-name">Nister WiFi</div>
-          <div class="brand-tag">Pay Portal</div>
-        </div>
+    <section class="auth-brand" aria-label="Nister Wi-Fi manage access">
+      <div class="auth-brand-top">
+        <a class="brand-row auth-brand-link" href="https://nister.org/" aria-label="Nister Wi-Fi home">
+          <div class="mark"><span></span></div>
+          <div>
+            <div class="brand-name">Nister Wi-Fi</div>
+            <div class="brand-tag">Manage Access</div>
+          </div>
+        </a>
+        <nav class="nister-auth-nav" aria-label="Nister site navigation">
+          <a href="https://nister.org/">Home</a>
+          <a href="https://wifi.nister.org/">Get Online</a>
+          <a class="active" aria-current="page" href="https://pay.nister.org/">Manage Access</a>
+        </nav>
       </div>
       <div>
-        <h2>Get back to your WiFi faster.</h2>
+        <h2>Get back to your Wi-Fi faster.</h2>
         <p>Use your hotspot login to top up your wallet, buy plans, manage auto-renew, and check rewards in one secure place.</p>
       </div>
       <div class="auth-meta" aria-hidden="true">
@@ -137,8 +144,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="brand-row">
       <div class="mark"><span></span></div>
       <div>
-        <div class="brand-name">Nister WiFi</div>
-        <div class="brand-tag">Pay Portal</div>
+        <div class="brand-name">Nister Wi-Fi</div>
+        <div class="brand-tag">Manage Access</div>
       </div>
     </div>
     <h1>Welcome back</h1>
@@ -168,6 +175,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </form>
     <div class="links">
       <a href="/portal.php">Return to pay portal</a>
+      <span aria-hidden="true"> | </span>
+      <a href="https://wifi.nister.org/">Get online help</a>
     </div>
     </section>
   </main>

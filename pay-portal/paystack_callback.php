@@ -49,7 +49,7 @@ $e = static fn($v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nister WiFi | Payment Status</title>
+  <title>Nister Wi-Fi | Payment Status</title>
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -61,6 +61,13 @@ $e = static fn($v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
     *{box-sizing:border-box}
     body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;font-family:"Sora",sans-serif;color:var(--ink);background:linear-gradient(180deg,var(--bg),#efe8de)}
     body::before{content:"";position:fixed;inset:0;background:radial-gradient(900px 420px at 10% 0%,rgba(15,118,110,.18),transparent 60%),radial-gradient(760px 420px at 95% 8%,rgba(180,83,9,.16),transparent 60%);z-index:-1}
+    .status-shell{width:min(760px,100%);display:grid;gap:16px}
+    .status-nav{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid rgba(226,214,200,.86);border-radius:18px;background:rgba(255,253,248,.82);box-shadow:0 18px 50px rgba(27,35,42,.1);backdrop-filter:blur(14px)}
+    .status-brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font-weight:900}
+    .status-brand .mark{width:34px;height:34px;margin:0;border-radius:11px}
+    .status-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .status-links a{display:inline-flex;align-items:center;min-height:34px;padding:7px 10px;border-radius:999px;color:#3f4a45;text-decoration:none;font-size:.84rem;font-weight:800}
+    .status-links a.active{background:#17231f;color:#fffdf8}
     .panel{width:min(560px,100%);background:linear-gradient(180deg,#fffdf8,#fff8ee);border:1px solid rgba(226,214,200,.92);border-radius:22px;padding:28px;box-shadow:0 30px 90px rgba(27,35,42,.18)}
     .mark{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;margin-bottom:18px;background:linear-gradient(135deg,var(--teal),var(--gold));box-shadow:0 16px 32px rgba(15,118,110,.2)}
     .mark span{width:24px;height:24px;border-radius:999px;background:#fffdfa;display:block}
@@ -74,19 +81,34 @@ $e = static fn($v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
     .success h1{color:var(--teal)}
     .pending h1{color:var(--gold)}
     .error h1{color:var(--red)}
+    @media (max-width:640px){.status-nav{align-items:flex-start;flex-direction:column}.status-links{width:100%}.status-links a{flex:1;justify-content:center}.panel{width:100%}}
   </style>
 </head>
 <body>
-  <main class="panel <?=$e($state)?>">
-    <div class="mark"><span></span></div>
-    <h1><?=$e($title)?></h1>
-    <p><?=$e($message)?></p>
-    <?php if ($amount !== ''): ?><div class="amount">GHS <?=$e($amount)?></div><?php endif; ?>
-    <?php if ($detail !== ''): ?><div class="detail"><?=$e($detail)?></div><?php endif; ?>
-    <div class="actions">
-      <a class="btn primary" href="/portal.php">Back to wallet</a>
-      <?php if ($reference !== ''): ?><a class="btn" href="/paystack_callback.php?reference=<?=$e(rawurlencode($reference))?>">Refresh status</a><?php endif; ?>
-    </div>
+  <main class="status-shell">
+    <nav class="status-nav" aria-label="Nister site navigation">
+      <a class="status-brand" href="https://nister.org/" aria-label="Nister Wi-Fi home">
+        <span class="mark" aria-hidden="true"><span></span></span>
+        <span>Nister Wi-Fi</span>
+      </a>
+      <div class="status-links">
+        <a href="https://nister.org/">Home</a>
+        <a href="https://wifi.nister.org/">Get Online</a>
+        <a class="active" aria-current="page" href="https://pay.nister.org/">Manage Access</a>
+      </div>
+    </nav>
+    <section class="panel <?=$e($state)?>">
+      <div class="mark"><span></span></div>
+      <h1><?=$e($title)?></h1>
+      <p><?=$e($message)?></p>
+      <?php if ($amount !== ''): ?><div class="amount">GHS <?=$e($amount)?></div><?php endif; ?>
+      <?php if ($detail !== ''): ?><div class="detail"><?=$e($detail)?></div><?php endif; ?>
+      <div class="actions">
+        <a class="btn primary" href="/portal.php">Back to wallet</a>
+        <a class="btn" href="https://wifi.nister.org/">Get online help</a>
+        <?php if ($reference !== ''): ?><a class="btn" href="/paystack_callback.php?reference=<?=$e(rawurlencode($reference))?>">Refresh status</a><?php endif; ?>
+      </div>
+    </section>
   </main>
 </body>
 </html>
