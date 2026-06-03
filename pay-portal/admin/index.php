@@ -201,13 +201,17 @@ $ADMIN_CSRF = admin_csrf_token();
     .actions .btn{flex:1 1 140px}
   }
 </style>
+<link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
 </head>
-<body>
+<body class="admin-console">
 <div class="wrap">
   <div class="topbar">
-    <div>
-      <h1 class="brand">Nister Admin</h1>
-      <div class="muted" id="whoami">...</div>
+    <div class="brand-lockup">
+      <div class="mark"><span></span></div>
+      <div>
+        <h1 class="brand">Nister Admin</h1>
+        <div class="muted" id="whoami">...</div>
+      </div>
     </div>
     <div class="actions">
       <div class="site-switch">

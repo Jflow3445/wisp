@@ -100,9 +100,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .links{margin-top:14px;text-align:center;font-size:.9rem}
     .links a{color:var(--accent);text-decoration:none;font-weight:600}
   </style>
+  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
 </head>
-<body>
-  <div class="card">
+<body class="pay-auth">
+  <main class="auth-shell">
+    <section class="auth-brand" aria-label="Nister WiFi pay portal">
+      <div class="brand-row">
+        <div class="mark"><span></span></div>
+        <div>
+          <div class="brand-name">Nister WiFi</div>
+          <div class="brand-tag">Pay Portal</div>
+        </div>
+      </div>
+      <div>
+        <h2>Premium access, kept simple.</h2>
+        <p>Use your hotspot credentials to manage wallet balance, purchases, referrals, and top-ups from one secure portal.</p>
+      </div>
+      <div class="auth-meta" aria-hidden="true">
+        <span>Wallet</span>
+        <span>Plans</span>
+        <span>Support</span>
+      </div>
+    </section>
+    <section class="card auth-card">
     <div class="brand-row">
       <div class="mark"><span></span></div>
       <div>
@@ -135,6 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="links">
       <a href="/portal.php">Back to pay portal</a>
     </div>
-  </div>
+    </section>
+  </main>
 </body>
 </html>

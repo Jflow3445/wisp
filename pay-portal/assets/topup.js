@@ -20,6 +20,32 @@
     }
     return null;
   }
+  function fmtBytes(bytes){
+    var n = Number(bytes || 0);
+    if (!isFinite(n) || n <= 0) return '';
+    var gb = n / 1073741824;
+    if (gb >= 1) return (Math.abs(gb - Math.round(gb)) < 0.05 ? String(Math.round(gb)) : gb.toFixed(1).replace(/\.0$/, '')) + ' GB';
+    var mb = n / 1048576;
+    return (Math.abs(mb - Math.round(mb)) < 0.05 ? String(Math.round(mb)) : mb.toFixed(0)) + ' MB';
+  }
+  function fmtDays(days){
+    var n = Number(days || 0);
+    if (!isFinite(n) || n <= 0) return 'Flexible';
+    return n + ' ' + (n === 1 ? 'day' : 'days');
+  }
+  function fmtRate(rate){
+    var raw = String(rate || '').trim();
+    if (!raw) return 'Managed speed';
+    return raw.replace('/', ' down / ') + ' up';
+  }
+  function pricePerGb(cents, bytes){
+    var c = Number(cents || 0);
+    var b = Number(bytes || 0);
+    if (!isFinite(c) || !isFinite(b) || c <= 0 || b <= 0) return '';
+    var gb = b / 1073741824;
+    if (gb <= 0) return '';
+    return 'GHS ' + (c / gb / 100).toFixed(2) + '/GB';
+  }
 
   // ---------- API ----------
   async function fetchMe(){
@@ -72,12 +98,39 @@
       root.appendChild(ce('div',{className:'muted', textContent:'No plans configured for your location.'}));
       return;
     }
+    var bestCode = '';
+    var bestValue = Infinity;
     plans.forEach(function(p){
-      var card = ce('div',{className:'plan-card'});
-      card.appendChild(ce('div',{className:'plan-title', textContent: p.name || p.code || 'Plan'}));
-      card.appendChild(ce('div',{className:'plan-meta',  textContent: (p.duration_days? (p.duration_days+' days | '):'') + money(p.price_cents||0)}));
+      var quotaGb = Number(p && p.quota_bytes || 0) / 1073741824;
+      var perGb = Number(p && p.price_cents || 0) / quotaGb;
+      if (isFinite(perGb) && quotaGb > 0 && perGb > 0 && perGb < bestValue) {
+        bestValue = perGb;
+        bestCode = String(p.code || '');
+      }
+    });
+    plans.forEach(function(p){
       var code = p.code || '';
-      var btn = ce('button',{className:'buy-btn', textContent:'Buy ' + (p.name || p.code || '')});
+      var name = p.name || p.display_name || p.code || 'Plan';
+      var allowance = fmtBytes(p.quota_bytes) || name;
+      var duration = fmtDays(p.duration_days);
+      var speed = fmtRate(p.rate_limit);
+      var value = pricePerGb(p.price_cents, p.quota_bytes);
+      var featured = code && code === bestCode && plans.length > 1;
+      var card = ce('article',{className:'plan-card premium-plan' + (featured ? ' featured' : '')});
+      var head = ce('div',{className:'plan-top'});
+      head.appendChild(ce('span',{className:'plan-badge', textContent: featured ? 'Best value' : duration}));
+      if (code) head.appendChild(ce('span',{className:'plan-code', textContent: code.replace(/^PLAN_/,'')}));
+      var body = ce('div',{className:'plan-body'});
+      body.appendChild(ce('div',{className:'plan-title', textContent:name}));
+      body.appendChild(ce('div',{className:'plan-allowance', textContent:allowance}));
+      body.appendChild(ce('div',{className:'plan-price', textContent:money(p.price_cents || 0)}));
+      var details = ce('div',{className:'plan-details'});
+      details.appendChild(ce('div',{className:'plan-detail', textContent:duration}));
+      details.appendChild(ce('div',{className:'plan-detail', textContent:speed}));
+      if (value) details.appendChild(ce('div',{className:'plan-detail', textContent:value}));
+      body.appendChild(details);
+      var foot = ce('div',{className:'plan-foot'});
+      var btn = ce('button',{className:'buy-btn', textContent:'Activate plan'});
       if (code) btn.dataset.code = code;
       btn.addEventListener('click', async function(){
         if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return; }
@@ -110,7 +163,10 @@
         }catch(e){ alert('Network error: '+e.message); }
         finally{ this.disabled=false; this.textContent=old; }
       });
-      card.appendChild(btn);
+      foot.appendChild(btn);
+      card.appendChild(head);
+      card.appendChild(body);
+      card.appendChild(foot);
       root.appendChild(card);
     });
   }
@@ -301,7 +357,7 @@
 
     // ensure CSS
     if (!document.querySelector('link[href*="topup.css"]')) {
-      var l=document.createElement('link'); l.rel='stylesheet'; l.href='assets/topup.css?v=7'; document.head.appendChild(l);
+      var l=document.createElement('link'); l.rel='stylesheet'; l.href='assets/topup.css?v=9'; document.head.appendChild(l);
     }
 
     var fab = ce('div',{className:'nister-fab'});
@@ -407,6 +463,38 @@
     });
   }
 
+  function bindPortalMenu(){
+    var links = Array.prototype.slice.call(document.querySelectorAll('[data-menu-link]'));
+    if (!links.length) return;
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.portal-panel'));
+    var defaultId = 'account_section';
+    var byId = {};
+    links.forEach(function(link){
+      var id = String(link.getAttribute('href') || '').replace(/^#/, '');
+      if (id) byId[id] = true;
+      link.addEventListener('click', function(ev){
+        ev.preventDefault();
+        showPortalPanel(id || defaultId, true);
+      });
+    });
+    function showPortalPanel(id, writeHash){
+      if (!byId[id] || !document.getElementById(id)) id = defaultId;
+      panels.forEach(function(panel){
+        var active = panel.id === id;
+        panel.toggleAttribute('hidden', !active);
+        panel.classList.toggle('is-active', active);
+      });
+      links.forEach(function(link){
+        link.classList.toggle('active', String(link.getAttribute('href') || '') === '#' + id);
+      });
+      if (writeHash && history && history.pushState) history.pushState(null, '', '#' + id);
+    }
+    window.addEventListener('hashchange', function(){
+      showPortalPanel(String(window.location.hash || '').replace(/^#/, '') || defaultId, false);
+    });
+    showPortalPanel(String(window.location.hash || '').replace(/^#/, '') || defaultId, false);
+  }
+
   // ---------- boot ----------
   window.addEventListener('DOMContentLoaded', function(){
     // auto-load from URL
@@ -418,6 +506,7 @@
 
     ensureTopupUI();
     bindAutoRenew();
+    bindPortalMenu();
 
     var copyBtn = $('#ref_copy_btn');
     if (copyBtn) copyBtn.addEventListener('click', function(){

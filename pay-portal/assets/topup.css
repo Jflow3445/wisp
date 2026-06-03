@@ -1,26 +1,27 @@
 .nister-fab{
   position:fixed;
-  right:20px;
-  bottom:20px;
+  right:22px;
+  bottom:22px;
   display:flex;
   flex-direction:column;
   gap:10px;
   z-index:60;
 }
+body.pay-portal .nister-fab{display:none}
 .nister-fab button{
   border:0;
-  border-radius:12px;
+  border-radius:14px;
   padding:12px 14px;
   color:#fff;
   cursor:pointer;
-  font-weight:700;
+  font-weight:800;
   font-family:var(--font-body,"Sora",sans-serif);
-  box-shadow:0 12px 26px rgba(15,118,110,.18);
+  box-shadow:0 18px 38px rgba(10,16,14,.2);
   transition:transform .18s ease,box-shadow .18s ease,background .18s ease;
 }
 .nister-fab button:hover{transform:translateY(-1px)}
 .nister-fab .fab-topup{
-  background:linear-gradient(135deg,var(--accent,#0f766e),#0f8a7f);
+  background:linear-gradient(135deg,var(--premium-teal,#0f766e),var(--premium-teal-2,#13a091));
 }
 .nister-fab .fab-wa{
   background:linear-gradient(135deg,#25d366,#12b35a);
@@ -29,20 +30,20 @@
 .nister-backdrop{
   position:fixed;
   inset:0;
-  background:rgba(20,24,28,.45);
-  backdrop-filter:blur(3px);
+  background:rgba(10,16,14,.56);
+  backdrop-filter:blur(10px);
   display:grid;
   place-items:center;
   z-index:70;
 }
 .nister-modal{
   width:min(640px,92vw);
-  background:var(--card,#fffdfa);
-  border:1px solid var(--line,#e2d6c8);
-  border-radius:16px;
+  background:linear-gradient(180deg,#fffdf8,#fff8ee);
+  border:1px solid rgba(229,215,197,.92);
+  border-radius:24px;
   padding:20px;
   color:var(--ink,#1c2329);
-  box-shadow:0 30px 80px rgba(27,35,42,.25);
+  box-shadow:0 36px 110px rgba(10,16,14,.34);
 }
 .nister-modal h3{
   font-family:var(--font-display,"Fraunces",serif);
@@ -53,17 +54,17 @@
 .nister-row>*{flex:1}
 .nister-input{
   width:100%;
-  background:#fff;
+  background:#fffefb;
   color:var(--ink,#1c2329);
-  border:1px solid var(--line,#e2d6c8);
-  border-radius:12px;
+  border:1px solid #dccab5;
+  border-radius:14px;
   padding:12px 14px;
   font-size:16px;
   outline:0;
 }
 .nister-input:focus{
-  border-color:var(--accent,#0f766e);
-  box-shadow:0 0 0 4px rgba(15,118,110,.18);
+  border-color:var(--premium-teal,#0f766e);
+  box-shadow:0 0 0 4px rgba(15,118,110,.16);
 }
 .nister-actions{
   display:flex;
@@ -73,19 +74,19 @@
 }
 .nister-btn{
   border:0;
-  border-radius:12px;
+  border-radius:14px;
   padding:12px 14px;
   color:#fff;
-  font-weight:700;
+  font-weight:800;
   cursor:pointer;
 }
 .nister-ghost{
-  background:#fff;
+  background:#fffefb;
   color:var(--ink,#1c2329);
-  border:1px solid var(--line,#e2d6c8);
+  border:1px solid #dccab5;
 }
 .nister-primary{
-  background:linear-gradient(135deg,var(--accent,#0f766e),#0f8a7f);
+  background:linear-gradient(135deg,var(--premium-teal,#0f766e),var(--premium-teal-2,#13a091));
 }
 .nister-alert{
   display:none;
@@ -106,12 +107,13 @@
 }
 .nister-wa-btn{
   color:var(--ink,#1c2329);
-  border:1px solid var(--line,#e2d6c8);
-  border-radius:12px;
+  border:1px solid #dccab5;
+  border-radius:14px;
   padding:10px 14px;
-  background:#fff;
-  font-weight:700;
+  background:#fffefb;
+  font-weight:800;
 }
 @media (max-width:520px){
+  .nister-fab{display:none}
   .nister-actions{flex-direction:column}
 }

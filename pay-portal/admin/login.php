@@ -120,9 +120,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .err{color:#b91c1c;margin:.6rem 0}
     .ok{color:#15803d;margin:.6rem 0}
   </style>
+  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
 </head>
-<body>
-  <div class="card">
+<body class="admin-auth">
+  <main class="auth-shell">
+    <section class="auth-brand" aria-label="Nister admin portal">
+      <div class="brand-row">
+        <div class="mark"><span></span></div>
+        <div>
+          <div class="brand-name">Nister WiFi</div>
+          <div class="brand-tag">Admin Portal</div>
+        </div>
+      </div>
+      <div>
+        <h2>Operations command center.</h2>
+        <p>Review deposits, watch service health, manage users, and keep the network running from a single controlled workspace.</p>
+      </div>
+      <div class="auth-meta" aria-hidden="true">
+        <span>Billing</span>
+        <span>Users</span>
+        <span>Network</span>
+      </div>
+    </section>
+    <section class="card auth-card">
     <div class="brand-row">
       <div class="mark"><span></span></div>
       <div>
@@ -150,6 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       <button class="btn" type="submit">Login</button>
     </form>
-  </div>
+    </section>
+  </main>
 </body>
 </html>

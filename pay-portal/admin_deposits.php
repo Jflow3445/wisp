@@ -39,8 +39,15 @@ if (is_dir($dir)) {
   }
 }
 ?>
-<!doctype html><meta charset="utf-8">
-<title>Admin — Pending Top-Ups</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Pending Top-Ups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#f4f1ea;--surface:#172025;--ink:#1c2329;--muted:#5f6a76;--line:#e2d6c8;
@@ -71,6 +78,9 @@ if (is_dir($dir)) {
   h1 .muted{color:var(--muted)}
   code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 </style>
+<link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
+</head>
+<body class="admin-console legacy-deposits">
 
 <h1>Pending Top-Ups <span class="muted">(DB + File queue)</span></h1>
 
@@ -137,3 +147,5 @@ if (is_dir($dir)) {
   <?php endforeach; ?>
 </table>
 <?php /* end */ ?>
+</body>
+</html>

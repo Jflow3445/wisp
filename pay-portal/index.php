@@ -230,182 +230,244 @@ if ($siteCode !== null && $siteCode !== '') {
       .hero-actions .btn{width:100%}
     }
   </style>
+  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
 </head>
-<body>
-  <div class="page">
-    <header class="hero">
-      <div class="hero-copy">
-        <div class="brand">
-          <div class="mark"><span></span></div>
-          <div class="brand-text">
-            <span class="name">Nister WiFi</span>
-            <span class="tag">Pay Portal</span>
-          </div>
-        </div>
-        <h1>Fast, simple access for every device.</h1>
-        <p class="lead">Check your wallet, top up via <?=htmlspecialchars($topupNetwork, ENT_QUOTES, 'UTF-8')?>, and buy a plan in minutes.</p>
-        <div class="hero-actions">
-          <button class="btn primary" id="topup_now" type="button"<?= $loggedIn ? '' : ' disabled' ?>>Top up wallet</button>
-          <a class="btn ghost" href="#plans_section">Browse plans</a>
-          <?php if (!$loggedIn): ?>
-            <a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login to your account</a>
-          <?php endif; ?>
-        </div>
-        <div class="trust">
-          <div class="trust-item">Secure payments</div>
-          <div class="trust-item">Instant activation</div>
-          <div class="trust-item">WhatsApp support</div>
+<body class="pay-portal">
+  <div class="page user-page">
+    <header class="user-topbar">
+      <div class="brand-lockup">
+        <div class="mark"><span></span></div>
+        <div class="brand-text">
+          <span class="name">Nister WiFi</span>
+          <span class="tag">Account Portal</span>
         </div>
       </div>
-      <div class="hero-cards">
-        <div class="card overview">
-          <div class="card-head">
-            <h3>Account overview</h3>
-            <span class="pill">Live</span>
-          </div>
-          <?php if (!$loggedIn): ?>
-            <div class="callout" style="margin-bottom:12px">
-              <div class="callout-title">Login required</div>
-              <div class="sub">Please sign in with the same password you use on the captive portal to access wallet and purchases.</div>
-              <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
-            </div>
-          <?php endif; ?>
-          <div class="field">
-            <div class="label">Your number</div>
-            <div id="who" class="value"><?= $loggedIn ? htmlspecialchars($userMsisdn, ENT_QUOTES, 'UTF-8') : 'Not logged in' ?></div>
-          </div>
-          <div class="manual" id="manual_row"<?= $loggedIn ? ' style="display:none"' : '' ?>>
-            <input id="msisdn_in" class="input" type="tel" placeholder="Enter your phone number">
-            <button class="btn outline" id="load_btn" type="button">Load account</button>
-          </div>
-          <div class="stats">
-            <div>
-              <div class="label">Wallet balance</div>
-              <div id="balance_stat" class="stat">GHS 0.00</div>
-            </div>
-            <div>
-              <div class="label">Active plan</div>
-              <div id="active" class="stat">No active plan</div>
-            </div>
-          </div>
-          <div class="support">
-            <a id="wa_link" class="link" href="<?=htmlspecialchars($waHref, ENT_QUOTES, 'UTF-8')?>" target="_blank" rel="noopener">WhatsApp support</a>
-            <span class="sub">Support team replies quickly during working hours.</span>
-            <?php if ($loggedIn): ?>
-              <a class="link" href="/logout.php">Logout</a>
-            <?php endif; ?>
-          </div>
-        </div>
-        <div class="card" id="referral_card">
-          <div class="card-head">
-            <h3>Referral rewards</h3>
-            <span class="pill">Earn</span>
-          </div>
-          <?php if (!$loggedIn): ?>
-            <div class="callout" style="margin-bottom:12px">
-              <div class="callout-title">Login required</div>
-              <div class="sub">Log in to view your referral code and rewards.</div>
-              <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
-            </div>
-          <?php endif; ?>
-          <div class="field">
-            <div class="label">Your referral code</div>
-            <div id="ref_code" class="value"><?= $loggedIn ? 'N/A' : 'Login to view' ?></div>
-            <div class="sub" id="ref_hint">Share this code with friends to earn bonus credit.</div>
-          </div>
-          <div id="ref_actions" style="margin:8px 0 12px<?= $loggedIn ? '' : ';display:none' ?>">
-            <button class="btn outline" id="ref_copy_btn" type="button">Copy code</button>
-          </div>
-          <div class="stats" id="ref_stats"<?= $loggedIn ? '' : ' style="display:none"' ?>>
-            <div>
-              <div class="label">Pending bonus</div>
-              <div id="ref_pending" class="stat">GHS 0.00</div>
-            </div>
-            <div>
-              <div class="label">Released (month)</div>
-              <div id="ref_released_month" class="stat">GHS 0.00</div>
-            </div>
-            <div>
-              <div class="label">Released (lifetime)</div>
-              <div id="ref_released_lifetime" class="stat">GHS 0.00</div>
-            </div>
-          </div>
-        </div>
-        <div class="card steps">
-          <h3>Simple flow</h3>
-          <ol>
-            <li>Load your phone number.</li>
-            <li>Top up wallet if needed.</li>
-            <li>Choose a plan below.</li>
-            <li>Get online right away.</li>
-          </ol>
-          <div class="note">Tip: Open your portal link from WhatsApp to auto-load your number.</div>
-        </div>
-      </div>
+      <nav class="user-top-actions" aria-label="Account actions">
+        <a class="btn ghost" data-menu-link href="#plans_section">Plans</a>
+        <a class="btn ghost" data-menu-link href="#activity_section">Activity</a>
+        <button class="btn primary" id="topup_now" type="button"<?= $loggedIn ? '' : ' disabled' ?>>Top up</button>
+        <?php if (!$loggedIn): ?>
+          <a class="btn ghost" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a>
+        <?php else: ?>
+          <a class="btn ghost" href="/logout.php">Logout</a>
+        <?php endif; ?>
+      </nav>
     </header>
 
-    <section class="section" id="plans_section">
-      <div class="section-head">
-        <div>
-          <h2>Choose a plan</h2>
-          <p class="muted">Plans are activated immediately after purchase.</p>
+    <div class="user-layout">
+      <aside class="user-side">
+        <div class="side-card user-menu-card">
+          <div class="muted menu-title">Menu</div>
+          <nav class="user-menu" aria-label="Pay portal menu">
+            <a class="btn active" data-menu-link href="#account_section">Overview</a>
+            <a class="btn" data-menu-link href="#wallet_section">Wallet</a>
+            <a class="btn" data-menu-link href="#plans_section">Plans</a>
+            <a class="btn" data-menu-link href="#rewards_section">Rewards</a>
+            <a class="btn" data-menu-link href="#activity_section">Activity</a>
+          </nav>
         </div>
-        <div class="pill soft">Wallet checkout</div>
-      </div>
-      <div class="card highlight" id="auto_renew_card" style="margin-bottom:16px">
-        <div class="card-head">
-        <h3>Auto-renew</h3>
-          <span class="pill soft" id="auto_renew_badge">Off</span>
+        <div class="side-card user-pocket">
+          <div class="pill">Live account</div>
+          <div class="side-label">Current number</div>
+          <div class="side-value"><?= $loggedIn ? htmlspecialchars($userMsisdn, ENT_QUOTES, 'UTF-8') : 'Not logged in' ?></div>
+          <div class="side-label">Payments</div>
+          <div class="side-value"><?=htmlspecialchars($topupNetwork, ENT_QUOTES, 'UTF-8')?></div>
         </div>
-        <p class="muted">Automatically renew when your data is nearly finished or your plan is about to expire, as long as your wallet can cover the plan price.</p>
-        <?php if (!$loggedIn): ?>
-          <div class="callout">
-            <div class="callout-title">Login required</div>
-            <div class="sub">Sign in to enable auto-renew for your account.</div>
+      </aside>
+
+      <main class="user-content">
+        <section class="hero user-overview portal-panel is-active" id="account_section">
+          <div class="hero-copy">
+            <div class="brand">
+              <div class="mark"><span></span></div>
+              <div class="brand-text">
+                <span class="name">Nister WiFi</span>
+                <span class="tag">Pay Portal</span>
+              </div>
+            </div>
+            <h1>Your account workspace.</h1>
+            <p class="lead">Wallet balance, active access, plan purchases, rewards, and support in one place.</p>
+            <div class="hero-actions">
+              <a class="btn primary" data-menu-link href="#wallet_section">Wallet</a>
+              <a class="btn ghost" data-menu-link href="#plans_section">Browse plans</a>
+              <?php if (!$loggedIn): ?>
+                <a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login to your account</a>
+              <?php endif; ?>
+            </div>
+            <div class="trust">
+              <div class="trust-item">Secure payments</div>
+              <div class="trust-item">Instant activation</div>
+              <div class="trust-item">WhatsApp support</div>
+            </div>
           </div>
-        <?php endif; ?>
-        <div class="manual" id="auto_renew_controls"<?= $loggedIn ? '' : ' style="display:none"' ?>>
-          <label class="sub" style="display:flex;align-items:center;gap:8px">
-            <input type="checkbox" id="auto_renew_enabled"> Enable auto-renew
-          </label>
-          <select id="auto_renew_plan" class="input" aria-label="Auto renew plan"></select>
-          <button class="btn outline" id="auto_renew_save" type="button">Save</button>
-        </div>
-        <div class="sub" id="auto_renew_info"></div>
-      </div>
-      <div id="plans" class="plans-grid">
-        <div class="muted"><?= $loggedIn ? 'Loading plans…' : 'Login to view and buy plans.' ?></div>
-      </div>
-    </section>
+          <div class="hero-cards">
+            <div class="card overview">
+              <div class="card-head">
+                <h3>Account overview</h3>
+                <span class="pill">Live</span>
+              </div>
+              <?php if (!$loggedIn): ?>
+                <div class="callout" style="margin-bottom:12px">
+                  <div class="callout-title">Login required</div>
+                  <div class="sub">Please sign in with the same password you use on the captive portal to access wallet and purchases.</div>
+                  <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
+                </div>
+              <?php endif; ?>
+              <div class="field">
+                <div class="label">Your number</div>
+                <div id="who" class="value"><?= $loggedIn ? htmlspecialchars($userMsisdn, ENT_QUOTES, 'UTF-8') : 'Not logged in' ?></div>
+              </div>
+              <div class="manual" id="manual_row"<?= $loggedIn ? ' style="display:none"' : '' ?>>
+                <input id="msisdn_in" class="input" type="tel" placeholder="Enter your phone number">
+                <button class="btn outline" id="load_btn" type="button">Load account</button>
+              </div>
+              <div class="stats">
+                <div>
+                  <div class="label">Wallet balance</div>
+                  <div id="balance_stat" class="stat">GHS 0.00</div>
+                </div>
+                <div>
+                  <div class="label">Active plan</div>
+                  <div id="active" class="stat">No active plan</div>
+                </div>
+              </div>
+              <div class="support">
+                <a id="wa_link" class="link" href="<?=htmlspecialchars($waHref, ENT_QUOTES, 'UTF-8')?>" target="_blank" rel="noopener">WhatsApp support</a>
+                <span class="sub">Support team replies quickly during working hours.</span>
+                <?php if ($loggedIn): ?>
+                  <a class="link" href="/logout.php">Logout</a>
+                <?php endif; ?>
+              </div>
+            </div>
+          </div>
+        </section>
 
-    <section class="section split">
-      <div class="card">
-        <h3>Recent activity</h3>
-        <ul id="recent" class="list">
-          <li class="muted">No activity yet.</li>
-        </ul>
-      </div>
-      <div class="card highlight">
-        <h3>Need to pay by MoMo?</h3>
-        <p>Use the Top up wallet button after sending payment. We will review and credit your wallet. Minimum top up is <b>GHS <?=htmlspecialchars(number_format($minTopupCents / 100, 2, '.', ''), ENT_QUOTES, 'UTF-8')?></b>.</p>
-        <div class="callout">
-          <div class="callout-title">Manual top up checklist</div>
-          <ul>
-            <li>Use the same number as your account.</li>
-            <li>Keep your Transaction ID.</li>
-            <li>Submit the exact amount you sent.</li>
-          </ul>
-        </div>
-      </div>
-    </section>
+        <section class="section user-section split portal-panel" id="wallet_section">
+          <div class="card highlight" id="auto_renew_card">
+            <div class="card-head">
+              <h3>Wallet and auto-renew</h3>
+              <span class="pill soft" id="auto_renew_badge">Off</span>
+            </div>
+            <p class="muted">Automatically renew when your data is nearly finished or your plan is about to expire, as long as your wallet can cover the plan price.</p>
+            <?php if (!$loggedIn): ?>
+              <div class="callout">
+                <div class="callout-title">Login required</div>
+                <div class="sub">Sign in to enable auto-renew for your account.</div>
+              </div>
+            <?php endif; ?>
+            <div class="manual" id="auto_renew_controls"<?= $loggedIn ? '' : ' style="display:none"' ?>>
+              <label class="sub" style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="auto_renew_enabled"> Enable auto-renew
+              </label>
+              <select id="auto_renew_plan" class="input" aria-label="Auto renew plan"></select>
+              <button class="btn outline" id="auto_renew_save" type="button">Save</button>
+            </div>
+            <div class="sub" id="auto_renew_info"></div>
+          </div>
 
-    <footer class="footer">
-      <div>
-        <span class="brand-mini">Nister WiFi</span>
-        <span class="muted">Payments and wallet portal</span>
-      </div>
-      <div class="muted">Need help? WhatsApp support is available.</div>
-    </footer>
+          <div class="card highlight">
+            <div class="card-head">
+              <h3>Manual top up</h3>
+              <span class="pill soft">MoMo</span>
+            </div>
+            <p>Use the Top up button after sending payment. We will review and credit your wallet. Minimum top up is <b>GHS <?=htmlspecialchars(number_format($minTopupCents / 100, 2, '.', ''), ENT_QUOTES, 'UTF-8')?></b>.</p>
+            <div class="callout">
+              <div class="callout-title">Top-up checklist</div>
+              <ul>
+                <li>Use the same number as your account.</li>
+                <li>Keep your Transaction ID.</li>
+                <li>Submit the exact amount you sent.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section user-section portal-panel" id="plans_section">
+          <div class="section-head">
+            <div>
+              <h2>Choose a plan</h2>
+              <p class="muted">Plans are activated immediately after purchase.</p>
+            </div>
+            <div class="pill soft">Wallet checkout</div>
+          </div>
+          <div id="plans" class="plans-grid">
+            <div class="muted"><?= $loggedIn ? 'Loading plans…' : 'Login to view and buy plans.' ?></div>
+          </div>
+        </section>
+
+        <section class="section user-section portal-panel" id="rewards_section">
+          <div class="section-head">
+            <div>
+              <h2>Referral rewards</h2>
+              <p class="muted">Track your invite code and released bonuses.</p>
+            </div>
+            <div class="pill">Earn</div>
+          </div>
+          <div class="card" id="referral_card">
+            <div class="card-head">
+              <h3>Rewards overview</h3>
+              <span class="pill">Earn</span>
+            </div>
+            <?php if (!$loggedIn): ?>
+              <div class="callout" style="margin-bottom:12px">
+                <div class="callout-title">Login required</div>
+                <div class="sub">Log in to view your referral code and rewards.</div>
+                <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
+              </div>
+            <?php endif; ?>
+            <div class="field">
+              <div class="label">Your referral code</div>
+              <div id="ref_code" class="value"><?= $loggedIn ? 'N/A' : 'Login to view' ?></div>
+              <div class="sub" id="ref_hint">Share this code with friends to earn bonus credit.</div>
+            </div>
+            <div id="ref_actions" style="margin:8px 0 12px<?= $loggedIn ? '' : ';display:none' ?>">
+              <button class="btn outline" id="ref_copy_btn" type="button">Copy code</button>
+            </div>
+            <div class="stats" id="ref_stats"<?= $loggedIn ? '' : ' style="display:none"' ?>>
+              <div>
+                <div class="label">Pending bonus</div>
+                <div id="ref_pending" class="stat">GHS 0.00</div>
+              </div>
+              <div>
+                <div class="label">Released (month)</div>
+                <div id="ref_released_month" class="stat">GHS 0.00</div>
+              </div>
+              <div>
+                <div class="label">Released (lifetime)</div>
+                <div id="ref_released_lifetime" class="stat">GHS 0.00</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section user-section split portal-panel" id="activity_section">
+          <div class="card">
+            <h3>Recent activity</h3>
+            <ul id="recent" class="list">
+              <li class="muted">No activity yet.</li>
+            </ul>
+          </div>
+          <div class="card steps">
+            <h3>Support</h3>
+            <ol>
+              <li>Load your phone number.</li>
+              <li>Top up wallet if needed.</li>
+              <li>Choose a plan.</li>
+              <li>Get online right away.</li>
+            </ol>
+            <div class="note">Tip: Open your portal link from WhatsApp to auto-load your number.</div>
+          </div>
+        </section>
+
+        <footer class="footer">
+          <div>
+            <span class="brand-mini">Nister WiFi</span>
+            <span class="muted">Payments and wallet portal</span>
+          </div>
+          <div class="muted">Need help? WhatsApp support is available.</div>
+        </footer>
+      </main>
+    </div>
   </div>
 
   <script>
@@ -413,6 +475,6 @@ if ($siteCode !== null && $siteCode !== '') {
     window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
     window.NISTER_MIN_TOPUP_CENTS = <?= (int)$minTopupCents ?>;
   </script>
-  <script src="assets/topup.js?v=13"></script>
+  <script src="assets/topup.js?v=16"></script>
 </body>
 </html>
