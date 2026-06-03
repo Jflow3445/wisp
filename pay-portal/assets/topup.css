@@ -13,10 +13,10 @@
   padding:12px 14px;
   color:#fff;
   cursor:pointer;
-  font-weight:600;
+  font-weight:700;
   font-family:var(--font-body,"Sora",sans-serif);
   box-shadow:0 12px 26px rgba(15,118,110,.18);
-  transition:transform .2s ease,box-shadow .2s ease;
+  transition:transform .18s ease,box-shadow .18s ease,background .18s ease;
 }
 .nister-fab button:hover{transform:translateY(-1px)}
 .nister-fab .fab-topup{
@@ -38,11 +38,11 @@
 .nister-modal{
   width:min(640px,92vw);
   background:var(--card,#fffdfa);
-  border:1px solid rgba(226,214,200,.9);
+  border:1px solid var(--line,#e2d6c8);
   border-radius:16px;
-  padding:18px;
+  padding:20px;
   color:var(--ink,#1c2329);
-  box-shadow:0 30px 80px rgba(24,28,32,.25);
+  box-shadow:0 30px 80px rgba(27,35,42,.25);
 }
 .nister-modal h3{
   font-family:var(--font-display,"Fraunces",serif);
@@ -55,7 +55,7 @@
   width:100%;
   background:#fff;
   color:var(--ink,#1c2329);
-  border:1px solid rgba(226,214,200,.9);
+  border:1px solid var(--line,#e2d6c8);
   border-radius:12px;
   padding:12px 14px;
   font-size:16px;
@@ -63,7 +63,7 @@
 }
 .nister-input:focus{
   border-color:var(--accent,#0f766e);
-  box-shadow:0 0 0 4px rgba(15,118,110,.2);
+  box-shadow:0 0 0 4px rgba(15,118,110,.18);
 }
 .nister-actions{
   display:flex;
@@ -76,13 +76,13 @@
   border-radius:12px;
   padding:12px 14px;
   color:#fff;
-  font-weight:600;
+  font-weight:700;
   cursor:pointer;
 }
 .nister-ghost{
-  background:transparent;
+  background:#fff;
   color:var(--ink,#1c2329);
-  border:1px solid rgba(226,214,200,.9);
+  border:1px solid var(--line,#e2d6c8);
 }
 .nister-primary{
   background:linear-gradient(135deg,var(--accent,#0f766e),#0f8a7f);
@@ -106,10 +106,11 @@
 }
 .nister-wa-btn{
   color:var(--ink,#1c2329);
-  border:1px solid rgba(226,214,200,.9);
+  border:1px solid var(--line,#e2d6c8);
   border-radius:12px;
   padding:10px 14px;
   background:#fff;
+  font-weight:700;
 }
 @media (max-width:520px){
   .nister-actions{flex-direction:column}

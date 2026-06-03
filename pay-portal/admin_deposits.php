@@ -42,18 +42,34 @@ if (is_dir($dir)) {
 <!doctype html><meta charset="utf-8">
 <title>Admin — Pending Top-Ups</title>
 <style>
-  body{font:14px/1.4 system-ui,Arial;margin:20px}
-  h1{margin:0 0 10px}
-  table{border-collapse:collapse;width:100%;margin:12px 0}
-  th,td{border:1px solid #ddd;padding:8px}
-  th{background:#f5f5f5;text-align:left}
-  .ok{color:#0a0}
-  .bad{color:#b00}
-  .btn{display:inline-block;padding:6px 10px;border:1px solid #999;border-radius:6px;text-decoration:none;margin-right:6px}
-  .btn.appr{background:#e6ffed;border-color:#8fd19e}
-  .btn.decl{background:#ffecec;border-color:#f5a3a3}
-  .pill{padding:2px 8px;border-radius:999px;background:#eee}
-  .muted{color:#666}
+  :root{
+    --bg:#f4f1ea;--surface:#172025;--ink:#1c2329;--muted:#5f6a76;--line:#e2d6c8;
+    --green:#0f766e;--accent-2:#b45309;--card:#fffdfa;--shadow:0 20px 60px rgba(27,35,42,.12);
+  }
+  *{box-sizing:border-box}
+  body{font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:linear-gradient(180deg,var(--bg) 0%,#efe8de 100%);color:var(--ink);padding:24px;letter-spacing:0}
+  body::before{
+    content:"";position:fixed;inset:0;z-index:-1;
+    background:
+      radial-gradient(900px 480px at 8% -10%,rgba(15,118,110,.18),transparent 60%),
+      radial-gradient(760px 420px at 92% 0%,rgba(180,83,9,.14),transparent 60%);
+  }
+  h1{margin:0 0 16px;color:var(--ink);font-size:1.9rem}
+  h2{margin:22px 0 10px}
+  table{border-collapse:collapse;width:100%;margin:12px 0 20px;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+  th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left}
+  th{background:var(--surface);color:#dbe7d7;text-transform:uppercase;letter-spacing:.06em;font-size:.75rem}
+  tr:last-child td{border-bottom:0}
+  tr:hover td{background:rgba(15,118,110,.06)}
+  .ok{color:#14532d}
+  .bad{color:#7f1d1d}
+  .btn{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:6px 10px;border:1px solid var(--line);border-radius:12px;text-decoration:none;margin-right:6px;font-weight:700;background:#fff;color:var(--ink)}
+  .btn.appr{background:#f1fbf7;border-color:rgba(15,118,110,.45);color:#0f5132}
+  .btn.decl{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}
+  .pill{padding:3px 8px;border-radius:999px;background:rgba(15,118,110,.12);color:var(--green);font-weight:700}
+  .muted{color:var(--muted)}
+  h1 .muted{color:var(--muted)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 </style>
 
 <h1>Pending Top-Ups <span class="muted">(DB + File queue)</span></h1>

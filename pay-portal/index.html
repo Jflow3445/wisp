@@ -4,7 +4,79 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="refresh" content="0; url=/portal.php">
-  <title>Nister WiFi | Redirecting</title>
+  <title>Nister WiFi | Pay Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#f4f1ea;
+      --ink:#1c2329;
+      --muted:#5f6a76;
+      --accent:#0f766e;
+      --accent-2:#b45309;
+      --card:#fffdfa;
+      --line:#e2d6c8;
+      --shadow:0 20px 60px rgba(27,35,42,.12);
+      --font-display:"Fraunces",serif;
+      --font-body:"Sora",sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      display:grid;
+      place-items:center;
+      padding:24px;
+      font-family:var(--font-body);
+      color:var(--ink);
+      background:
+        radial-gradient(900px 480px at 8% -10%,rgba(15,118,110,.18),transparent 60%),
+        radial-gradient(760px 420px at 92% 0%,rgba(180,83,9,.14),transparent 60%),
+        linear-gradient(180deg,var(--bg) 0%,#efe8de 100%);
+    }
+    .card{
+      width:min(420px,100%);
+      padding:24px;
+      border:1px solid var(--line);
+      border-radius:18px;
+      background:var(--card);
+      box-shadow:var(--shadow);
+    }
+    .brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+    .mark{
+      width:38px;
+      height:38px;
+      border-radius:12px;
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      align-items:end;
+      gap:3px;
+      padding:7px;
+      border:1px solid rgba(15,118,110,.22);
+      background:linear-gradient(135deg,var(--accent),var(--accent-2));
+      box-shadow:0 12px 24px rgba(15,118,110,.22);
+    }
+    .mark::before,.mark::after,.mark span{
+      content:"";
+      display:block;
+      width:100%;
+      border-radius:3px;
+      background:#fffdfa;
+    }
+    .mark::before{height:8px}
+    .mark span{height:14px}
+    .mark::after{height:20px}
+    h1{
+      margin:0 0 8px;
+      font-family:var(--font-display);
+      font-size:1.85rem;
+      line-height:1.08;
+    }
+    p{margin:0;color:var(--muted);line-height:1.55}
+    a{color:var(--accent);font-weight:700;text-decoration:none}
+    a:hover{text-decoration:underline}
+  </style>
   <script>
     (function(){
       try { window.location.replace('/portal.php'); }
@@ -13,6 +85,14 @@
   </script>
 </head>
 <body>
-  <p>Redirecting to <a href="/portal.php">portal</a>...</p>
+  <main class="card">
+    <div class="brand">
+      <div class="mark"><span></span></div>
+      <div>
+        <h1>Nister WiFi Pay Portal</h1>
+        <p>Opening your account portal. <a href="/portal.php">Continue manually</a>.</p>
+      </div>
+    </div>
+  </main>
 </body>
 </html>

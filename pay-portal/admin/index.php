@@ -15,12 +15,19 @@ $ADMIN_CSRF = admin_csrf_token();
 <style>
   :root{
     --bg:#f4f1ea;
+    --surface:#172025;
+    --surface-2:#202b31;
     --ink:#1c2329;
     --muted:#5f6a76;
     --accent:#0f766e;
+    --green:#0f766e;
+    --blue:#2563eb;
+    --gold:#b45309;
     --card:#fffdfa;
     --line:#e2d6c8;
-    --shadow-soft:0 12px 30px rgba(27,35,42,.08);
+    --line-dark:#334047;
+    --shadow-soft:0 10px 30px rgba(27,35,42,.08);
+    --shadow:0 20px 60px rgba(27,35,42,.12);
     --radius:16px;
     --font-display:"Fraunces",serif;
     --font-body:"Sora",sans-serif;
@@ -30,12 +37,30 @@ $ADMIN_CSRF = admin_csrf_token();
     margin:0;
     font-family:var(--font-body);
     color:var(--ink);
-    background:linear-gradient(180deg,#f4f1ea 0%,#efe8de 100%);
+    background:linear-gradient(180deg,var(--bg) 0%,#efe8de 100%);
     min-height:100vh;
+    letter-spacing:0;
   }
-  .wrap{max-width:1200px;margin:0 auto;padding:28px 24px 48px}
-  .topbar{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
-  .brand{font-family:var(--font-display);font-size:1.9rem;margin:0}
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    background:
+      radial-gradient(980px 520px at 6% -10%,rgba(15,118,110,.18),transparent 60%),
+      radial-gradient(820px 440px at 96% 0%,rgba(180,83,9,.14),transparent 60%);
+    z-index:-1;
+  }
+  .wrap{max-width:1240px;margin:0 auto;padding:24px 24px 48px}
+  .topbar{
+    display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px;
+    background:linear-gradient(135deg,var(--surface),var(--surface-2));
+    border:1px solid var(--line-dark);
+    border-radius:18px;
+    padding:18px;
+    box-shadow:var(--shadow);
+  }
+  .brand{font-family:var(--font-display);font-size:1.9rem;margin:0;color:#fff;letter-spacing:0}
+  .topbar .muted{color:#d0ddd0}
   .muted{color:var(--muted)}
   .actions{display:flex;gap:10px;flex-wrap:wrap}
   .site-switch{
@@ -50,11 +75,12 @@ $ADMIN_CSRF = admin_csrf_token();
     text-transform:uppercase;
     letter-spacing:.06em;
   }
+  .topbar .site-switch label{color:#d0ddd0}
   .site-switch select{
     width:100%;
-    padding:9px 10px;
+    padding:10px 12px;
     border:1px solid var(--line);
-    border-radius:10px;
+    border-radius:12px;
     background:#fff;
     font-family:var(--font-body);
     font-size:.92rem;
@@ -62,44 +88,47 @@ $ADMIN_CSRF = admin_csrf_token();
   .btn{
     appearance:none;border:1px solid var(--line);border-radius:12px;
     padding:10px 14px;background:#fff;color:var(--ink);cursor:pointer;text-decoration:none;
-    font-weight:600;transition:transform .2s ease,box-shadow .2s ease;
+    font-weight:700;min-height:40px;line-height:1.2;
+    display:inline-flex;align-items:center;justify-content:center;
+    transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease;
   }
   .btn:hover{transform:translateY(-1px)}
   .btn.small{padding:6px 10px;font-weight:500}
-  .btn.approve{border-color:#15803d;color:#14532d}
-  .btn.decline{border-color:#b91c1c;color:#7f1d1d}
+  .btn.approve{border-color:rgba(15,118,110,.45);color:#14532d;background:#f0fdf4}
+  .btn.decline{border-color:#fecaca;color:#7f1d1d;background:#fef2f2}
   .card{
     background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-    padding:16px;box-shadow:var(--shadow-soft);margin-bottom:16px;
+    padding:18px;box-shadow:var(--shadow-soft);margin-bottom:16px;
   }
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
   .grid.tight{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .kpi{
-    padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff;
+    padding:14px;border:1px solid var(--line);border-radius:12px;background:#fff;
     display:flex;flex-direction:column;gap:6px;min-height:92px;
   }
-  .kpi .label{font-size:.85rem;color:var(--muted)}
-  .kpi .value{font-size:1.35rem;font-weight:600}
+  .kpi .label{font-size:.8rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .kpi .value{font-size:1.35rem;font-weight:700;color:var(--ink)}
   .kpi.compact{min-height:auto}
   .kpi.compact .value{font-size:1.05rem}
+  h2,h3{letter-spacing:0}
   h2{font-family:var(--font-display);margin:.2rem 0 .8rem}
   .section-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:8px}
   .split{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
   .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
   .field label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:4px}
   .field input{
-    width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;
     font-family:var(--font-body);font-size:.95rem;
   }
   .field select,
   .field textarea{
-    width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;
     font-family:var(--font-body);font-size:.95rem;
   }
   .field textarea{min-height:110px;resize:vertical}
-  .field input:focus{outline:2px solid rgba(15,118,110,.2);border-color:var(--accent)}
+  .field input:focus{outline:3px solid rgba(15,118,110,.18);border-color:var(--accent)}
   .field select:focus,
-  .field textarea:focus{outline:2px solid rgba(15,118,110,.2);border-color:var(--accent)}
+  .field textarea:focus{outline:3px solid rgba(15,118,110,.18);border-color:var(--accent)}
   .tool-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .meta{font-size:.9rem;color:var(--muted);margin-top:8px;display:grid;gap:4px}
   .note{
@@ -107,7 +136,7 @@ $ADMIN_CSRF = admin_csrf_token();
     color:var(--muted);
     margin-top:10px;
     border:1px solid var(--line);
-    border-radius:10px;
+    border-radius:12px;
     background:#fff;
     padding:8px 10px;
   }
@@ -125,16 +154,17 @@ $ADMIN_CSRF = admin_csrf_token();
   .check input{width:16px;height:16px}
   .row-inactive{opacity:.65}
   .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
-  .table-wrap{overflow:auto;border-radius:12px;border:1px solid var(--line)}
+  .table-wrap{overflow:auto;border-radius:12px;border:1px solid var(--line);background:#fff}
   .table{width:100%;border-collapse:collapse;min-width:840px;background:#fff}
   .table th,.table td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;font-size:.92rem}
-  .table thead th{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:#faf6f0}
-  .table tbody tr:hover{background:rgba(15,118,110,.04)}
+  .table thead th{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:#d9e1df;background:var(--surface)}
+  .table tbody tr:hover{background:rgba(15,118,110,.06)}
   .table.small{min-width:520px}
   .table.small th,.table.small td{font-size:.85rem}
   .badge{
     display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
-    border-radius:999px;padding:4px 10px;font-size:.8rem;background:#fff;
+    border-radius:999px;padding:5px 10px;font-size:.8rem;background:rgba(15,118,110,.12);
+    color:var(--accent);font-weight:700;border-color:rgba(15,118,110,.22);
   }
   .layout{display:grid;grid-template-columns:220px 1fr;gap:18px;align-items:start}
   .side{position:sticky;top:16px;align-self:start}
@@ -152,8 +182,9 @@ $ADMIN_CSRF = admin_csrf_token();
     justify-content:flex-start;
   }
   .menu .btn:last-child{margin-bottom:0}
-  .menu .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .menu .btn.active{background:var(--surface);border-color:var(--surface);color:#fff}
   .section-hidden{display:none}
+  .content{min-width:0}
   @media (max-width:900px){
     .layout{grid-template-columns:1fr}
     .side{position:static}
@@ -162,6 +193,12 @@ $ADMIN_CSRF = admin_csrf_token();
   }
   @media (max-width:900px){
     .table{min-width:680px}
+  }
+  @media (max-width:640px){
+    .wrap{padding:16px 14px 36px}
+    .topbar{align-items:stretch}
+    .actions,.site-switch{width:100%}
+    .actions .btn{flex:1 1 140px}
   }
 </style>
 </head>

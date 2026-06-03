@@ -40,12 +40,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <style>
     :root{
       --bg:#f4f1ea;
+      --surface:#172025;
+      --surface-2:#202b31;
       --ink:#1c2329;
       --muted:#5f6a76;
       --accent:#0f766e;
+      --accent-2:#b45309;
+      --green:#0f766e;
       --card:#fffdfa;
       --line:#e2d6c8;
-      --shadow-soft:0 12px 30px rgba(27,35,42,.08);
+      --shadow-soft:0 20px 60px rgba(27,35,42,.16);
       --font-display:"Fraunces",serif;
       --font-body:"Sora",sans-serif;
     }
@@ -59,20 +63,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       display:grid;
       place-items:center;
       padding:24px;
+      letter-spacing:0;
+    }
+    body::before{
+      content:"";
+      position:fixed;
+      inset:0;
+      z-index:-1;
+      background:
+        radial-gradient(900px 480px at 8% -10%,rgba(15,118,110,.18),transparent 60%),
+        radial-gradient(760px 420px at 92% 0%,rgba(180,83,9,.14),transparent 60%);
     }
     .card{
       background:var(--card);
       border:1px solid var(--line);
       border-radius:18px;
       padding:24px;
-      max-width:420px;
+      max-width:430px;
       width:100%;
       box-shadow:var(--shadow-soft);
     }
+    .brand-row{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+    .mark{width:38px;height:38px;border-radius:12px;display:grid;grid-template-columns:repeat(3,1fr);align-items:end;gap:3px;background:linear-gradient(135deg,var(--accent),var(--accent-2));border:1px solid rgba(15,118,110,.22);padding:7px;box-shadow:0 12px 24px rgba(15,118,110,.22)}
+    .mark::before,.mark::after,.mark span{content:"";display:block;width:100%;border-radius:3px;background:#fffdfa}
+    .mark::before{height:8px}.mark span{height:14px}.mark::after{height:20px}
+    .brand-name{font-weight:800;color:var(--ink)}
+    .brand-tag{font-size:.82rem;color:var(--muted)}
     h1{
       font-family:var(--font-display);
       margin:.2rem 0 .6rem;
       font-size:1.6rem;
+      letter-spacing:0;
     }
     .muted{color:var(--muted);margin-bottom:14px}
     label{display:block;margin:.8rem 0 .3rem;font-weight:600}
@@ -83,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       border-radius:12px;
       font-size:1rem;
     }
-    input:focus{outline:2px solid rgba(15,118,110,.2);border-color:var(--accent)}
+    input:focus{outline:3px solid rgba(15,118,110,.18);border-color:var(--accent)}
     .btn{
       margin-top:1rem;
       width:100%;
@@ -92,8 +113,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       border-radius:12px;
       background:linear-gradient(135deg,var(--accent),#0f8a7f);
       color:#fff;
-      font-weight:600;
+      font-weight:800;
       cursor:pointer;
+      box-shadow:0 12px 24px rgba(15,118,110,.22);
     }
     .err{color:#b91c1c;margin:.6rem 0}
     .ok{color:#15803d;margin:.6rem 0}
@@ -101,6 +123,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
   <div class="card">
+    <div class="brand-row">
+      <div class="mark"><span></span></div>
+      <div>
+        <div class="brand-name">Nister WiFi</div>
+        <div class="brand-tag">Admin Portal</div>
+      </div>
+    </div>
     <h1>Nister Admin</h1>
     <div class="muted">Sign in to manage payments and approvals.</div>
 

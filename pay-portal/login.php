@@ -67,18 +67,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
     :root{
-      --bg:#f4f1ea;--ink:#1c2329;--muted:#5f6a76;--accent:#0f766e;--card:#fffdfa;--line:#e2d6c8;--shadow:0 20px 60px rgba(27,35,42,.12);--radius:18px;--font-display:"Fraunces",serif;--font-body:"Sora",sans-serif;
+      --bg:#f4f1ea;--surface:#172025;--surface-2:#202b31;--ink:#1c2329;--muted:#5f6a76;--accent:#0f766e;--accent-2:#b45309;--green:#0f766e;--card:#fffdfa;--line:#e2d6c8;--line-dark:#334047;--shadow:0 20px 60px rgba(27,35,42,.16);--radius:18px;--font-display:"Fraunces",serif;--font-body:"Sora",sans-serif;
     }
     *{box-sizing:border-box}
-    body{margin:0;font-family:var(--font-body);background:linear-gradient(180deg,var(--bg) 0%,#efe8de 100%);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);width:min(420px,100%)}
-    h1{font-family:var(--font-display);margin:0 0 8px}
+    body{
+      margin:0;font-family:var(--font-body);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;letter-spacing:0;
+      background:linear-gradient(180deg,var(--bg) 0%,#efe8de 100%);
+    }
+    body::before{
+      content:"";position:fixed;inset:0;z-index:-1;
+      background:
+        radial-gradient(900px 480px at 8% -10%,rgba(15,118,110,.18),transparent 60%),
+        radial-gradient(760px 420px at 92% 0%,rgba(180,83,9,.14),transparent 60%);
+    }
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);width:min(430px,100%)}
+    .brand-row{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+    .mark{width:38px;height:38px;border-radius:12px;display:grid;grid-template-columns:repeat(3,1fr);align-items:end;gap:3px;background:linear-gradient(135deg,var(--accent),var(--accent-2));border:1px solid rgba(15,118,110,.22);padding:7px;box-shadow:0 12px 24px rgba(15,118,110,.22)}
+    .mark::before,.mark::after,.mark span{content:"";display:block;width:100%;border-radius:3px;background:#fffdfa}
+    .mark::before{height:8px}.mark span{height:14px}.mark::after{height:20px}
+    .brand-name{font-weight:800;color:var(--ink)}
+    .brand-tag{font-size:.82rem;color:var(--muted)}
+    h1{font-family:var(--font-display);margin:0 0 8px;letter-spacing:0}
     .muted{color:var(--muted);font-size:.95rem;margin-bottom:16px}
     .field{margin:12px 0}
     .label{display:block;margin-bottom:6px;color:var(--muted);font-size:.85rem}
     input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:1rem}
-    input:focus{outline:2px solid rgba(15,118,110,.25);border-color:var(--accent)}
-    .btn{appearance:none;border:0;border-radius:12px;padding:12px 16px;font-weight:600;cursor:pointer;background:linear-gradient(135deg,var(--accent),#0f8a7f);color:#fff;width:100%}
+    input:focus{outline:3px solid rgba(15,118,110,.18);border-color:var(--accent)}
+    .btn{appearance:none;border:0;border-radius:12px;padding:12px 16px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,var(--accent),#0f8a7f);color:#fff;width:100%;min-height:46px;box-shadow:0 12px 24px rgba(15,118,110,.22)}
     .msg{padding:10px 12px;border-radius:12px;margin-bottom:12px;font-size:.9rem}
     .msg.err{background:#fff0f0;border:1px solid #f2b8b8;color:#842029}
     .msg.ok{background:#f1fbf7;border:1px solid #bfe8d7;color:#0f5132}
@@ -88,6 +103,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
   <div class="card">
+    <div class="brand-row">
+      <div class="mark"><span></span></div>
+      <div>
+        <div class="brand-name">Nister WiFi</div>
+        <div class="brand-tag">Pay Portal</div>
+      </div>
+    </div>
     <h1>Welcome back</h1>
     <div class="muted">Use the same credentials as your captive portal login.</div>
     <?php if ($msg === 'logged_out'): ?>
