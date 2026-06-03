@@ -164,6 +164,23 @@ PHP
 )"
 assert_contains "status_allows_valid_token" "$status_with_token" '"error":"username required"'
 
+status_page_content="$(cat hotspot/status.html)"
+router_status_page_content="$(cat nister-org/public/router-sync/status.html)"
+status_api_before_pay=$"'https://api.nister.org',
+    safePay,
+    'https://pay.nister.org'"
+assert_contains "status_page_prefers_api_base" "$status_page_content" "var base = (apiOverride || safeCfg || 'https://api.nister.org')"
+assert_contains "status_page_candidates_keep_api_before_pay" "$status_page_content" "$status_api_before_pay"
+assert_not_contains "status_page_must_not_default_to_pay_api" "$status_page_content" "var base = (apiOverride || safePay || 'https://pay.nister.org')"
+assert_contains "router_status_page_prefers_api_base" "$router_status_page_content" "var base = (apiOverride || safeCfg || 'https://api.nister.org')"
+assert_contains "router_status_candidates_keep_api_before_pay" "$router_status_page_content" "$status_api_before_pay"
+assert_not_contains "router_status_must_not_default_to_pay_api" "$router_status_page_content" "var base = (apiOverride || safePay || 'https://pay.nister.org')"
+
+hotspot_config_content="$(cat hotspot/config.js nister-org/public/router-sync/config.js)"
+assert_contains "hotspot_config_default_api_host" "$hotspot_config_content" "var DEFAULT_API_BASE = 'https://api.nister.org';"
+assert_contains "hotspot_config_trusted_api_host" "$hotspot_config_content" "var TRUSTED_API_HOSTS = ['api.nister.org'];"
+assert_not_contains "hotspot_config_must_not_default_api_to_pay" "$hotspot_config_content" "var DEFAULT_API_BASE = 'https://pay.nister.org';"
+
 otp_send_http_origin_preflight="$(php_run <<'PHP'
 <?php
 $_SERVER = [

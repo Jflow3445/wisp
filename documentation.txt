@@ -132,6 +132,30 @@ D) OBSERVABILITY PATH
 3. radacct_cleanup timer closes stale/duplicate sessions.
 4. NetFlow collector stores flow files for forensic exports.
 
+E) PUBLIC DOMAIN BOUNDARIES - DO NOT MIX THESE
+
+These hostnames are product contracts, not just convenient deployment paths:
+
+- api.nister.org:
+  Canonical hotspot API host. Captive signup, OTP, password reset/change,
+  autopost bridges, and hotspot status must prefer this host.
+
+- pay.nister.org:
+  Payment portal and admin portal. It serves payment/config surfaces and may be
+  a status fallback only. Do not make it the primary host for captive API
+  services just because some PHP implementation files live under pay-portal/.
+
+- wifi.nister.org:
+  Public Wi-Fi site plus CAPPORT /api.json. It is not a backend API host.
+  Public wifi.nister.org/hotspot-api/status.php may 404. Router-hosted captive
+  files are separate from the public website even when the user sees the same
+  hostname inside the hotspot.
+
+Rule for future changes:
+- Keep hotspot/config.js API defaults on https://api.nister.org.
+- Keep captive status.html trying api.nister.org before pay.nister.org.
+- Treat pay.nister.org as payment/admin first and API fallback only.
+
 
 4) DATA MODEL YOU RELY ON
 -------------------------
