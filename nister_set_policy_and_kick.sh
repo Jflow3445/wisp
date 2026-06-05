@@ -14,6 +14,7 @@ HS_ACTIVE="${HS_ACTIVE:-HS_ACTIVE}"
 HS_LIMITED="${HS_LIMITED:-HS_LIMITED}"
 HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
 LEGACY_NOPAID="${LEGACY_NOPAID:-nopaid}"
+HOTSPOT_COOKIE_CLEAR_SCRIPT="${HOTSPOT_COOKIE_CLEAR_SCRIPT:-/usr/local/sbin/nister_clear_hotspot_cookies.sh}"
 
 die(){ echo "ERROR: $*" >&2; exit 2; }
 need(){ command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1"; }
@@ -243,6 +244,14 @@ COMMIT;
 
 echo "[*] DB state now:"
 sql_exec "SELECT username,groupname,priority FROM radusergroup WHERE username IN ($IN_LIST) ORDER BY username,priority;"
+
+if [[ "$TARGET" == "$HS_LIMITED" || "$TARGET" == "$HS_NOPAID" ]]; then
+  if [[ -x "$HOTSPOT_COOKIE_CLEAR_SCRIPT" ]]; then
+    "$HOTSPOT_COOKIE_CLEAR_SCRIPT" "${USERS[@]}" || true
+  else
+    echo "[*] Hotspot cookie cleanup skipped: missing $HOTSPOT_COOKIE_CLEAR_SCRIPT"
+  fi
+fi
 
 # find ALL active sessions for ANY variant
 mapfile -t rows < <(

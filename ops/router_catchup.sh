@@ -94,11 +94,19 @@ else
   critical_failed=1
 fi
 
-hotspot_login_cmd=':local changed 0; :foreach hs in=[/ip hotspot find where disabled=no] do={ :local prof [/ip hotspot get $hs profile]; :if ([:len $prof] > 0) do={ :local profileIds [/ip hotspot profile find where name=$prof]; :if ([:len $profileIds] > 0) do={ :do { /ip hotspot profile set $profileIds login-by=http-chap,https; :set changed ($changed + 1) } on-error={ :log warning ("nister: hotspot login-by refresh failed profile=" . $prof) } } } }; :if ($changed = 0) do={ :error "nister: no enabled hotspot profile login-by refreshed" }'
+hotspot_login_cmd=':local changed 0; :foreach hs in=[/ip hotspot find where disabled=no] do={ :local prof [/ip hotspot get $hs profile]; :if ([:len $prof] > 0) do={ :local profileIds [/ip hotspot profile find where name=$prof]; :if ([:len $profileIds] > 0) do={ :do { /ip hotspot profile set $profileIds login-by=mac-cookie,http-chap,https; :set changed ($changed + 1) } on-error={ :log warning ("nister: hotspot login-by refresh failed profile=" . $prof) } } } }; :if ($changed = 0) do={ :error "nister: no enabled hotspot profile login-by refreshed" }'
 if ros "$hotspot_login_cmd" >/dev/null 2>&1; then
   log "status=ok action=hotspot_login_refreshed"
 else
   log "status=warn action=hotspot_login_refresh_failed"
+  critical_failed=1
+fi
+
+hotspot_user_profile_cmd=':do { /ip hotspot user profile set [find where name="active"] add-mac-cookie=yes mac-cookie-timeout=4w2d } on-error={ :log warning "nister: active hotspot mac-cookie refresh failed" }; :foreach prof in={"default";"limited";"nopaid"} do={ :do { /ip hotspot user profile set [find where name=$prof] add-mac-cookie=yes mac-cookie-timeout=0s } on-error={ :log warning ("nister: blocked hotspot mac-cookie refresh failed profile=" . $prof) } }'
+if ros "$hotspot_user_profile_cmd" >/dev/null 2>&1; then
+  log "status=ok action=hotspot_user_profiles_refreshed"
+else
+  log "status=warn action=hotspot_user_profiles_refresh_failed"
   critical_failed=1
 fi
 

@@ -2764,6 +2764,7 @@ try {
         $vals = implode(",", array_fill(0, count($targets), "(?,'HS_LIMITED',0)"));
         $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES {$vals}")
           ->execute($targets);
+        try { radius_clear_hotspot_cookies($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         echo json_encode(['ok'=>true,'expires_at'=>$expStr]);
       } catch (Throwable $e) {
@@ -2793,6 +2794,7 @@ try {
         $vals = implode(",", array_fill(0, count($targets), "(?,'HS_LIMITED',0)"));
         $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES {$vals}")
           ->execute($targets);
+        try { radius_clear_hotspot_cookies($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         echo json_encode(['ok'=>true]);
       } catch (Throwable $e) {
@@ -2975,8 +2977,11 @@ try {
                          SELECT :u, 'HS_NOPAID', 0 FROM DUAL
                          WHERE NOT EXISTS (
                            SELECT 1 FROM radusergroup WHERE username=:u AND groupname='HS_NOPAID'
-                         )")->execute([':u'=>$u]);
+                        )")->execute([':u'=>$u]);
           }
+        }
+        if (in_array($addrUp, ['HS_LIMITED','HS_NOPAID'], true)) {
+          try { radius_clear_hotspot_cookies($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         }
         echo json_encode(['ok'=>true,'addrlist'=>$addr]);
       } catch (Throwable $e) {
@@ -3027,6 +3032,9 @@ try {
                          SELECT 1 FROM radusergroup WHERE username=:u AND groupname=:g
                        )")->execute([':u'=>$u, ':g'=>$g]);
         }
+        if (in_array($g, ['HS_LIMITED','HS_NOPAID'], true)) {
+          try { radius_clear_hotspot_cookies($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
+        }
         echo json_encode(['ok'=>true,'group'=>$g]);
       } catch (Throwable $e) {
         http_response_code(500);
@@ -3052,6 +3060,7 @@ try {
           radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', 'HS_NOPAID');
           $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Rate-Limit','Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")->execute([':u'=>$u]);
         }
+        try { radius_clear_hotspot_cookies($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
         echo json_encode(['ok'=>true]);
       } catch (Throwable $e) {
         http_response_code(500);

@@ -18,6 +18,7 @@ HS_LIMITED="${HS_LIMITED:-HS_LIMITED}"
 HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
 LEGACY_NOPAID="${LEGACY_NOPAID:-nopaid}"
 HS_PRIO="${HS_PRIO:-0}"
+HOTSPOT_COOKIE_CLEAR_SCRIPT="${HOTSPOT_COOKIE_CLEAR_SCRIPT:-/usr/local/sbin/nister_clear_hotspot_cookies.sh}"
 
 die(){ echo "ERROR: $*" >&2; exit 2; }
 need(){ command -v "$1" >/dev/null 2>&1 || die "Missing dependency: $1"; }
@@ -350,6 +351,14 @@ WHERE username IN (${in_list})
 INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
 COMMIT;"
 }
+
+clear_hotspot_cookies(){
+  if [[ ! -x "$HOTSPOT_COOKIE_CLEAR_SCRIPT" ]]; then
+    echo "[*] Hotspot cookie cleanup skipped: missing $HOTSPOT_COOKIE_CLEAR_SCRIPT"
+    return 0
+  fi
+  "$HOTSPOT_COOKIE_CLEAR_SCRIPT" "$@" || true
+}
 # ---------- CoA helpers ----------
 load_coa_target(){
   if [[ -z "${NAS_IP:-}" ]]; then
@@ -577,11 +586,13 @@ case "$cmd" in
     ;;
   hs-limited)
     hs_set "$HS_LIMITED" "${USERS[@]}"
+    clear_hotspot_cookies "${USERS[@]}"
     echo "[OK] HS -> $HS_LIMITED"
     (( kick_after == 1 )) && kick_user "${USERS[@]}"
     ;;
   hs-nopaid)
     hs_set "$HS_NOPAID" "${USERS[@]}"
+    clear_hotspot_cookies "${USERS[@]}"
     echo "[OK] HS -> $HS_NOPAID"
     (( kick_after == 1 )) && kick_user "${USERS[@]}"
     ;;

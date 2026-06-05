@@ -86,6 +86,7 @@ HS_ACTIVE="${HS_ACTIVE:-HS_ACTIVE}"
 HS_LIMITED="${HS_LIMITED:-HS_LIMITED}"
 HS_NOPAID="${HS_NOPAID:-HS_NOPAID}"
 HS_PRIO="${HS_PRIO:-0}"
+HOTSPOT_COOKIE_CLEAR_SCRIPT="${HOTSPOT_COOKIE_CLEAR_SCRIPT:-/usr/local/sbin/nister_clear_hotspot_cookies.sh}"
 
 validate_group_name(){
   local name="$1" value="$2"
@@ -735,6 +736,16 @@ INSERT INTO radusergroup (username,groupname,priority) VALUES ${vals};
 COMMIT;"
 }
 
+clear_hotspot_cookies(){
+  if [[ ! -x "$HOTSPOT_COOKIE_CLEAR_SCRIPT" ]]; then
+    log "WARN user=$USER hotspot_cookie_clear_skipped reason=missing_script path=$HOTSPOT_COOKIE_CLEAR_SCRIPT"
+    return 0
+  fi
+  local out
+  out="$("$HOTSPOT_COOKIE_CLEAR_SCRIPT" "${USERS[@]}" 2>&1 || true)"
+  log "HOTSPOT_COOKIE_CLEAR user=$USER ${out//$'\n'/ }"
+}
+
 kick_sessions(){
   if (( COA_READY == 0 )); then
     log "WARN user=$USER skip_kick_coa_unavailable"
@@ -1012,6 +1023,7 @@ fi
 if (( EXPIRED == 1 || EXHAUSTED == 1 )); then
   set_cap_zero
   set_hs_limited
+  clear_hotspot_cookies
   kick_sessions
   if (( WAS_LIMITED == 0 )); then
     log "LIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=$EXPIRED exhausted=$EXHAUSTED"

@@ -142,7 +142,8 @@ Verify:
 ops/router_exec.sh '/radius print detail; /radius monitor [find] once; /ip dhcp-server option print detail where name="capport"; /ip firewall address-list print detail where list="HG3_WG_DST"'
 ```
 
-Also verify the active hotspot profile is not HTTPS-only:
+Also verify the active hotspot profile is not HTTPS-only and still supports
+remembered-device login:
 
 ```bash
 ops/router_exec.sh '/ip hotspot profile print detail where name="hsprof"'
@@ -151,8 +152,11 @@ ops/router_exec.sh '/ip hotspot profile print detail where name="hsprof"'
 Expected profile setting:
 
 ```text
-login-by=http-chap,https
+login-by=mac-cookie,http-chap,https
 ```
+
+For expired or exhausted users, verify stale remembered-device cookies are
+cleared by `/usr/local/sbin/nister_clear_hotspot_cookies.sh` before/with CoA.
 
 If `HG3_WG_DST` contains `captive.apple.com`, `connectivitycheck.gstatic.com`, `connectivitycheck.android.com`, `clients3.google.com`, `www.msftconnecttest.com`, `ipv6.msftconnecttest.com`, or `www.msftncsi.com`, remove those entries. They suppress the OS captive portal popup.
 

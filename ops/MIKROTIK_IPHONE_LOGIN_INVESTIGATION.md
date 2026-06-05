@@ -10,8 +10,8 @@ Purpose: preserve the known-good state while investigating iPhone-only login com
 - VPS services checked active: `freeradius`, `mariadb`, `apache2`, `nister-mikrotik-guard.timer`, `nister-router-catchup.timer`.
 - `nister-mikrotik-guard.service` and `nister-router-catchup.service` last showed `Result=success`, `ExecMainStatus=0`.
 - RouterOS version observed: `7.20.2`.
-- Hotspot profile `hsprof` should allow both plain captive HTTP CHAP and HTTPS
-  login: `login-by=http-chap,https`.
+- Hotspot profile `hsprof` should allow remembered-device login plus plain
+  captive HTTP CHAP and HTTPS login: `login-by=mac-cookie,http-chap,https`.
 - Active hotspot certificate: `wifi_nister_org_hotspot_auto_leaf`, SAN includes `wifi.nister.org`, expires `2026-07-26 02:41:11`.
 - DHCP option `capport` is attached to the hotspot DHCP network.
 - DHCP CAPPORT URL is `https://wifi.nister.org/api.json?v=20260601-remote-refresh`.
@@ -35,6 +35,7 @@ The hotspot login page previously used hidden iframe login attempts first, with 
 - Confirm Android/laptop users still show active sessions after any iPhone-specific page change.
 - Confirm `capport` remains `https://wifi.nister.org/api.json?v=20260601-remote-refresh`.
 - Confirm `wifi_nister_org_hotspot_auto_leaf` remains the active `hsprof`
-  certificate and `login-by=http-chap,https` remains set.
+  certificate and `login-by=mac-cookie,http-chap,https` remains set.
+- Confirm exhausted/expired users have hotspot cookies cleared before/with CoA.
 - Confirm `ether3` and `ether4` remain running.
 - Confirm new iPhone attempts create RADIUS access/accounting activity or router hotspot active rows.

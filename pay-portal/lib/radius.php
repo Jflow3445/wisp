@@ -1116,6 +1116,49 @@ function radius_try_disconnect(string $msisdn, array $ENV=[], ?int $locationId=n
   }
 }
 
+function radius_hotspot_cookie_users(string $msisdn): array {
+  $raw = preg_replace('/\D+/', '', $msisdn);
+  if ($raw === '') return [];
+  $out = [];
+  $add = static function(string $u) use (&$out): void {
+    $u = preg_replace('/\D+/', '', $u);
+    if ($u !== '') $out[$u] = true;
+  };
+  $add($raw);
+  if (function_exists('normalize_msisdn')) $add((string)normalize_msisdn($raw));
+  if (function_exists('msisdn_local')) $add((string)msisdn_local($raw));
+  if (preg_match('/^0[0-9]{9}$/', $raw)) $add('233'.substr($raw, 1));
+  if (preg_match('/^233[0-9]{9}$/', $raw)) $add('0'.substr($raw, 3));
+  return array_values(array_filter(array_keys($out), static fn($u): bool => preg_match('/^[0-9]{9,12}$/', $u) === 1));
+}
+
+function radius_clear_hotspot_cookies(string $msisdn, array $ENV=[]): void {
+  $script = trim((string)($ENV['HOTSPOT_COOKIE_CLEAR_SCRIPT'] ?? '/usr/local/sbin/nister_clear_hotspot_cookies.sh'));
+  if ($script === '' || !is_file($script) || !is_executable($script)) return;
+  $users = radius_hotspot_cookie_users($msisdn);
+  if (!$users) return;
+
+  $commands = [];
+  $sudo = trim((string)@shell_exec('command -v sudo 2>/dev/null'));
+  if ($sudo !== '' && is_executable($sudo)) {
+    $commands[] = array_merge([$sudo, '-n', $script], $users);
+  }
+  $commands[] = array_merge([$script], $users);
+
+  foreach ($commands as $cmd) {
+    $des = [0=>['pipe','r'], 1=>['pipe','w'], 2=>['pipe','w']];
+    $proc = @proc_open($cmd, $des, $pipes, null, null, ['bypass_shell'=>true]);
+    if (!is_resource($proc)) continue;
+    @fclose($pipes[0]);
+    @stream_get_contents($pipes[1]);
+    @fclose($pipes[1]);
+    @stream_get_contents($pipes[2]);
+    @fclose($pipes[2]);
+    $rc = @proc_close($proc);
+    if ($rc === 0) return;
+  }
+}
+
 /**
  * Force a CoA disconnect by framed IP (Hotspot-friendly).
  * Uses radacct to resolve NAS + username when possible.
