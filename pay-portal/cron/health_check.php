@@ -210,15 +210,19 @@ if ($speedUrl !== '') {
   }
 }
 
+$disk = health_disk_snapshot($ENV);
+
 $overallOk = 1;
 if ($radiusOk === 0) $overallOk = 0;
 if ($tunnelOk === 0) $overallOk = 0;
 if ($coaOk === 0) $overallOk = 0;
+if (($disk['disk_status'] ?? '') === 'critical') $overallOk = 0;
 
 $noteParts = array_filter([
   $radiusNote,
   $coaNote,
   ($tunnelOk === 0 ? ($tunnelNote !== '' ? $tunnelNote : 'tunnel_down') : ''),
+  (string)($disk['disk_note'] ?? ''),
 ]);
 $note = $noteParts ? implode(';', $noteParts) : null;
 
@@ -234,9 +238,16 @@ $sample = [
   'ping_ms' => $pingMs,
   'loss_pct' => $lossPct,
   'speed_mbps' => $speedMpbs,
+  'disk_path' => $disk['disk_path'] ?? null,
+  'disk_total_bytes' => $disk['disk_total_bytes'] ?? null,
+  'disk_used_bytes' => $disk['disk_used_bytes'] ?? null,
+  'disk_free_bytes' => $disk['disk_free_bytes'] ?? null,
+  'disk_used_pct' => $disk['disk_used_pct'] ?? null,
+  'disk_status' => $disk['disk_status'] ?? null,
   'note' => $note,
 ];
 
 $pdo = health_pdo($ENV);
 health_insert_sample($pdo, $sample);
+health_update_disk_alert($pdo, $sample);
 health_update_events($pdo, $sample);

@@ -320,6 +320,11 @@ $ADMIN_CSRF = admin_csrf_token();
         <div class="value" id="health_speed">-</div>
         <div class="muted" id="health_speed_meta">not Starlink</div>
       </div>
+      <div class="kpi compact">
+        <div class="label">Server disk</div>
+        <div class="value" id="health_disk">-</div>
+        <div class="muted" id="health_disk_meta">-</div>
+      </div>
     </div>
     <div class="section-head" style="margin-top:14px">
       <h3>Access enforcement</h3>
@@ -535,6 +540,62 @@ $ADMIN_CSRF = admin_csrf_token();
       <button class="btn" id="settings_reload" type="button">Reload settings</button>
     </div>
     <div class="note" id="settings_status">Refresh loads the saved settings into this form.</div>
+  </div>
+
+  <div class="card" data-section="settings">
+    <div class="section-head">
+      <h2>Google Drive forensic archive</h2>
+      <div class="muted">Connect an admin-owned Google Drive account and archive NetFlow files before local cleanup.</div>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="set_drive_client_id">Google OAuth client ID</label>
+        <input id="set_drive_client_id" type="text" placeholder="...apps.googleusercontent.com" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="set_drive_client_secret">Google OAuth client secret</label>
+        <div class="password-wrap">
+          <input id="set_drive_client_secret" type="password" placeholder="Leave blank to keep existing" autocomplete="off">
+          <button class="password-toggle" type="button" data-password-toggle="set_drive_client_secret" aria-controls="set_drive_client_secret" aria-pressed="false">Show</button>
+        </div>
+        <div class="hint" id="set_drive_secret_hint">Secret is never shown after saving.</div>
+      </div>
+      <div class="field">
+        <label for="set_drive_redirect_uri">Authorized redirect URI</label>
+        <input id="set_drive_redirect_uri" type="text" placeholder="https://pay.nister.org/admin/google_drive_callback.php">
+        <div class="hint">Use this exact URL in Google Cloud for the web OAuth client.</div>
+      </div>
+      <div class="field">
+        <label for="set_drive_root_name">Drive archive folder</label>
+        <input id="set_drive_root_name" type="text" placeholder="NISTER NetFlow Forensics">
+      </div>
+      <div class="field">
+        <label for="set_drive_parent_id">Optional parent folder ID</label>
+        <input id="set_drive_parent_id" type="text" placeholder="Leave blank to create in My Drive">
+      </div>
+      <div class="field">
+        <label for="set_drive_min_age">Archive files older than minutes</label>
+        <input id="set_drive_min_age" type="text" placeholder="1440">
+      </div>
+      <div class="field">
+        <label for="set_drive_max_files">Max files per run</label>
+        <input id="set_drive_max_files" type="text" placeholder="500">
+      </div>
+      <div class="field">
+        <label>Archive automation</label>
+        <label class="check"><input id="set_drive_archive_enabled" type="checkbox"> Run hourly Google Drive archival</label>
+      </div>
+      <div class="field">
+        <label>Local cleanup</label>
+        <label class="check"><input id="set_drive_delete_after" type="checkbox"> Remove local files only after Drive verification</label>
+      </div>
+    </div>
+    <div class="tool-actions">
+      <button class="btn approve" id="drive_connect" type="button">Connect Google Drive</button>
+      <button class="btn" id="drive_test" type="button">Test upload</button>
+      <button class="btn danger" id="drive_disconnect" type="button">Disconnect Drive</button>
+    </div>
+    <div class="note" id="drive_status">Save settings, then connect Google Drive.</div>
   </div>
 
   <div class="card" data-section="settings">
@@ -1919,6 +1980,20 @@ function renderHealth(j){
   const loss = latest ? fmtLoss(latest.loss_pct) : '-';
   const tunnelOk = latest && Number(latest.tunnel_ok) === 1;
   const speed = latest && tunnelOk ? fmtMpbs(latest.speed_mbps) : '-';
+  let disk = '-';
+  let diskMeta = '-';
+  if (latest && latest.disk_used_pct !== null && latest.disk_used_pct !== undefined) {
+    const pct = Number(latest.disk_used_pct);
+    if (Number.isFinite(pct)) disk = `${pct.toFixed(1)}%`;
+    const bits = [];
+    if (latest.disk_free_bytes !== null && latest.disk_free_bytes !== undefined) bits.push(`${fmtBytes(latest.disk_free_bytes)} free`);
+    if (latest.disk_total_bytes !== null && latest.disk_total_bytes !== undefined) bits.push(`${fmtBytes(latest.disk_total_bytes)} total`);
+    const note = String(latest.note || '');
+    if (note.includes('disk_critical')) bits.push('critical');
+    else if (note.includes('disk_warning')) bits.push('warning');
+    if (latest.disk_path) bits.push(String(latest.disk_path));
+    diskMeta = bits.join(' | ') || '-';
+  }
   const enf = (j && typeof j.enforcement === 'object' && j.enforcement) ? j.enforcement : null;
 
   const updEl = document.getElementById('health_updated');
@@ -1945,6 +2020,10 @@ function renderHealth(j){
   if (sEl) sEl.textContent = speed;
   const sMetaEl = document.getElementById('health_speed_meta');
   if (sMetaEl) sMetaEl.textContent = tunnelOk ? 'VPS-side check' : 'skipped: tunnel down';
+  const dEl = document.getElementById('health_disk');
+  if (dEl) dEl.textContent = disk;
+  const dMetaEl = document.getElementById('health_disk_meta');
+  if (dMetaEl) dMetaEl.textContent = diskMeta;
 
   const enfAcctAgeEl = document.getElementById('enf_last_acct_age');
   const enfAcctTsEl = document.getElementById('enf_last_acct_ts');
@@ -2475,6 +2554,19 @@ async function loadSettings(){
   set('set_sms_back_online', s.SMS_BACK_ONLINE_TEXT || '');
   set('set_sms_inactive', s.SMS_INACTIVE_TEXT || '');
   set('set_sms_inactive_days', s.SMS_INACTIVE_DAYS || '');
+  set('set_drive_client_id', s.GOOGLE_DRIVE_CLIENT_ID || '');
+  set('set_drive_client_secret', '');
+  set('set_drive_redirect_uri', s.GOOGLE_DRIVE_REDIRECT_URI || '');
+  set('set_drive_root_name', s.GOOGLE_DRIVE_ROOT_FOLDER_NAME || 'NISTER NetFlow Forensics');
+  set('set_drive_parent_id', s.GOOGLE_DRIVE_PARENT_FOLDER_ID || '');
+  set('set_drive_min_age', s.NETFLOW_ARCHIVE_MIN_AGE_MINUTES || '1440');
+  set('set_drive_max_files', s.NETFLOW_ARCHIVE_MAX_FILES_PER_RUN || '500');
+  setChecked('set_drive_archive_enabled', s.NETFLOW_DRIVE_ARCHIVE_ENABLED || '0');
+  setChecked('set_drive_delete_after', s.NETFLOW_ARCHIVE_DELETE_AFTER_UPLOAD === '' ? '1' : s.NETFLOW_ARCHIVE_DELETE_AFTER_UPLOAD);
+  const driveHint = document.getElementById('set_drive_secret_hint');
+  if (driveHint) driveHint.textContent = String(s.GOOGLE_DRIVE_CLIENT_SECRET_SET || '') === '1'
+    ? 'A Google client secret is saved. Leave blank to keep it.'
+    : 'No Google client secret is saved yet.';
   setSettingsStatus('Settings loaded.', 'success');
 }
 
@@ -2524,15 +2616,25 @@ async function saveSettings(){
     SMS_BACK_ONLINE_TEXT: toolValue('set_sms_back_online'),
     SMS_INACTIVE_TEXT: toolValue('set_sms_inactive'),
     SMS_INACTIVE_DAYS: toolValue('set_sms_inactive_days'),
+    GOOGLE_DRIVE_CLIENT_ID: toolValue('set_drive_client_id'),
+    GOOGLE_DRIVE_REDIRECT_URI: toolValue('set_drive_redirect_uri'),
+    GOOGLE_DRIVE_ROOT_FOLDER_NAME: toolValue('set_drive_root_name'),
+    GOOGLE_DRIVE_PARENT_FOLDER_ID: toolValue('set_drive_parent_id'),
+    NETFLOW_DRIVE_ARCHIVE_ENABLED: checkboxValue('set_drive_archive_enabled'),
+    NETFLOW_ARCHIVE_DELETE_AFTER_UPLOAD: checkboxValue('set_drive_delete_after'),
+    NETFLOW_ARCHIVE_MIN_AGE_MINUTES: toolValue('set_drive_min_age'),
+    NETFLOW_ARCHIVE_MAX_FILES_PER_RUN: toolValue('set_drive_max_files'),
   };
   const paystackSecret = toolValue('set_paystack_secret');
   if (paystackSecret) body.PAYSTACK_SECRET_KEY = paystackSecret;
+  const driveSecret = toolValue('set_drive_client_secret');
+  if (driveSecret) body.GOOGLE_DRIVE_CLIENT_SECRET = driveSecret;
   setSettingsStatus('Saving...');
   const j = await api('settings_save', body);
   if (!j.ok){
     const msg = j.detail ? (j.error + ': ' + j.detail) : (j.error || 'Save failed.');
     setSettingsStatus(msg, 'error');
-    return;
+    return false;
   }
   if (paystackSecret) {
     const psk = document.getElementById('set_paystack_secret');
@@ -2548,7 +2650,97 @@ async function saveSettings(){
     const pskHint = document.getElementById('set_paystack_secret_hint');
     if (pskHint) pskHint.textContent = 'A secret key is saved. Leave blank to keep it.';
   }
+  if (driveSecret) {
+    const gd = document.getElementById('set_drive_client_secret');
+    if (gd) {
+      gd.value = '';
+      gd.type = 'password';
+    }
+    const gdToggle = document.querySelector('[data-password-toggle="set_drive_client_secret"]');
+    if (gdToggle) {
+      gdToggle.textContent = 'Show';
+      gdToggle.setAttribute('aria-pressed', 'false');
+    }
+    const driveHint = document.getElementById('set_drive_secret_hint');
+    if (driveHint) driveHint.textContent = 'A Google client secret is saved. Leave blank to keep it.';
+  }
   setSettingsStatus('Settings saved.', 'success');
+  await loadDriveStatus();
+  return true;
+}
+
+function setDriveStatus(msg, state){
+  const el = document.getElementById('drive_status');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('error','success');
+  if (state === 'error') el.classList.add('error');
+  if (state === 'success') el.classList.add('success');
+}
+
+async function loadDriveStatus(){
+  const j = await api('drive_status', {});
+  if (!j.ok){
+    const msg = j.detail ? (j.error + ': ' + j.detail) : (j.error || 'Failed to load Drive status.');
+    setDriveStatus(msg, 'error');
+    return false;
+  }
+  const d = j.drive || {};
+  const redirect = document.getElementById('set_drive_redirect_uri');
+  if (redirect && !redirect.value && d.redirect_uri) redirect.value = d.redirect_uri;
+  const rootName = document.getElementById('set_drive_root_name');
+  if (rootName && !rootName.value && d.root_folder_name) rootName.value = d.root_folder_name;
+  const minAge = document.getElementById('set_drive_min_age');
+  if (minAge && !minAge.value && d.min_age_minutes) minAge.value = String(d.min_age_minutes);
+  const maxFiles = document.getElementById('set_drive_max_files');
+  if (maxFiles && !maxFiles.value && d.max_files_per_run) maxFiles.value = String(d.max_files_per_run);
+  const parts = [];
+  parts.push(d.configured ? 'OAuth client saved' : 'OAuth client not saved');
+  parts.push(d.connected ? 'Drive connected' : 'Drive not connected');
+  parts.push(d.enabled ? 'hourly archive on' : 'hourly archive off');
+  parts.push(d.delete_after_upload ? 'verified cleanup on' : 'verified cleanup off');
+  if (d.last_status) parts.push(`last run: ${d.last_status}`);
+  setDriveStatus(parts.join(' | '), d.connected ? 'success' : '');
+  return true;
+}
+
+async function connectDrive(){
+  const saved = await saveSettings();
+  if (!saved) return;
+  setDriveStatus('Opening Google consent...');
+  const j = await api('drive_connect_start', {});
+  if (!j.ok){
+    const msg = j.detail ? (j.error + ': ' + j.detail) : (j.error || 'Google Drive connection failed.');
+    setDriveStatus(msg, 'error');
+    return;
+  }
+  window.location.href = j.auth_url;
+}
+
+async function testDrive(){
+  setDriveStatus('Testing Google Drive upload...');
+  const j = await api('drive_test', {});
+  if (!j.ok){
+    const msg = j.detail ? (j.error + ': ' + j.detail) : (j.error || 'Drive test failed.');
+    setDriveStatus(msg, 'error');
+    return;
+  }
+  setDriveStatus('Drive upload verified. Test file cleaned up.', 'success');
+  await loadDriveStatus();
+}
+
+async function disconnectDrive(){
+  if (!confirm('Disconnect Google Drive and disable hourly archival?')) return;
+  setDriveStatus('Disconnecting Google Drive...');
+  const j = await api('drive_disconnect', {});
+  if (!j.ok){
+    const msg = j.detail ? (j.error + ': ' + j.detail) : (j.error || 'Drive disconnect failed.');
+    setDriveStatus(msg, 'error');
+    return;
+  }
+  const enabled = document.getElementById('set_drive_archive_enabled');
+  if (enabled) enabled.checked = false;
+  setDriveStatus('Google Drive disconnected. Hourly archival is disabled.');
 }
 
 async function savePlan(){
@@ -3404,6 +3596,7 @@ async function refreshAll(){
   await loadPending();
   await loadPlans();
   await loadSettings();
+  await loadDriveStatus();
   await loadAlerts();
   await loadUserStates();
   if (btn) btn.disabled = false;
@@ -3491,7 +3684,16 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   const settingsSave = document.getElementById('settings_save');
   if (settingsSave) settingsSave.addEventListener('click', saveSettings);
   const settingsReload = document.getElementById('settings_reload');
-  if (settingsReload) settingsReload.addEventListener('click', loadSettings);
+  if (settingsReload) settingsReload.addEventListener('click', async ()=>{
+    await loadSettings();
+    await loadDriveStatus();
+  });
+  const driveConnect = document.getElementById('drive_connect');
+  if (driveConnect) driveConnect.addEventListener('click', connectDrive);
+  const driveTest = document.getElementById('drive_test');
+  if (driveTest) driveTest.addEventListener('click', testDrive);
+  const driveDisconnect = document.getElementById('drive_disconnect');
+  if (driveDisconnect) driveDisconnect.addEventListener('click', disconnectDrive);
   const siteSaveBtn = document.getElementById('site_save_btn');
   if (siteSaveBtn) siteSaveBtn.addEventListener('click', saveSiteAdmin);
   const mapSaveBtn = document.getElementById('map_save_btn');

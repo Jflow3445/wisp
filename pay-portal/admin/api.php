@@ -9,6 +9,7 @@ require_once __DIR__.'/../lib/settings.php';
 require_once __DIR__.'/../lib/alerts.php';
 require_once __DIR__.'/../lib/health.php';
 require_once __DIR__.'/../lib/forensics.php';
+require_once __DIR__.'/../lib/google_drive_archive.php';
 require_once __DIR__.'/../lib/location.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 require_once __DIR__.'/../lib/sms.php';
@@ -300,6 +301,15 @@ function settings_allowed_keys(): array {
     'SMS_BACK_ONLINE_TEXT',
     'SMS_INACTIVE_TEXT',
     'SMS_INACTIVE_DAYS',
+    'GOOGLE_DRIVE_CLIENT_ID',
+    'GOOGLE_DRIVE_CLIENT_SECRET',
+    'GOOGLE_DRIVE_REDIRECT_URI',
+    'GOOGLE_DRIVE_ROOT_FOLDER_NAME',
+    'GOOGLE_DRIVE_PARENT_FOLDER_ID',
+    'NETFLOW_DRIVE_ARCHIVE_ENABLED',
+    'NETFLOW_ARCHIVE_DELETE_AFTER_UPLOAD',
+    'NETFLOW_ARCHIVE_MIN_AGE_MINUTES',
+    'NETFLOW_ARCHIVE_MAX_FILES_PER_RUN',
     'REFERRAL_RATE_BPS',
     'REFERRAL_MONTHLY_CAP_CENTS',
     'REFERRAL_LIFETIME_CAP_CENTS',
@@ -317,10 +327,10 @@ function settings_allowed_keys(): array {
 
 function normalize_setting_value(string $k, ?string $v): string {
   $v = trim((string)$v);
-  if ($k === 'HOTSPOT_API_BASE' || $k === 'PAY_BASE' || $k === 'PAYSTACK_CALLBACK_URL') {
+  if ($k === 'HOTSPOT_API_BASE' || $k === 'PAY_BASE' || $k === 'PAYSTACK_CALLBACK_URL' || $k === 'GOOGLE_DRIVE_REDIRECT_URI') {
     $v = rtrim($v, '/');
   }
-  if (in_array($k, ['TOPUP_MANUAL_ENABLED','PAYSTACK_ENABLED'], true)) {
+  if (in_array($k, ['TOPUP_MANUAL_ENABLED','PAYSTACK_ENABLED','NETFLOW_DRIVE_ARCHIVE_ENABLED','NETFLOW_ARCHIVE_DELETE_AFTER_UPLOAD'], true)) {
     $s = strtolower($v);
     return in_array($s, ['1','true','yes','y','on','enabled'], true) ? '1' : '0';
   }
@@ -343,6 +353,7 @@ function normalize_setting_value(string $k, ?string $v): string {
     'REFERRAL_RATE_BPS','REFERRAL_MONTHLY_CAP_CENTS','REFERRAL_LIFETIME_CAP_CENTS','REFERRAL_WINDOW_DAYS','REFERRAL_PENDING_HOLD_DAYS',
     'OTP_CODE_LENGTH','OTP_TTL_SECONDS','OTP_MAX_ATTEMPTS','OTP_RESEND_COOLDOWN_SECONDS','OTP_SESSION_TTL_SECONDS',
     'OTP_MAX_SENDS_PER_MSISDN_HOUR','OTP_MAX_SENDS_PER_IP_HOUR',
+    'NETFLOW_ARCHIVE_MIN_AGE_MINUTES','NETFLOW_ARCHIVE_MAX_FILES_PER_RUN',
   ], true)) {
     $v = preg_replace('/[^\d.]/', '', $v);
   }
@@ -358,6 +369,17 @@ function admin_env_value(array $keys, string $default=''): string {
     if ($v !== false && trim((string)$v) !== '') return trim((string)$v);
   }
   return $default;
+}
+
+function admin_drive_state_cookie(string $value, int $ttlSeconds=900): void {
+  setcookie('nister_drive_oauth_state', $value, [
+    'expires' => time() + max(60, $ttlSeconds),
+    'path' => '/admin',
+    'domain' => '',
+    'secure' => admin_request_is_secure(),
+    'httponly' => true,
+    'samesite' => 'Lax',
+  ]);
 }
 
 function bytes_from_input(array $in): ?int {
@@ -849,7 +871,7 @@ try {
       $keys = settings_allowed_keys();
       $out = [];
       foreach ($keys as $k) {
-        if ($k === 'PAYSTACK_SECRET_KEY') {
+        if ($k === 'PAYSTACK_SECRET_KEY' || $k === 'GOOGLE_DRIVE_CLIENT_SECRET') {
           $out[$k] = '';
           continue;
         }
@@ -860,6 +882,24 @@ try {
         if (($value === null || $value === '') && $k === 'PAYSTACK_CURRENCY') {
           $value = admin_env_value(['PAYSTACK_CURRENCY','CURRENCY'], 'GHS');
         }
+        if (($value === null || $value === '') && $k === 'GOOGLE_DRIVE_CLIENT_ID') {
+          $value = admin_env_value(['GOOGLE_DRIVE_CLIENT_ID']);
+        }
+        if (($value === null || $value === '') && $k === 'GOOGLE_DRIVE_REDIRECT_URI') {
+          $value = gdrive_redirect_uri();
+        }
+        if (($value === null || $value === '') && $k === 'GOOGLE_DRIVE_ROOT_FOLDER_NAME') {
+          $value = gdrive_root_folder_name();
+        }
+        if (($value === null || $value === '') && $k === 'NETFLOW_ARCHIVE_DELETE_AFTER_UPLOAD') {
+          $value = '0';
+        }
+        if (($value === null || $value === '') && $k === 'NETFLOW_ARCHIVE_MIN_AGE_MINUTES') {
+          $value = (string)gdrive_archive_min_age_minutes();
+        }
+        if (($value === null || $value === '') && $k === 'NETFLOW_ARCHIVE_MAX_FILES_PER_RUN') {
+          $value = (string)gdrive_archive_max_files_per_run();
+        }
         $out[$k] = $value ?? '';
       }
       $secret = settings_get('PAYSTACK_SECRET_KEY', '') ?? '';
@@ -867,6 +907,10 @@ try {
         $secret = admin_env_value(['PAYSTACK_SECRET_KEY','PAYSTACK_SECRET']);
       }
       $out['PAYSTACK_SECRET_KEY_SET'] = $secret !== '' ? '1' : '0';
+      $driveSecret = settings_get('GOOGLE_DRIVE_CLIENT_SECRET', '') ?? '';
+      if ($driveSecret === '') $driveSecret = admin_env_value(['GOOGLE_DRIVE_CLIENT_SECRET']);
+      $out['GOOGLE_DRIVE_CLIENT_SECRET_SET'] = $driveSecret !== '' ? '1' : '0';
+      $out['GOOGLE_DRIVE_REFRESH_TOKEN_SET'] = (settings_get('GOOGLE_DRIVE_REFRESH_TOKEN', '') ?? '') !== '' ? '1' : '0';
       echo json_encode(['ok'=>true,'settings'=>$out]);
       break;
     }
@@ -880,6 +924,76 @@ try {
         }
       }
       echo json_encode(['ok'=>true]);
+      break;
+    }
+
+    case 'drive_status': {
+      try {
+        $status = gdrive_public_status();
+        echo json_encode(['ok'=>true,'drive'=>$status]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'drive_status_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'drive_connect_start': {
+      try {
+        if (!gdrive_configured()) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'google_drive_client_missing','detail'=>'Save the Google OAuth client ID and secret first.']);
+          break;
+        }
+        $state = gdrive_create_state();
+        admin_drive_state_cookie($state, 900);
+        echo json_encode(['ok'=>true,'auth_url'=>gdrive_oauth_url($state),'redirect_uri'=>gdrive_redirect_uri()]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'drive_connect_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'drive_disconnect': {
+      try {
+        gdrive_revoke();
+        settings_set('GOOGLE_DRIVE_ROOT_FOLDER_ID', '');
+        settings_set('NETFLOW_DRIVE_ARCHIVE_ENABLED', '0');
+        echo json_encode(['ok'=>true,'drive'=>gdrive_public_status()]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'drive_disconnect_failed','detail'=>$e->getMessage()]);
+      }
+      break;
+    }
+
+    case 'drive_test': {
+      try {
+        if (!gdrive_configured() || !gdrive_connected()) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'google_drive_not_connected']);
+          break;
+        }
+        $root = gdrive_ensure_archive_root();
+        $tmp = tempnam(sys_get_temp_dir(), 'nister-drive-test-');
+        if ($tmp === false) throw new RuntimeException('temp_file_failed');
+        $body = "NISTER Google Drive archive check\nUTC: ".gmdate('c')."\n";
+        file_put_contents($tmp, $body);
+        $name = 'nister-drive-check-'.gmdate('Ymd-His').'.txt';
+        $drive = gdrive_upload_file($tmp, $name, $root);
+        $id = trim((string)($drive['id'] ?? ''));
+        $verify = $id !== '' ? gdrive_verify_uploaded_file($id, (int)filesize($tmp), strtolower((string)hash_file('md5', $tmp))) : ['ok'=>false];
+        @unlink($tmp);
+        if (!($verify['ok'] ?? false)) throw new RuntimeException('drive_test_verify_failed');
+        if ($id !== '') {
+          try { gdrive_delete_file($id); } catch (Throwable $e) { /* keep test result valid even if cleanup fails */ }
+        }
+        echo json_encode(['ok'=>true,'drive'=>gdrive_public_status()]);
+      } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['ok'=>false,'error'=>'drive_test_failed','detail'=>$e->getMessage()]);
+      }
       break;
     }
 

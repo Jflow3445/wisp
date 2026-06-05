@@ -5,4 +5,5 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/nister_netflow_archive_to_drive.sh
+Environment=PAY_PORTAL_ROOT=/var/www/pay
+ExecStart=/usr/bin/php /usr/local/sbin/nister_netflow_archive_to_drive.php

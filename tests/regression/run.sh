@@ -290,6 +290,23 @@ assert_contains "netflow_setup_checks_gid" "$netflow_setup_content" 'file_gid()'
 assert_contains "netflow_setup_secure_file_check" "$netflow_setup_content" 'env_file_is_secure()'
 assert_not_contains "netflow_setup_no_hup_kill" "$netflow_setup_content" 'kill -s HUP nister-nfcapd.service'
 assert_contains "netflow_setup_retention_cron" "$netflow_setup_content" 'RETENTION_CRON_FILE='
+assert_contains "netflow_setup_installs_drive_archive_script" "$netflow_setup_content" 'ARCHIVE_SCRIPT_SRC="$REPO_DIR/ops/netflow_archive_to_drive.php"'
+assert_contains "netflow_setup_enables_drive_archive_timer" "$netflow_setup_content" 'systemctl enable --now nister-netflow-archive.timer'
+
+drive_archive_content="$(cat pay-portal/lib/google_drive_archive.php pay-portal/admin/api.php pay-portal/admin/google_drive_callback.php ops/netflow_archive_to_drive.php)"
+assert_contains "drive_archive_uses_admin_oauth_cookie_state" "$drive_archive_content" 'nister_drive_oauth_state'
+assert_contains "drive_archive_uses_google_consent" "$drive_archive_content" 'https://accounts.google.com/o/oauth2/v2/auth'
+assert_contains "drive_archive_verifies_uploaded_file" "$drive_archive_content" 'gdrive_verify_uploaded_file'
+assert_contains "drive_archive_blocks_delete_without_existing_verify" "$drive_archive_content" 'existing_drive_file_verification_failed'
+assert_contains "drive_archive_deletes_after_verified_upload_only" "$drive_archive_content" 'local_delete_failed_after_verified_upload'
+assert_not_contains "drive_archive_no_terminal_only_rclone" "$drive_archive_content" 'rclone'
+
+health_content="$(cat pay-portal/lib/health.php pay-portal/cron/health_check.php pay-portal/admin/index.php)"
+assert_contains "health_records_disk_used_pct" "$health_content" 'disk_used_pct'
+assert_contains "health_records_disk_free_bytes" "$health_content" 'disk_free_bytes'
+assert_contains "health_inserts_disk_alerts" "$health_content" 'health_update_disk_alert'
+assert_contains "health_warns_before_disk_full" "$health_content" 'HEALTH_DISK_WARN_PCT'
+assert_contains "admin_overview_shows_disk_kpi" "$health_content" 'id="health_disk"'
 
 tunnel_watchdog_content="$(cat nister_tunnel_watchdog.sh)"
 assert_not_contains "watchdog_no_source_exec" "$tunnel_watchdog_content" 'source "$STATE_FILE"'

@@ -4,6 +4,12 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_SRC="$REPO_DIR/systemd/nister-nfcapd.service"
 SERVICE_DST="/etc/systemd/system/nister-nfcapd.service"
+ARCHIVE_SCRIPT_SRC="$REPO_DIR/ops/netflow_archive_to_drive.php"
+ARCHIVE_SCRIPT_DST="/usr/local/sbin/nister_netflow_archive_to_drive.php"
+ARCHIVE_SERVICE_SRC="$REPO_DIR/systemd/nister-netflow-archive.service"
+ARCHIVE_SERVICE_DST="/etc/systemd/system/nister-netflow-archive.service"
+ARCHIVE_TIMER_SRC="$REPO_DIR/systemd/nister-netflow-archive.timer"
+ARCHIVE_TIMER_DST="/etc/systemd/system/nister-netflow-archive.timer"
 ENV_FILE="/etc/default/nister-netflow"
 LOGROTATE_FILE="/etc/logrotate.d/nister-netflow"
 RETENTION_CRON_FILE="/etc/cron.daily/nister-netflow-retention"
@@ -175,6 +181,11 @@ fi
 
 install -d -o root -g "$NETFLOW_WEB_GROUP" -m 0750 "$NETFLOW_DIR"
 install -m 0644 "$SERVICE_SRC" "$SERVICE_DST"
+if [[ -f "$ARCHIVE_SCRIPT_SRC" && -f "$ARCHIVE_SERVICE_SRC" && -f "$ARCHIVE_TIMER_SRC" ]]; then
+  install -m 0755 "$ARCHIVE_SCRIPT_SRC" "$ARCHIVE_SCRIPT_DST"
+  install -m 0644 "$ARCHIVE_SERVICE_SRC" "$ARCHIVE_SERVICE_DST"
+  install -m 0644 "$ARCHIVE_TIMER_SRC" "$ARCHIVE_TIMER_DST"
+fi
 
 cat > "$LOGROTATE_FILE" <<EOF
 # nister-netflow
@@ -218,6 +229,9 @@ chmod 0755 "$RETENTION_CRON_FILE"
 
 systemctl daemon-reload
 systemctl enable --now nister-nfcapd.service
+if [[ -f "$ARCHIVE_SERVICE_DST" && -f "$ARCHIVE_TIMER_DST" ]]; then
+  systemctl enable --now nister-netflow-archive.timer
+fi
 systemctl restart nister-nfcapd.service
 
 echo "nister-nfcapd configured"

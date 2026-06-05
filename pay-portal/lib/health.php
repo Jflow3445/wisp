@@ -32,6 +32,11 @@ function health_bootstrap(PDO $pdo): void {
     ping_ms INT NULL,
     loss_pct INT NULL,
     speed_mbps DECIMAL(8,2) NULL,
+    disk_path VARCHAR(128) NULL,
+    disk_total_bytes BIGINT UNSIGNED NULL,
+    disk_used_bytes BIGINT UNSIGNED NULL,
+    disk_free_bytes BIGINT UNSIGNED NULL,
+    disk_used_pct DECIMAL(5,2) NULL,
     note VARCHAR(255) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_ts (ts),
@@ -48,13 +53,27 @@ function health_bootstrap(PDO $pdo): void {
     KEY idx_open (end_ts),
     KEY idx_start (start_ts)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+  foreach ([
+    'disk_path' => "ALTER TABLE health_samples ADD COLUMN disk_path VARCHAR(128) NULL",
+    'disk_total_bytes' => "ALTER TABLE health_samples ADD COLUMN disk_total_bytes BIGINT UNSIGNED NULL",
+    'disk_used_bytes' => "ALTER TABLE health_samples ADD COLUMN disk_used_bytes BIGINT UNSIGNED NULL",
+    'disk_free_bytes' => "ALTER TABLE health_samples ADD COLUMN disk_free_bytes BIGINT UNSIGNED NULL",
+    'disk_used_pct' => "ALTER TABLE health_samples ADD COLUMN disk_used_pct DECIMAL(5,2) NULL",
+  ] as $col => $sql) {
+    try {
+      if (!health_column_exists($pdo, 'health_samples', $col)) $pdo->exec($sql);
+    } catch (Throwable $e) {}
+  }
 }
 
 function health_insert_sample(PDO $pdo, array $s): void {
   health_bootstrap($pdo);
   $st = $pdo->prepare("INSERT INTO health_samples
-    (ts, overall_ok, radius_ok, radius_ms, coa_ok, coa_ms, tunnel_ok, route_dev, ping_ms, loss_pct, speed_mbps, note)
-    VALUES (:ts, :overall_ok, :radius_ok, :radius_ms, :coa_ok, :coa_ms, :tunnel_ok, :route_dev, :ping_ms, :loss_pct, :speed_mbps, :note)");
+    (ts, overall_ok, radius_ok, radius_ms, coa_ok, coa_ms, tunnel_ok, route_dev, ping_ms, loss_pct, speed_mbps,
+     disk_path, disk_total_bytes, disk_used_bytes, disk_free_bytes, disk_used_pct, note)
+    VALUES (:ts, :overall_ok, :radius_ok, :radius_ms, :coa_ok, :coa_ms, :tunnel_ok, :route_dev, :ping_ms, :loss_pct, :speed_mbps,
+     :disk_path, :disk_total_bytes, :disk_used_bytes, :disk_free_bytes, :disk_used_pct, :note)");
   $st->execute([
     ':ts' => $s['ts'],
     ':overall_ok' => $s['overall_ok'],
@@ -67,8 +86,109 @@ function health_insert_sample(PDO $pdo, array $s): void {
     ':ping_ms' => $s['ping_ms'],
     ':loss_pct' => $s['loss_pct'],
     ':speed_mbps' => $s['speed_mbps'],
+    ':disk_path' => $s['disk_path'] ?? null,
+    ':disk_total_bytes' => $s['disk_total_bytes'] ?? null,
+    ':disk_used_bytes' => $s['disk_used_bytes'] ?? null,
+    ':disk_free_bytes' => $s['disk_free_bytes'] ?? null,
+    ':disk_used_pct' => $s['disk_used_pct'] ?? null,
     ':note' => $s['note'],
   ]);
+}
+
+function health_disk_int(array $env, string $key, int $default, int $min, int $max): int {
+  $raw = trim((string)($env[$key] ?? (getenv($key) ?: ($_ENV[$key] ?? ''))));
+  $n = is_numeric($raw) ? (int)$raw : $default;
+  if ($n < $min) return $min;
+  if ($n > $max) return $max;
+  return $n;
+}
+
+function health_disk_snapshot(array $env): array {
+  $path = trim((string)($env['HEALTH_DISK_PATH'] ?? (getenv('HEALTH_DISK_PATH') ?: ($_ENV['HEALTH_DISK_PATH'] ?? '/'))));
+  if ($path === '') $path = '/';
+  $total = @disk_total_space($path);
+  $free = @disk_free_space($path);
+  if ($total === false || $free === false || (float)$total <= 0) {
+    return [
+      'disk_path' => $path,
+      'disk_total_bytes' => null,
+      'disk_used_bytes' => null,
+      'disk_free_bytes' => null,
+      'disk_used_pct' => null,
+      'disk_status' => 'unknown',
+      'disk_note' => 'disk_usage_unknown',
+    ];
+  }
+
+  $totalInt = (int)$total;
+  $freeInt = (int)$free;
+  $usedInt = max(0, $totalInt - $freeInt);
+  $pct = round(($usedInt / max(1, $totalInt)) * 100, 2);
+  $warnPct = health_disk_int($env, 'HEALTH_DISK_WARN_PCT', 85, 1, 99);
+  $criticalPct = health_disk_int($env, 'HEALTH_DISK_CRITICAL_PCT', 92, 1, 100);
+  if ($criticalPct < $warnPct) $criticalPct = $warnPct;
+  $minFreeBytes = health_disk_int($env, 'HEALTH_DISK_MIN_FREE_BYTES', 1073741824, 0, PHP_INT_MAX);
+
+  $status = 'ok';
+  $note = '';
+  if ($pct >= $criticalPct || ($minFreeBytes > 0 && $freeInt <= $minFreeBytes)) {
+    $status = 'critical';
+    $note = 'disk_critical';
+  } elseif ($pct >= $warnPct) {
+    $status = 'warning';
+    $note = 'disk_warning';
+  }
+
+  return [
+    'disk_path' => $path,
+    'disk_total_bytes' => $totalInt,
+    'disk_used_bytes' => $usedInt,
+    'disk_free_bytes' => $freeInt,
+    'disk_used_pct' => $pct,
+    'disk_status' => $status,
+    'disk_note' => $note,
+    'disk_warn_pct' => $warnPct,
+    'disk_critical_pct' => $criticalPct,
+    'disk_min_free_bytes' => $minFreeBytes,
+  ];
+}
+
+function health_disk_alert_message(array $s): string {
+  $pct = isset($s['disk_used_pct']) && $s['disk_used_pct'] !== null ? number_format((float)$s['disk_used_pct'], 2) . '%' : 'unknown';
+  $free = isset($s['disk_free_bytes']) && $s['disk_free_bytes'] !== null ? health_format_bytes((int)$s['disk_free_bytes']) : 'unknown';
+  $total = isset($s['disk_total_bytes']) && $s['disk_total_bytes'] !== null ? health_format_bytes((int)$s['disk_total_bytes']) : 'unknown';
+  $path = (string)($s['disk_path'] ?? '/');
+  return "Server disk {$path} is {$pct} used ({$free} free of {$total}).";
+}
+
+function health_format_bytes(int $bytes): string {
+  $units = ['B','KB','MB','GB','TB','PB'];
+  $v = (float)$bytes;
+  $i = 0;
+  while ($v >= 1024 && $i < count($units) - 1) {
+    $v /= 1024;
+    $i++;
+  }
+  $dec = $v >= 10 || $i === 0 ? 1 : 2;
+  return rtrim(rtrim(number_format($v, $dec, '.', ''), '0'), '.') . ' ' . $units[$i];
+}
+
+function health_update_disk_alert(PDO $pdo, array $s): void {
+  health_bootstrap($pdo);
+  alerts_bootstrap($pdo);
+  $status = (string)($s['disk_status'] ?? 'unknown');
+  if (!in_array($status, ['warning','critical'], true)) return;
+
+  $type = $status === 'critical' ? 'disk_critical' : 'disk_warning';
+  $st = $pdo->prepare("SELECT id FROM admin_alerts
+                       WHERE type=:type
+                         AND acked=0
+                         AND COALESCE(ts, created_at) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 6 HOUR)
+                       ORDER BY id DESC LIMIT 1");
+  $st->execute([':type'=>$type]);
+  if ($st->fetchColumn()) return;
+
+  alerts_insert($pdo, (string)($s['ts'] ?? date('Y-m-d H:i:s')), $type, null, health_disk_alert_message($s), null);
 }
 
 function health_update_events(PDO $pdo, array $s): void {

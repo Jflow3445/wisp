@@ -24,6 +24,17 @@ Implementation location is not the same as public responsibility. Some status
 code lives under `pay-portal/`, but the public hotspot API contract remains
 `api.nister.org`.
 
+## Forensic Log Boundaries
+
+- NetFlow files under `/var/log/netflow` are regulatory forensic records. Do not
+  delete, truncate, compress away, or shorten their retention just to reclaim
+  disk space.
+- Local NetFlow cleanup may only remove a capture after it has been uploaded to
+  the configured archive target and the uploaded object has been verified
+  against the local byte size and checksum.
+- The Google Drive archive is admin-controlled from `pay.nister.org/admin`.
+  Do not replace it with a terminal-only OAuth flow unless explicitly requested.
+
 ## Required Checks
 
 - Keep `hotspot/config.js` and `nister-org/public/router-sync/config.js`

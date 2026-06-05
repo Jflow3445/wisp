@@ -546,6 +546,7 @@ health_check.php collects and stores:
 - tunnel route and ping health
 - optional CoA probe success
 - optional download speed probe
+- root disk usage/free space for the server website stack
 
 Data goes to:
 - health_samples
@@ -555,6 +556,12 @@ Alerts:
 - admin_alerts table
 - alerts_hook endpoint can ingest external script/system alerts
 - shell scripts can post alert messages to ADMIN_ALERT_URL
+- disk_warning is raised when server disk usage reaches HEALTH_DISK_WARN_PCT
+  (default 85%).
+- disk_critical is raised when server disk usage reaches
+  HEALTH_DISK_CRITICAL_PCT (default 92%) or free space falls below
+  HEALTH_DISK_MIN_FREE_BYTES (default 1GB). Disk critical also marks the
+  health sample overall status as failed.
 
 
 18) FORENSICS / NETFLOW
@@ -571,6 +578,19 @@ MikroTik exporter setup command reference is in:
 Forensic exports:
 - admin/traffic_export.php
 - uses nfdump and radacct session mapping (optionally location-scoped).
+
+Google Drive archival:
+- pay.nister.org/admin Settings includes Google Drive forensic archive controls.
+- Admin saves a Google OAuth web client ID/secret, then uses Connect Google
+  Drive to grant normal Google consent.
+- The hourly nister-netflow-archive.timer runs
+  /usr/local/sbin/nister_netflow_archive_to_drive.php.
+- The worker skips all work until NETFLOW_DRIVE_ARCHIVE_ENABLED is enabled and
+  Google Drive is connected.
+- Local NetFlow files are deleted only when
+  NETFLOW_ARCHIVE_DELETE_AFTER_UPLOAD is enabled and Drive verification matches
+  the local file size and MD5 checksum.
+- Archive records are written to netflow_drive_archive for audit traceability.
 
 
 19) ROUTER (MIKROTIK) REQUIRED CONFIG (CONCEPTUAL)
