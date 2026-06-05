@@ -1,0 +1,8 @@
+[Unit]
+Description=NISTER NetFlow Google Drive archive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nister_netflow_archive_to_drive.sh

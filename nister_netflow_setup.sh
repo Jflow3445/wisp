@@ -192,9 +192,25 @@ set -eu
 NETFLOW_DIR="${NETFLOW_DIR}"
 RETENTION_DAYS="${NETFLOW_RETENTION_DAYS}"
 
+capture_list() {
+  find "\$NETFLOW_DIR" -maxdepth 1 -type f -name 'nfcapd.[0-9]*' -printf '%f\\t%s\\t%p\\n' |
+    awk -F '\\t' '
+      {
+        name=\$1
+        stamp=name
+        sub(/^nfcapd\\./, "", stamp)
+        sub(/\\..*$/, "", stamp)
+        if (stamp ~ /^[0-9]{12}\$/) print stamp "\\t" \$2 "\\t" \$3
+      }
+    '
+}
+
 if [ -d "\$NETFLOW_DIR" ]; then
-  find "\$NETFLOW_DIR" -maxdepth 1 -type f -regextype posix-extended \\
-    -regex '.*/nfcapd\\.[0-9]{12}\$' -mtime +"\$RETENTION_DAYS" -delete
+  cutoff="\$(date -u -d "\$RETENTION_DAYS days ago" +%Y%m%d%H%M)"
+  capture_list | awk -F '\\t' -v cutoff="\$cutoff" '\$1 < cutoff { print \$3 }' |
+    while IFS= read -r file; do
+      rm -f -- "\$file"
+    done
 fi
 EOF
 chown root:root "$RETENTION_CRON_FILE"

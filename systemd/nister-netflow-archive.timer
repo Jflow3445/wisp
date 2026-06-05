@@ -1,0 +1,12 @@
+[Unit]
+Description=Run NISTER NetFlow Google Drive archive periodically
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=1h
+RandomizedDelaySec=5m
+Persistent=true
+Unit=nister-netflow-archive.service
+
+[Install]
+WantedBy=timers.target
