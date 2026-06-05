@@ -72,7 +72,8 @@ function paystack_callback_url(): string {
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
       || strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
     $host = (string)($_SERVER['HTTP_HOST'] ?? 'pay.nister.org');
-    $base = ($https ? 'https://' : 'http://') . $host;
+    if ($host === '' || $host === 'localhost') $host = 'pay.nister.org';
+    $base = (($https || preg_match('/(^|\.)nister\.org$/i', $host)) ? 'https://' : 'http://') . $host;
   }
   return rtrim($base, '/') . '/paystack_callback.php';
 }
@@ -235,6 +236,23 @@ function paystack_verify_transaction(string $reference): array {
   return paystack_api_request('GET', '/transaction/verify/' . rawurlencode($reference));
 }
 
+function paystack_terminal_failure_statuses(): array {
+  return ['failed', 'reversed', 'abandoned'];
+}
+
+function paystack_pending_gateway_statuses(): array {
+  return ['pending', 'ongoing', 'processing', 'queued'];
+}
+
+function paystack_verify_webhook_signature(string $rawBody, string $signature): bool {
+  $signature = strtolower(trim($signature));
+  if ($rawBody === '' || $signature === '') return false;
+  $secret = paystack_secret_key();
+  if ($secret === '') return false;
+  $expected = hash_hmac('sha512', $rawBody, $secret);
+  return hash_equals($expected, $signature);
+}
+
 function paystack_verify_and_credit(string $reference): array {
   if (!paystack_checkout_enabled()) throw new RuntimeException('paystack_disabled');
 
@@ -270,7 +288,7 @@ function paystack_verify_and_credit(string $reference): array {
   if (!empty($data['gateway_response'])) $notes .= '; gateway: ' . (string)$data['gateway_response'];
 
   if ($gatewayStatus !== 'success') {
-    if (in_array($gatewayStatus, ['failed','reversed'], true) && is_array($row) && (string)($row['status'] ?? '') !== 'approved') {
+    if (in_array($gatewayStatus, paystack_terminal_failure_statuses(), true) && is_array($row) && (string)($row['status'] ?? '') !== 'approved') {
       nister_payment_mark_declined($gatewayRef, $notes, 'paystack');
     }
     return [
@@ -323,4 +341,69 @@ function paystack_verify_and_credit(string $reference): array {
     'currency' => $gatewayCurrency ?: $currency,
     'gateway_status' => $gatewayStatus,
   ];
+}
+
+function paystack_reconcile_pending(int $limit = 25, int $minAgeSeconds = 60): array {
+  global $PDO;
+  $limit = max(1, min(100, $limit));
+  $minAgeSeconds = max(0, min(86400, $minAgeSeconds));
+  $out = [
+    'checked' => 0,
+    'credited' => 0,
+    'declined' => 0,
+    'pending' => 0,
+    'errors' => 0,
+    'rows' => [],
+  ];
+  if (!nister_payments_table_exists()) return $out;
+
+  $whereAge = $minAgeSeconds > 0
+    ? "AND created_at <= DATE_SUB(NOW(), INTERVAL {$minAgeSeconds} SECOND)"
+    : "";
+  $sql = "SELECT ref, status, created_at
+          FROM payments
+          WHERE status='pending'
+            AND method='paystack'
+            {$whereAge}
+          ORDER BY id ASC
+          LIMIT :lim";
+  $st = $PDO->prepare($sql);
+  $st->bindValue(':lim', $limit, PDO::PARAM_INT);
+  $st->execute();
+  $refs = $st->fetchAll(PDO::FETCH_COLUMN, 0) ?: [];
+
+  foreach ($refs as $rawRef) {
+    $ref = trim((string)$rawRef);
+    if ($ref === '') continue;
+    $out['checked']++;
+    try {
+      $before = nister_payment_find($ref);
+      $result = paystack_verify_and_credit($ref);
+      $after = nister_payment_find((string)($result['reference'] ?? $ref));
+      $gatewayStatus = strtolower((string)($result['gateway_status'] ?? ''));
+      $rowStatus = is_array($after) ? strtolower((string)($after['status'] ?? '')) : '';
+      if (!empty($result['credited']) || $rowStatus === 'approved') {
+        $out['credited']++;
+      } elseif ($rowStatus === 'declined' || in_array($gatewayStatus, paystack_terminal_failure_statuses(), true)) {
+        $out['declined']++;
+      } else {
+        $out['pending']++;
+      }
+      $out['rows'][] = [
+        'ref' => $ref,
+        'gateway_status' => $gatewayStatus,
+        'before_status' => is_array($before) ? (string)($before['status'] ?? '') : '',
+        'after_status' => $rowStatus,
+      ];
+    } catch (Throwable $e) {
+      $out['errors']++;
+      $out['rows'][] = [
+        'ref' => $ref,
+        'error' => $e->getMessage(),
+      ];
+      error_log('[paystack_reconcile] ref=' . $ref . ' err=' . $e->getMessage());
+    }
+  }
+
+  return $out;
 }

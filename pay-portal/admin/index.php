@@ -2189,6 +2189,11 @@ function exportTraffic(mode, requireUser){
 }
 
 function rowHTML(p){
+  const method = String(p.method || '').toLowerCase();
+  const actionHTML = method === 'paystack'
+    ? `<button class="btn small approve" data-act="verify" data-ref="${safe(p.ref)}">Verify status</button>`
+    : `<button class="btn small approve" data-act="approve" data-ref="${safe(p.ref)}">Approve</button>
+      <button class="btn small decline" data-act="decline" data-ref="${safe(p.ref)}">Decline</button>`;
   return `<tr>
     <td>${safe(p.ref)}</td>
     <td>${safe(p.msisdn)}</td>
@@ -2198,8 +2203,7 @@ function rowHTML(p){
     <td>${safe(p.notes||'')}</td>
     <td>${safe(p.created_at||'')}</td>
     <td>
-      <button class="btn small approve" data-act="approve" data-ref="${safe(p.ref)}">Approve</button>
-      <button class="btn small decline" data-act="decline" data-ref="${safe(p.ref)}">Decline</button>
+      ${actionHTML}
     </td>
   </tr>`;
 }
@@ -2817,7 +2821,7 @@ async function loadPending(){
     btn.addEventListener('click', async (ev)=>{
       const ref = ev.currentTarget.getAttribute('data-ref');
       const act = ev.currentTarget.getAttribute('data-act');
-      const notes = prompt(`${act.toUpperCase()} notes (optional):`, '');
+      const notes = act === 'verify' ? '' : prompt(`${act.toUpperCase()} notes (optional):`, '');
       if (notes === null) return; // user cancelled
       const body = { ref, action: act, notes };
       const res = await api('decision', body);
@@ -2828,7 +2832,11 @@ async function loadPending(){
           alert(res.sms_warning || 'Decision saved, but SMS could not be delivered.');
         }
       }else{
-        alert(res.error || 'Action failed');
+        if (res.error === 'paystack_not_complete') {
+          alert(`Paystack has not confirmed this checkout yet. Status: ${res.gateway_status || 'unknown'}`);
+        } else {
+          alert(res.error || 'Action failed');
+        }
       }
     });
   });

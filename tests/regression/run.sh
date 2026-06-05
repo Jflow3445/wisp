@@ -334,6 +334,15 @@ assert_contains "hotspot_cookie_cleanup_removes_router_cookies" "$cookie_cleanup
 assert_contains "quota_enforce_clears_cookies_before_kick" "$cookie_cleanup_content" 'clear_hotspot_cookies'
 assert_contains "admin_limited_paths_clear_cookies" "$cookie_cleanup_content" 'radius_clear_hotspot_cookies'
 
+paystack_content="$(cat pay-portal/lib/paystack.php pay-portal/paystack_webhook.php pay-portal/cron/paystack_reconcile.php pay-portal/admin/api.php pay-portal/admin/index.php)"
+assert_contains "paystack_callback_defaults_https" "$paystack_content" "preg_match('/(^|\\.)nister\\.org$/i', \$host)"
+assert_contains "paystack_webhook_validates_signature" "$paystack_content" 'paystack_verify_webhook_signature'
+assert_contains "paystack_reconcile_closes_abandoned" "$paystack_content" "'failed', 'reversed', 'abandoned'"
+assert_contains "paystack_reconcile_cron_exists" "$paystack_content" 'paystack_reconcile_pending($limit, $minAge)'
+assert_contains "paystack_admin_reconciles_pending_list" "$paystack_content" 'paystack_reconcile_pending(3, 120)'
+assert_contains "paystack_admin_uses_gateway_verification" "$paystack_content" "if (\$method === 'paystack')"
+assert_contains "paystack_admin_ui_no_manual_approve" "$paystack_content" 'data-act="verify"'
+
 winbox_check_content="$(cat ops/check_winbox_tunnel.sh)"
 assert_contains "winbox_check_uses_winbox_port" "$winbox_check_content" 'WINBOX_PORT="${WINBOX_PORT:-8291}"'
 assert_contains "winbox_check_documents_local_forward" "$winbox_check_content" '127.0.0.1:18291'

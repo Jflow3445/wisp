@@ -6,6 +6,7 @@ require_once __DIR__.'/../lib/radius.php';
 require_once __DIR__.'/../lib/plans_radius.php';
 require_once __DIR__.'/../lib/common.php';
 require_once __DIR__.'/../lib/settings.php';
+require_once __DIR__.'/../lib/paystack.php';
 require_once __DIR__.'/../lib/alerts.php';
 require_once __DIR__.'/../lib/health.php';
 require_once __DIR__.'/../lib/forensics.php';
@@ -881,6 +882,9 @@ try {
         }
         if (($value === null || $value === '') && $k === 'PAYSTACK_CURRENCY') {
           $value = admin_env_value(['PAYSTACK_CURRENCY','CURRENCY'], 'GHS');
+        }
+        if (($value === null || $value === '') && $k === 'PAYSTACK_CALLBACK_URL') {
+          $value = paystack_callback_url();
         }
         if (($value === null || $value === '') && $k === 'GOOGLE_DRIVE_CLIENT_ID') {
           $value = admin_env_value(['GOOGLE_DRIVE_CLIENT_ID']);
@@ -1780,6 +1784,13 @@ try {
         break;
       }
       $locationId = isset($scope['location_id']) && $scope['location_id'] !== null ? (int)$scope['location_id'] : null;
+      $paystackReconcile = null;
+      try {
+        $paystackReconcile = paystack_reconcile_pending(3, 120);
+      } catch (Throwable $e) {
+        error_log('[admin/api pending paystack_reconcile] err=' . $e->getMessage());
+        $paystackReconcile = ['error'=>'paystack_reconcile_failed'];
+      }
 
       if ($locationId === null || !column_exists($PDO, 'payments', 'msisdn')) {
         $st = $PDO->query("
@@ -1789,7 +1800,7 @@ try {
           ORDER BY id DESC
           LIMIT 200
         ");
-        echo json_encode(['ok'=>true,'pending'=>$st->fetchAll(), 'location_id'=>$locationId]);
+        echo json_encode(['ok'=>true,'pending'=>$st->fetchAll(), 'location_id'=>$locationId, 'paystack_reconcile'=>$paystackReconcile]);
         break;
       }
 
@@ -1811,7 +1822,7 @@ try {
       }
       $vals = array_values(array_filter(array_keys($variants)));
       if (!$vals) {
-        echo json_encode(['ok'=>true,'pending'=>[], 'location_id'=>$locationId]);
+        echo json_encode(['ok'=>true,'pending'=>[], 'location_id'=>$locationId, 'paystack_reconcile'=>$paystackReconcile]);
         break;
       }
       $ph = [];
@@ -1830,7 +1841,7 @@ try {
       ";
       $st = $PDO->prepare($sql);
       $st->execute($bind);
-      echo json_encode(['ok'=>true,'pending'=>$st->fetchAll(), 'location_id'=>$locationId]);
+      echo json_encode(['ok'=>true,'pending'=>$st->fetchAll(), 'location_id'=>$locationId, 'paystack_reconcile'=>$paystackReconcile]);
       break;
     }
 
@@ -1839,7 +1850,7 @@ try {
       $act   = strtolower(trim((string)($in['action'] ?? '')));
       $notes = trim((string)($in['notes'] ?? ''));
 
-      if ($ref === '' || !in_array($act, ['approve','decline'], true)) {
+      if ($ref === '' || !in_array($act, ['approve','decline','verify'], true)) {
         http_response_code(400);
         echo json_encode(['ok'=>false,'error'=>'bad_request']); break;
       }
@@ -1879,6 +1890,61 @@ try {
             'sms_template_source'=>null,
           ]);
           if ($outerStarted) $PDO->commit();
+          break;
+        }
+
+        $method = strtolower(trim((string)($row['method'] ?? '')));
+        if ($method === 'paystack') {
+          if ($outerStarted && $PDO->inTransaction()) $PDO->rollBack();
+          try {
+            $result = paystack_verify_and_credit($ref);
+            $gatewayStatus = strtolower((string)($result['gateway_status'] ?? ''));
+            $paymentAfter = nister_payment_find((string)($result['reference'] ?? $ref));
+            $rowStatus = is_array($paymentAfter) ? strtolower((string)($paymentAfter['status'] ?? '')) : '';
+            if (!empty($result['credited']) || $rowStatus === 'approved') {
+              echo json_encode([
+                'ok'=>true,
+                'ref'=>$ref,
+                'status'=>'approved',
+                'gateway_status'=>$gatewayStatus,
+                'sms_attempted'=>false,
+                'sms_sent'=>false,
+                'sms_template_source'=>null,
+              ]);
+              break;
+            }
+            if ($rowStatus === 'declined' || in_array($gatewayStatus, paystack_terminal_failure_statuses(), true)) {
+              echo json_encode([
+                'ok'=>true,
+                'ref'=>$ref,
+                'status'=>'declined',
+                'gateway_status'=>$gatewayStatus,
+                'sms_attempted'=>false,
+                'sms_sent'=>false,
+                'sms_template_source'=>null,
+              ]);
+              break;
+            }
+            http_response_code(409);
+            echo json_encode([
+              'ok'=>false,
+              'error'=>'paystack_not_complete',
+              'ref'=>$ref,
+              'gateway_status'=>$gatewayStatus,
+              'detail'=>'Paystack has not confirmed this checkout as successful.',
+            ]);
+            break;
+          } catch (Throwable $e) {
+            error_log('[admin/api decision paystack_verify] ref=' . $ref . ' err=' . $e->getMessage());
+            http_response_code(502);
+            echo json_encode(['ok'=>false,'error'=>'paystack_verify_failed','detail'=>$e->getMessage()]);
+            break;
+          }
+        }
+        if ($act === 'verify') {
+          if ($outerStarted && $PDO->inTransaction()) $PDO->rollBack();
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'verify_only_supported_for_paystack']);
           break;
         }
 

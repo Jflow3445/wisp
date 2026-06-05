@@ -24,6 +24,25 @@ Implementation location is not the same as public responsibility. Some status
 code lives under `pay-portal/`, but the public hotspot API contract remains
 `api.nister.org`.
 
+## Hotspot User Experience Contract
+
+- Paid users should experience NISTER Wi-Fi like normal internet after their
+  first successful login on a device. Do not force repeated captive portal login
+  for users who are still `HS_ACTIVE` with valid quota/time.
+- The captive portal should interrupt a known device only when access state
+  requires it: data exhausted, plan expired, admin restriction, password/account
+  issue, or device identity changed because the client presents a new MAC.
+- Preserve remembered-device login on the active hotspot path:
+  `login-by=mac-cookie,http-chap,https` must remain enabled on the active
+  MikroTik hotspot profile.
+- Only paid/active user profiles should keep a long mac-cookie timeout. Blocked,
+  default, limited, and nopaid profiles must use zero-duration cookies so users
+  are not silently remembered into a blocked state.
+- When moving a user away from `HS_ACTIVE` to `HS_LIMITED` or `HS_NOPAID`, clear
+  their MikroTik hotspot cookies before/with disconnect. Expired or exhausted
+  users must be asked to top up or log in again; stale cookies must not bypass
+  billing.
+
 ## Forensic Log Boundaries
 
 - NetFlow files under `/var/log/netflow` are regulatory forensic records. Do not
@@ -34,6 +53,17 @@ code lives under `pay-portal/`, but the public hotspot API contract remains
   against the local byte size and checksum.
 - The Google Drive archive is admin-controlled from `pay.nister.org/admin`.
   Do not replace it with a terminal-only OAuth flow unless explicitly requested.
+
+## Payment Boundaries
+
+- Manual MoMo payments may require admin approval because the admin is verifying
+  an external transfer manually.
+- Paystack/MoMo Pay checkout attempts must never be credited through the manual
+  admin approval path. They may only credit wallet balance after Paystack
+  verification confirms `success`, via callback, webhook, or scheduled
+  reconciliation.
+- Pending Paystack attempts that verify as `failed`, `reversed`, or `abandoned`
+  should be closed as declined, not left in the manual deposit review queue.
 
 ## Required Checks
 
@@ -50,15 +80,6 @@ code lives under `pay-portal/`, but the public hotspot API contract remains
   `443`. Keep `/ip service winbox` on port `8291` restricted to
   `10.99.99.1/32`, and keep the input firewall allow rule from
   `10.99.99.1` over `l2tp-over-vps` to TCP `8291` before the WAN drop rule.
-- Preserve captive portal opening and remembered-device compatibility. Active
-  MikroTik hotspot profiles must allow `login-by=mac-cookie,http-chap,https`,
-  so valid paid devices can reconnect without repeated login while plain HTTP
-  CAPPORT/login and HTTPS login remain available. Only paid/active user profiles
-  should keep a long mac-cookie timeout; blocked/default profiles should use a
-  zero-duration cookie so they do not create remembered blocked sessions. When
-  moving a user to `HS_LIMITED` or `HS_NOPAID`, clear their MikroTik hotspot
-  cookies before/with disconnect so stale remembered access cannot bypass expiry
-  or exhaustion.
 - Run `ops/check_winbox_tunnel.sh` after touching VPN, tunnel watchdog,
   router catch-up, MikroTik `/ip service`, or input firewall rules.
 - If deploying captive files, verify the MikroTik file size/timestamp after
