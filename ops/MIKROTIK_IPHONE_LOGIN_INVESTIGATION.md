@@ -10,7 +10,8 @@ Purpose: preserve the known-good state while investigating iPhone-only login com
 - VPS services checked active: `freeradius`, `mariadb`, `apache2`, `nister-mikrotik-guard.timer`, `nister-router-catchup.timer`.
 - `nister-mikrotik-guard.service` and `nister-router-catchup.service` last showed `Result=success`, `ExecMainStatus=0`.
 - RouterOS version observed: `7.20.2`.
-- Hotspot profile `hsprof` is HTTPS-only: `login-by=https`.
+- Hotspot profile `hsprof` should allow both plain captive HTTP CHAP and HTTPS
+  login: `login-by=http-chap,https`.
 - Active hotspot certificate: `wifi_nister_org_hotspot_auto_leaf`, SAN includes `wifi.nister.org`, expires `2026-07-26 02:41:11`.
 - DHCP option `capport` is attached to the hotspot DHCP network.
 - DHCP CAPPORT URL is `https://wifi.nister.org/api.json?v=20260601-remote-refresh`.
@@ -25,7 +26,7 @@ Purpose: preserve the known-good state while investigating iPhone-only login com
 
 ## iPhone-Focused Hypothesis
 
-The router, RADIUS, CAPPORT, DNS, and Android/laptop login paths are healthy. The likely iPhone-specific failure is in the captive browser/login-page flow.
+The router, RADIUS, CAPPORT, DNS, and Android/laptop login paths are healthy. If iPhone captive browser opening is unreliable, first verify `hsprof` is not HTTPS-only; OS captive portal flows need the plain HTTP router-local login path to work.
 
 The hotspot login page previously used hidden iframe login attempts first, with top-level login only as a later fallback. iOS captive portal browsers are stricter than normal browsers and can stall on hidden-frame login flows. The targeted compatibility change is to use a top-level HTTPS form post immediately for iPhone/iPad/iPod user agents while preserving the existing hidden-frame flow for Android and laptops.
 
@@ -33,6 +34,7 @@ The hotspot login page previously used hidden iframe login attempts first, with 
 
 - Confirm Android/laptop users still show active sessions after any iPhone-specific page change.
 - Confirm `capport` remains `https://wifi.nister.org/api.json?v=20260601-remote-refresh`.
-- Confirm `wifi_nister_org_hotspot_auto_leaf` remains the active `hsprof` certificate.
+- Confirm `wifi_nister_org_hotspot_auto_leaf` remains the active `hsprof`
+  certificate and `login-by=http-chap,https` remains set.
 - Confirm `ether3` and `ether4` remain running.
 - Confirm new iPhone attempts create RADIUS access/accounting activity or router hotspot active rows.

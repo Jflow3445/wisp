@@ -50,6 +50,9 @@ code lives under `pay-portal/`, but the public hotspot API contract remains
   `443`. Keep `/ip service winbox` on port `8291` restricted to
   `10.99.99.1/32`, and keep the input firewall allow rule from
   `10.99.99.1` over `l2tp-over-vps` to TCP `8291` before the WAN drop rule.
+- Preserve captive portal opening compatibility. Active MikroTik hotspot
+  profiles must allow `login-by=http-chap,https`, so plain HTTP CAPPORT/login
+  opens locally while HTTPS login remains available.
 - Run `ops/check_winbox_tunnel.sh` after touching VPN, tunnel watchdog,
   router catch-up, MikroTik `/ip service`, or input firewall rules.
 - If deploying captive files, verify the MikroTik file size/timestamp after

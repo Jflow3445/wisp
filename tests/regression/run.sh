@@ -322,6 +322,8 @@ assert_contains "router_catchup_capport_url_sanitized" "$router_catchup_content"
 assert_contains "router_catchup_winbox_port_guardrail" "$router_catchup_content" 'WINBOX_PORT="${WINBOX_PORT:-8291}"'
 assert_contains "router_catchup_winbox_firewall_guardrail" "$router_catchup_content" 'Allow Winbox from VPS over L2TP'
 assert_contains "router_catchup_management_refresh_logged" "$router_catchup_content" 'action=management_refreshed'
+assert_contains "router_catchup_enables_http_chap_login" "$router_catchup_content" 'login-by=http-chap,https'
+assert_contains "router_catchup_logs_hotspot_login_refresh" "$router_catchup_content" 'action=hotspot_login_refreshed'
 
 winbox_check_content="$(cat ops/check_winbox_tunnel.sh)"
 assert_contains "winbox_check_uses_winbox_port" "$winbox_check_content" 'WINBOX_PORT="${WINBOX_PORT:-8291}"'

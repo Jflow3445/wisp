@@ -132,6 +132,7 @@ Expected log messages include:
 
 - `status=ok action=self_heal_installed`
 - `status=ok action=radius_refreshed`
+- `status=ok action=hotspot_login_refreshed`
 - `status=ok action=captive_refreshed`
 - `status=done hotspot_sync=skipped`
 
@@ -139,6 +140,18 @@ Verify:
 
 ```bash
 ops/router_exec.sh '/radius print detail; /radius monitor [find] once; /ip dhcp-server option print detail where name="capport"; /ip firewall address-list print detail where list="HG3_WG_DST"'
+```
+
+Also verify the active hotspot profile is not HTTPS-only:
+
+```bash
+ops/router_exec.sh '/ip hotspot profile print detail where name="hsprof"'
+```
+
+Expected profile setting:
+
+```text
+login-by=http-chap,https
 ```
 
 If `HG3_WG_DST` contains `captive.apple.com`, `connectivitycheck.gstatic.com`, `connectivitycheck.android.com`, `clients3.google.com`, `www.msftconnecttest.com`, `ipv6.msftconnecttest.com`, or `www.msftncsi.com`, remove those entries. They suppress the OS captive portal popup.
