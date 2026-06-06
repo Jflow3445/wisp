@@ -331,6 +331,17 @@ assert_contains "router_catchup_ssh_server_alive" "$router_catchup_content" 'Ser
 assert_contains "router_catchup_parses_colon_uptime" "$router_catchup_content" '([0-9]+):([0-9]{2}):([0-9]{2})'
 assert_contains "router_catchup_success_throttle_30m" "$router_catchup_content" 'MIN_SUCCESS_INTERVAL_SEC="${MIN_SUCCESS_INTERVAL_SEC:-1800}"'
 
+ap_phy_guard_content="$(cat ops/install_ap_phy_guard.sh)"
+assert_contains "ap_phy_guard_installs_named_script" "$ap_phy_guard_content" 'GUARD_NAME="${GUARD_NAME:-nister_ap_phy_guard}"'
+assert_contains "ap_phy_guard_scoped_to_ether3" "$ap_phy_guard_content" ':local p "ether3";'
+assert_contains "ap_phy_guard_scoped_to_ether4" "$ap_phy_guard_content" ':local p "ether4";'
+assert_contains "ap_phy_guard_rate_limits_retries" "$ap_phy_guard_content" ':local maxFail 3;'
+assert_contains "ap_phy_guard_uses_hold_cycles" "$ap_phy_guard_content" ':local holdCycles 6;'
+assert_contains "ap_phy_guard_replaces_old_ether4_only_guard" "$ap_phy_guard_content" 'nister_ether4_phy_self_heal'
+assert_not_contains "ap_phy_guard_must_not_touch_wan" "$ap_phy_guard_content" 'ether1'
+assert_not_contains "ap_phy_guard_must_not_touch_l2tp" "$ap_phy_guard_content" 'l2tp-over-vps'
+assert_not_contains "ap_phy_guard_must_not_touch_winbox" "$ap_phy_guard_content" '8291'
+
 cookie_cleanup_content="$(cat ops/clear_hotspot_cookies.sh nister_quota_enforce.sh nister_user_admin.sh nister_set_policy_and_kick.sh pay-portal/lib/radius.php pay-portal/admin/api.php)"
 assert_contains "hotspot_cookie_cleanup_helper_validates_users" "$cookie_cleanup_content" '^[0-9]{9,12}$'
 assert_contains "hotspot_cookie_cleanup_removes_router_cookies" "$cookie_cleanup_content" '/ip hotspot cookie remove'

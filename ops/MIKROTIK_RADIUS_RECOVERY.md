@@ -197,12 +197,14 @@ Then sample again after at least one minute. The reset helped only if the
 ops/router_exec.sh ':put "POST_PHY_RESET_SAMPLE"; /interface print detail where name~"ether3|ether4"; /interface ethernet monitor ether3 once; /interface ethernet monitor ether4 once; /log print where message~"ether3|ether4|link down|link up|loop|bpdu"'
 ```
 
-As of 2026-06-06 the router also has `nister_ether4_phy_self_heal`, a narrow
-MikroTik scheduler that checks only `ether4` every five minutes and bounces it
-only when the port is enabled but not running. Verify it with:
+As of 2026-06-06 the router also has `nister_ap_phy_guard`, installed by
+`ops/install_ap_phy_guard.sh`. It watches the AP-facing ports `ether3` and
+`ether4` every five minutes, resets only the port that is down or rapidly
+flapping, and rate-limits itself after repeated failures so a genuinely bad AP
+or cable does not get power-cycled forever. Verify it with:
 
 ```bash
-ops/router_exec.sh '/system scheduler print detail where name="nister_ether4_phy_self_heal"; /system script print detail where name="nister_ether4_phy_self_heal"'
+ops/router_exec.sh '/system scheduler print detail where name="nister_ap_phy_guard"; /system script print detail where name="nister_ap_phy_guard"; /system script environment print detail where name~"napgE3|napgE4"'
 ```
 
 Avoid the old broad AP bounce pattern unless you have confirmed both AP uplinks

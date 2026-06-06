@@ -802,6 +802,7 @@ Symptom: AP-facing MikroTik port repeatedly logs link down/link up
 - Use ops/MIKROTIK_RADIUS_RECOVERY.md, section "AP-facing Ethernet flapping / PHY reset".
 - Identify the affected port first; do not bounce ether3 and ether4 together unless both are confirmed unstable.
 - If only one port is flapping and loop/BPDU logs are clean, try a controlled single-port PHY reset and verify the link-down counter stops increasing.
+- `nister_ap_phy_guard` should be present on the router to watch ether3/ether4 and reset only the affected AP-facing port.
 
 Symptom: Accounting gaps
 - Check router RADIUS accounting backup behavior and timeout settings.

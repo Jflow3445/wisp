@@ -42,6 +42,12 @@ Run the live MikroTik reliability guard once:
 ops/vps_exec.sh 'systemctl start nister-mikrotik-guard.service; systemctl show nister-mikrotik-guard.service -p Result -p ExecMainStatus'
 ```
 
+Install or refresh the AP-facing Ethernet PHY guard for `ether3` and `ether4`:
+
+```bash
+ops/install_ap_phy_guard.sh
+```
+
 Push hotspot files to router (`flash/hotspot/...`):
 
 ```bash
