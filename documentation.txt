@@ -798,6 +798,11 @@ Symptom: Wi-Fi joins but captive login page does not pop or keeps loading
 - Use ops/MIKROTIK_RADIUS_RECOVERY.md.
 - Check CAPPORT, HG3_WG_DST captive probe domain entries, tunnel routes, and RADIUS monitor output.
 
+Symptom: AP-facing MikroTik port repeatedly logs link down/link up
+- Use ops/MIKROTIK_RADIUS_RECOVERY.md, section "AP-facing Ethernet flapping / PHY reset".
+- Identify the affected port first; do not bounce ether3 and ether4 together unless both are confirmed unstable.
+- If only one port is flapping and loop/BPDU logs are clean, try a controlled single-port PHY reset and verify the link-down counter stops increasing.
+
 Symptom: Accounting gaps
 - Check router RADIUS accounting backup behavior and timeout settings.
 - Check radacct cleanup activity.

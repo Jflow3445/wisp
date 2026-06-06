@@ -168,13 +168,46 @@ ops/router_exec.sh ':do { /ip dhcp-server option set [find where name="capport"]
 
 This does not clear the private cache inside every phone OS, but it forces the router to rediscover unauthenticated clients and gives renewing clients a fresh CAPPORT URL without interrupting authenticated users.
 
-If users are still stuck and a short AP interruption is acceptable, bounce the AP-facing bridge ports. As of 2026-06-01 the affected AP uplinks were `ether3` and `ether4`:
+### AP-facing Ethernet flapping / PHY reset
+
+Do not assume every AP-facing link flap is a dead cable or failed AP. On
+2026-06-06 `ether4` entered a rapid carrier up/down loop while `ether3`,
+`l2tp-over-vps`, CPU, switch rules, bridge state, BPDU guard, and loop-protect
+were clean. A controlled MikroTik-side PHY reset recovered the link:
+disable only the affected port for five seconds, then re-enable it.
+
+First identify the affected port and whether RouterOS is seeing real carrier
+loss:
 
 ```bash
-ops/router_exec.sh ':put "AP_PORT_BOUNCE_START"; :foreach p in={"ether3";"ether4"} do={ :do { /interface disable [find where name=$p]; :put ("DISABLED=" . $p) } on-error={ :put ("DISABLE_FAILED=" . $p) } }; :delay 8s; :foreach p in={"ether3";"ether4"} do={ :do { /interface enable [find where name=$p]; :put ("ENABLED=" . $p) } on-error={ :put ("ENABLE_FAILED=" . $p) } }; :delay 10s; :put "AP_PORT_BOUNCE_DONE"; /interface print detail where name="ether3"; /interface print detail where name="ether4"; /ip hotspot host print count-only; /ip hotspot active print count-only'
+ops/router_exec.sh ':put "AP_PORT_LINK_CHECK"; /interface print detail where name~"ether3|ether4|l2tp-over-vps"; /interface ethernet monitor ether3 once; /interface ethernet monitor ether4 once; /interface ethernet print stats-detail where name~"ether3|ether4"; /interface bridge port monitor [find where interface="ether3"] once; /interface bridge port monitor [find where interface="ether4"] once; /log print where message~"ether3|ether4|loop|bpdu|link down|link up|disabled|enabled"'
 ```
 
-Only use this after confirming the AP-facing ports from `/ip hotspot host print detail` or `/interface bridge port print detail`; bouncing the wrong port can interrupt unrelated traffic.
+If one AP-facing port is repeatedly `link down` / `link up` and no loop/BPDU
+event explains it, reset only that port. Example for `ether4`:
+
+```bash
+ops/router_exec.sh ':local p "ether4"; :put ("PORT_PHY_RESET_START=" . $p); :local i [/interface find where name=$p]; :if ([:len $i] = 0) do={ :error ("missing " . $p) }; /interface disable $i; :delay 5; /interface enable $i; :delay 20; /interface ethernet monitor $p once; /interface print detail where name=$p'
+```
+
+Then sample again after at least one minute. The reset helped only if the
+`link-downs` counter stops increasing and the port remains `link-ok`:
+
+```bash
+ops/router_exec.sh ':put "POST_PHY_RESET_SAMPLE"; /interface print detail where name~"ether3|ether4"; /interface ethernet monitor ether3 once; /interface ethernet monitor ether4 once; /log print where message~"ether3|ether4|link down|link up|loop|bpdu"'
+```
+
+As of 2026-06-06 the router also has `nister_ether4_phy_self_heal`, a narrow
+MikroTik scheduler that checks only `ether4` every five minutes and bounces it
+only when the port is enabled but not running. Verify it with:
+
+```bash
+ops/router_exec.sh '/system scheduler print detail where name="nister_ether4_phy_self_heal"; /system script print detail where name="nister_ether4_phy_self_heal"'
+```
+
+Avoid the old broad AP bounce pattern unless you have confirmed both AP uplinks
+are affected. Bouncing `ether3` and `ether4` together can interrupt unrelated
+clients and hides which port actually recovered.
 
 ### 3. Refresh Starlink public-IP authorization if needed
 
