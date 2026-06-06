@@ -217,6 +217,7 @@ EOS
   [[ "$rc" -eq 1 ]] || fail "bad tunnel should make guard fail when watchdog cannot recover, got rc=$rc"
   assert_file_contains "guard_runs_watchdog" "$watchdog_log" "watchdog"
   [[ ! -f "$catchup_log" ]] || fail "unhealthy tunnel should not invoke router catchup"
+  assert_file_contains "guard_logs_watchdog_rc" "$log_dir/mikrotik_guard.log" "script=failed label=watchdog rc=1 path=$watchdog"
   assert_file_contains "guard_logs_failed" "$log_dir/mikrotik_guard.log" "status=failed"
 }
 

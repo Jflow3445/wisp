@@ -327,12 +327,16 @@ assert_contains "router_catchup_logs_hotspot_login_refresh" "$router_catchup_con
 assert_contains "router_catchup_refreshes_active_cookie_profile" "$router_catchup_content" 'name="active"] add-mac-cookie=yes mac-cookie-timeout=4w2d'
 assert_contains "router_catchup_zeroes_blocked_cookie_profiles" "$router_catchup_content" '"default";"limited";"nopaid"'
 assert_contains "router_catchup_logs_user_profile_refresh" "$router_catchup_content" 'action=hotspot_user_profiles_refreshed'
+assert_contains "router_catchup_ssh_server_alive" "$router_catchup_content" 'ServerAliveInterval'
+assert_contains "router_catchup_parses_colon_uptime" "$router_catchup_content" '([0-9]+):([0-9]{2}):([0-9]{2})'
+assert_contains "router_catchup_success_throttle_30m" "$router_catchup_content" 'MIN_SUCCESS_INTERVAL_SEC="${MIN_SUCCESS_INTERVAL_SEC:-1800}"'
 
 cookie_cleanup_content="$(cat ops/clear_hotspot_cookies.sh nister_quota_enforce.sh nister_user_admin.sh nister_set_policy_and_kick.sh pay-portal/lib/radius.php pay-portal/admin/api.php)"
 assert_contains "hotspot_cookie_cleanup_helper_validates_users" "$cookie_cleanup_content" '^[0-9]{9,12}$'
 assert_contains "hotspot_cookie_cleanup_removes_router_cookies" "$cookie_cleanup_content" '/ip hotspot cookie remove'
 assert_contains "quota_enforce_clears_cookies_before_kick" "$cookie_cleanup_content" 'clear_hotspot_cookies'
 assert_contains "admin_limited_paths_clear_cookies" "$cookie_cleanup_content" 'radius_clear_hotspot_cookies'
+assert_contains "hotspot_cookie_cleanup_ssh_server_alive" "$cookie_cleanup_content" 'ServerAliveInterval'
 
 paystack_content="$(cat pay-portal/lib/paystack.php pay-portal/paystack_webhook.php pay-portal/cron/paystack_reconcile.php pay-portal/admin/api.php pay-portal/admin/index.php)"
 assert_contains "paystack_callback_defaults_https" "$paystack_content" "preg_match('/(^|\\.)nister\\.org$/i', \$host)"

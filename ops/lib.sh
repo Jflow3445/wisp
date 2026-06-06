@@ -56,20 +56,31 @@ router_ssh() {
   local router_host="${ROUTER_HOST:-10.10.20.2}"
   local router_key_on_vps="${ROUTER_SSH_KEY_ON_VPS:-/root/.ssh/mikrotik_certsync}"
   local router_pass="${ROUTER_PASS:-}"
+  local router_connect_timeout="${ROUTER_CONNECT_TIMEOUT:-6}"
+  local router_alive_interval="${ROUTER_SERVER_ALIVE_INTERVAL:-5}"
+  local router_alive_count_max="${ROUTER_SERVER_ALIVE_COUNT_MAX:-2}"
   local ros_b64
   ros_b64="$(printf '%s' "$ros_cmd" | base64 | tr -d '\n')"
 
-  vps_ssh "ROS_B64='$ros_b64' ROUTER_USER='$router_user' ROUTER_HOST='$router_host' ROUTER_SSH_KEY_ON_VPS='$router_key_on_vps' ROUTER_PASS='$router_pass' bash -s" <<'VPS'
+  vps_ssh "ROS_B64='$ros_b64' ROUTER_USER='$router_user' ROUTER_HOST='$router_host' ROUTER_SSH_KEY_ON_VPS='$router_key_on_vps' ROUTER_PASS='$router_pass' ROUTER_CONNECT_TIMEOUT='$router_connect_timeout' ROUTER_SERVER_ALIVE_INTERVAL='$router_alive_interval' ROUTER_SERVER_ALIVE_COUNT_MAX='$router_alive_count_max' bash -s" <<'VPS'
 set -euo pipefail
 cmd="$(printf '%s' "$ROS_B64" | base64 -d)"
+ssh_opts=(
+  -o ConnectTimeout="${ROUTER_CONNECT_TIMEOUT:-6}"
+  -o ConnectionAttempts=1
+  -o ServerAliveInterval="${ROUTER_SERVER_ALIVE_INTERVAL:-5}"
+  -o ServerAliveCountMax="${ROUTER_SERVER_ALIVE_COUNT_MAX:-2}"
+  -o StrictHostKeyChecking=no
+  -o UserKnownHostsFile=/dev/null
+)
 if [[ -n "${ROUTER_PASS:-}" ]]; then
   if ! command -v sshpass >/dev/null 2>&1; then
     echo "ERR sshpass missing on VPS for ROUTER_PASS flow" >&2
     exit 1
   fi
-  sshpass -p "$ROUTER_PASS" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${ROUTER_USER}@${ROUTER_HOST}" "$cmd"
+  sshpass -p "$ROUTER_PASS" ssh "${ssh_opts[@]}" "${ROUTER_USER}@${ROUTER_HOST}" "$cmd"
 else
-  ssh -i "$ROUTER_SSH_KEY_ON_VPS" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${ROUTER_USER}@${ROUTER_HOST}" "$cmd"
+  ssh -i "$ROUTER_SSH_KEY_ON_VPS" -o BatchMode=yes "${ssh_opts[@]}" "${ROUTER_USER}@${ROUTER_HOST}" "$cmd"
 fi
 VPS
 }

@@ -43,8 +43,12 @@ setup_stubs() {
   cat >"$bin_dir/ip" <<'EOS'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "route" && "${2:-}" == "get" ]]; then
-  if [[ -n "${IP_ROUTE_DEV:-}" ]]; then
-    printf '%s via 0.0.0.0 dev %s src 0.0.0.0\n' "${3:-10.10.20.2}" "$IP_ROUTE_DEV"
+  route_dev="${IP_ROUTE_DEV:-}"
+  if [[ -n "${IP_ROUTE_DEV_FILE:-}" && -r "$IP_ROUTE_DEV_FILE" ]]; then
+    route_dev="$(cat "$IP_ROUTE_DEV_FILE")"
+  fi
+  if [[ -n "$route_dev" ]]; then
+    printf '%s via 0.0.0.0 dev %s src 0.0.0.0\n' "${3:-10.10.20.2}" "$route_dev"
   fi
   exit 0
 fi
@@ -61,7 +65,17 @@ if [[ "${1:-}" == "route" && "${2:-}" == "replace" ]]; then
   if [[ "${IP_REPLACE_FAIL:-0}" == "1" ]]; then
     exit 2
   fi
+  if [[ -n "${IP_ROUTE_DEV_FILE:-}" && "${3:-}" == "10.10.20.2/32" && "${4:-}" == "dev" && -n "${5:-}" ]]; then
+    printf '%s\n' "$5" >"$IP_ROUTE_DEV_FILE"
+  fi
   exit 0
+fi
+if [[ "${1:-}" == "-brief" && "${2:-}" == "address" && "${3:-}" == "show" ]]; then
+  if [[ -n "${IP_BRIEF_ADDRESS_DEV:-}" && "${4:-}" == "$IP_BRIEF_ADDRESS_DEV" ]]; then
+    printf '%s UNKNOWN 10.99.99.1 peer 10.10.20.2/32\n' "$IP_BRIEF_ADDRESS_DEV"
+    exit 0
+  fi
+  exit 1
 fi
 exit 0
 EOS
@@ -88,6 +102,14 @@ EOS
 exit 0
 EOS
 
+  cat >"$bin_dir/ping" <<'EOS'
+#!/usr/bin/env bash
+if [[ "${PING_OK:-1}" == "1" ]]; then
+  exit 0
+fi
+exit 1
+EOS
+
   cat >"$bin_dir/timeout" <<'EOS'
 #!/usr/bin/env bash
 if [[ "${TCP_PROBE_OK:-1}" == "1" ]]; then
@@ -96,7 +118,7 @@ fi
 exit 1
 EOS
 
-  chmod +x "$bin_dir/ip" "$bin_dir/systemctl" "$bin_dir/logger" "$bin_dir/sleep" "$bin_dir/timeout"
+  chmod +x "$bin_dir/ip" "$bin_dir/systemctl" "$bin_dir/logger" "$bin_dir/sleep" "$bin_dir/ping" "$bin_dir/timeout"
 }
 
 run_watchdog_down_path() {
@@ -220,6 +242,41 @@ test_healthy_path_repairs_route_and_service() {
   assert_file_contains "healthy_path_starts_unbound" "$systemctl_log" "systemctl start unbound.service"
 }
 
+test_target_route_repair_when_ppp_exists() {
+  local case_dir="$1"
+  local stubs_bin="$2"
+  local state_file="$case_dir/state"
+  local log_dir="$case_dir/log"
+  local ip_log="$case_dir/ip.log"
+  local route_dev_file="$case_dir/route_dev"
+
+  mkdir -p "$log_dir"
+  printf 'eth0\n' >"$route_dev_file"
+
+  (
+    export PATH="$stubs_bin:$PATH"
+    export STATE_FILE="$state_file"
+    export LOG_DIR="$log_dir"
+    export TARGET_IP="10.10.20.2"
+    export REQUIRED_DEVS="ppp0,ppp1"
+    export PROBE_MODE="none"
+    export IP_ROUTE_DEV_FILE="$route_dev_file"
+    export IP_BRIEF_ADDRESS_DEV="ppp0"
+    export IP_ROUTE_LINE=""
+    export IP_LOG="$ip_log"
+    export ROUTER_LAN_CIDR=""
+    export TUNNEL_ROUTES=""
+    export RECOVERY_SERVICES=""
+    bash "$WATCHDOG_SCRIPT"
+  )
+
+  assert_file_contains "target_route_repair_adds_peer_route" "$ip_log" "ip route replace 10.10.20.2/32 dev ppp0"
+  assert_file_contains "target_route_repair_logged" "$log_dir/tunnel_watchdog.log" "route=ensured cidr=10.10.20.2/32 dev=ppp0"
+  if [[ "$(cat "$route_dev_file")" != "ppp0" ]]; then
+    fail "target route repair did not update route device state"
+  fi
+}
+
 test_route_repair_failure_fails_watchdog() {
   local case_dir="$1"
   local stubs_bin="$2"
@@ -283,9 +340,45 @@ test_restart_disabled_observes_only() {
   assert_file_contains "restart_disabled_logged" "$log_dir/tunnel_watchdog.log" "reason=restart_disabled"
 }
 
+test_ping_failure_on_existing_ppp_does_not_restart() {
+  local case_dir="$1"
+  local stubs_bin="$2"
+  local state_file="$case_dir/state"
+  local log_dir="$case_dir/log"
+  local systemctl_log="$case_dir/systemctl.log"
+  local rc=0
+
+  mkdir -p "$log_dir"
+
+  if (
+    export PATH="$stubs_bin:$PATH"
+    export STATE_FILE="$state_file"
+    export LOG_DIR="$log_dir"
+    export TARGET_IP="10.10.20.2"
+    export REQUIRED_DEVS="ppp0,ppp1"
+    export PROBE_MODE="ping"
+    export PING_OK="0"
+    export IP_ROUTE_DEV="ppp0"
+    export SYSTEMCTL_LOG="$systemctl_log"
+    export STILL_DOWN_EXIT_CODE="1"
+    bash "$WATCHDOG_SCRIPT"
+  ); then
+    rc=0
+  else
+    rc=$?
+  fi
+
+  [[ "$rc" -eq 1 ]] || fail "Expected ping failure on ppp route to exit 1, got $rc"
+  if [[ -f "$systemctl_log" ]] && grep -Fq "systemctl restart" "$systemctl_log"; then
+    fail "ping failure on existing ppp route must not restart services"
+  fi
+  assert_file_contains "ping_failure_observed" "$log_dir/tunnel_watchdog.log" "status=degraded action=observe reason=ping_failed probe=ping route_dev=ppp0"
+}
+
 test_systemd_unit_recovers_tunnel_with_rate_limits() {
   [[ -f "$WATCHDOG_SERVICE" ]] || fail "Missing watchdog systemd unit: $WATCHDOG_SERVICE"
   assert_file_contains "watchdog_unit_probe_mode" "$WATCHDOG_SERVICE" "Environment=PROBE_MODE=ping"
+  assert_file_contains "watchdog_unit_observes_ping_blips" "$WATCHDOG_SERVICE" "Environment=RESTART_ON_PROBE_FAILURE=0"
   assert_file_contains "watchdog_unit_restart_limit" "$WATCHDOG_SERVICE" "Environment=MAX_RESTARTS_PER_WINDOW=3"
   assert_file_contains "watchdog_unit_passive_mode_off" "$WATCHDOG_SERVICE" "Environment=ALLOW_PASSIVE_MODE=0"
   assert_file_contains "watchdog_unit_still_down_fails" "$WATCHDOG_SERVICE" "Environment=STILL_DOWN_EXIT_CODE=1"
@@ -318,8 +411,10 @@ main() {
   test_rejects_code_injection "$tmp_root/case_injection" "$tmp_root/bin"
   test_invalid_numeric_state_defaults_without_crash "$tmp_root/case_invalid_numeric" "$tmp_root/bin"
   test_healthy_path_repairs_route_and_service "$tmp_root/case_recovery_helpers" "$tmp_root/bin"
+  test_target_route_repair_when_ppp_exists "$tmp_root/case_target_route_repair" "$tmp_root/bin"
   test_route_repair_failure_fails_watchdog "$tmp_root/case_route_repair_failure" "$tmp_root/bin"
   test_restart_disabled_observes_only "$tmp_root/case_restart_disabled" "$tmp_root/bin"
+  test_ping_failure_on_existing_ppp_does_not_restart "$tmp_root/case_ping_failure_on_ppp" "$tmp_root/bin"
   test_systemd_unit_recovers_tunnel_with_rate_limits
   test_systemd_timer_waits_after_run_finishes
 

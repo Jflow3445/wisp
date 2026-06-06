@@ -11,9 +11,10 @@ PING_COUNT="${PING_COUNT:-2}"
 PING_WAIT="${PING_WAIT:-1}"
 REQUIRE_PING="${REQUIRE_PING:-1}"
 PROBE_MODE="${PROBE_MODE:-}"
+RESTART_ON_PROBE_FAILURE="${RESTART_ON_PROBE_FAILURE:-0}"
 TCP_PORTS="${TCP_PORTS:-22}"
 TCP_CONNECT_TIMEOUT="${TCP_CONNECT_TIMEOUT:-2}"
-COOLDOWN_SEC="${COOLDOWN_SEC:-300}"
+COOLDOWN_SEC="${COOLDOWN_SEC:-1800}"
 RESTART_WINDOW_SEC="${RESTART_WINDOW_SEC:-900}"
 MAX_RESTARTS_PER_WINDOW="${MAX_RESTARTS_PER_WINDOW:-3}"
 ALLOW_PASSIVE_MODE="${ALLOW_PASSIVE_MODE:-0}"
@@ -24,6 +25,7 @@ ROUTER_LAN_CIDR="${ROUTER_LAN_CIDR:-192.168.88.0/24}"
 ROUTER_LAN_VIA="${ROUTER_LAN_VIA:-10.10.20.2}"
 ROUTER_LAN_DEV="${ROUTER_LAN_DEV:-}"
 TUNNEL_ROUTES="${TUNNEL_ROUTES:-10.10.20.4/32,192.168.80.0/20}"
+TARGET_ROUTE_REPAIR="${TARGET_ROUTE_REPAIR:-1}"
 RECOVERY_SERVICES="${RECOVERY_SERVICES:-unbound.service}"
 IPSEC_SERVICES="${IPSEC_SERVICES:-strongswan-starter}"
 L2TP_SERVICES="${L2TP_SERVICES:-xl2tpd}"
@@ -164,6 +166,56 @@ route_dev() {
       if ($i == "dev" && (i+1) <= NF) { print $(i+1); exit }
     }
   }'
+}
+
+target_cidr() {
+  if [[ "$TARGET_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    printf '%s/32' "$TARGET_IP"
+    return 0
+  fi
+  return 1
+}
+
+required_devs_list() {
+  local list="${REQUIRED_DEVS// /,}"
+  local item
+  IFS=',' read -r -a _devs <<<"$list"
+  for item in "${_devs[@]}"; do
+    item="${item//[[:space:]]/}"
+    [[ -n "$item" ]] || continue
+    printf '%s\n' "$item"
+  done
+}
+
+active_required_dev() {
+  local dev
+  while IFS= read -r dev; do
+    [[ -n "$dev" ]] || continue
+    if ip -brief address show "$dev" >/dev/null 2>&1; then
+      printf '%s' "$dev"
+      return 0
+    fi
+  done < <(required_devs_list)
+  return 1
+}
+
+ensure_target_route() {
+  [[ "$TARGET_ROUTE_REPAIR" == "1" ]] || return 1
+  local dev="${1:-}"
+  local cidr route_line
+  [[ -n "$dev" ]] || dev="$(active_required_dev || true)"
+  [[ -n "$dev" ]] || return 1
+  cidr="$(target_cidr)" || return 1
+  route_line="$(ip route show "$cidr" 2>/dev/null | head -n 1 || true)"
+  if [[ "$route_line" == *"dev $dev"* ]]; then
+    return 0
+  fi
+  if ip route replace "$cidr" dev "$dev"; then
+    log "route=ensured cidr=$cidr dev=$dev"
+    return 0
+  fi
+  log "route=ensure_failed cidr=$cidr dev=$dev"
+  return 1
 }
 
 ping_ok() {
@@ -349,6 +401,10 @@ if [[ "$PROBE_MODE" != "none" && "$PROBE_MODE" != "ping" && "$PROBE_MODE" != "tc
   PROBE_MODE="ping"
   log "config=defaulted key=PROBE_MODE value=$PROBE_MODE"
 fi
+if [[ "$RESTART_ON_PROBE_FAILURE" != "0" && "$RESTART_ON_PROBE_FAILURE" != "1" ]]; then
+  RESTART_ON_PROBE_FAILURE=0
+  log "config=defaulted key=RESTART_ON_PROBE_FAILURE value=$RESTART_ON_PROBE_FAILURE"
+fi
 if ! normalize_uint_or_default TCP_CONNECT_TIMEOUT 2; then
   log "config=defaulted key=TCP_CONNECT_TIMEOUT value=$TCP_CONNECT_TIMEOUT"
 fi
@@ -368,12 +424,29 @@ fi
 if [[ "$PROBE_MODE" == "tcp" ]]; then
   parse_tcp_ports
 fi
+if [[ "$TARGET_ROUTE_REPAIR" != "0" && "$TARGET_ROUTE_REPAIR" != "1" ]]; then
+  TARGET_ROUTE_REPAIR=1
+  log "config=defaulted key=TARGET_ROUTE_REPAIR value=$TARGET_ROUTE_REPAIR"
+fi
 
 now_epoch="$(date +%s)"
 rd="$(route_dev || true)"
+if ! route_dev_ok "$rd"; then
+  repair_dev="$(active_required_dev || true)"
+  if [[ -n "$repair_dev" ]] && ensure_target_route "$repair_dev"; then
+    rd="$(route_dev || true)"
+  fi
+fi
 
 if route_dev_ok "$rd"; then
   if ! probe_ok; then
+    if [[ "$RESTART_ON_PROBE_FAILURE" != "1" ]]; then
+      log "status=degraded action=observe reason=$(probe_failed_reason) probe=$PROBE_MODE route_dev=$rd target=$TARGET_IP"
+      if [[ "$ALLOW_PASSIVE_MODE" == "1" ]]; then
+        exit 0
+      fi
+      exit "$STILL_DOWN_EXIT_CODE"
+    fi
     log "status=down action=restart reason=$(probe_failed_reason) probe=$PROBE_MODE route_dev=$rd target=$TARGET_IP"
   else
     if [[ -f "$STATE_FILE" ]]; then
@@ -437,6 +510,12 @@ while :; do
     sleep "$POST_RESTART_POLL_SEC"
   fi
   rd_after="$(route_dev || true)"
+  if ! route_dev_ok "$rd_after"; then
+    repair_dev="$(active_required_dev || true)"
+    if [[ -n "$repair_dev" ]] && ensure_target_route "$repair_dev"; then
+      rd_after="$(route_dev || true)"
+    fi
+  fi
   if route_dev_ok "$rd_after"; then
     if probe_ok; then
       rm -f "$STATE_FILE"

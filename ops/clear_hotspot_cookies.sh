@@ -5,6 +5,8 @@ ROUTER_HOST="${ROUTER_HOST:-10.10.20.2}"
 ROUTER_USER="${ROUTER_USER:-certsync}"
 ROUTER_SSH_KEY="${ROUTER_SSH_KEY_ON_VPS:-/root/.ssh/mikrotik_certsync}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-6}"
+SERVER_ALIVE_INTERVAL="${SERVER_ALIVE_INTERVAL:-5}"
+SERVER_ALIVE_COUNT_MAX="${SERVER_ALIVE_COUNT_MAX:-2}"
 
 if [[ $# -lt 1 ]]; then
   echo "status=skipped reason=no_users"
@@ -45,6 +47,9 @@ ssh \
   -i "$ROUTER_SSH_KEY" \
   -o BatchMode=yes \
   -o ConnectTimeout="$CONNECT_TIMEOUT" \
+  -o ConnectionAttempts=1 \
+  -o ServerAliveInterval="$SERVER_ALIVE_INTERVAL" \
+  -o ServerAliveCountMax="$SERVER_ALIVE_COUNT_MAX" \
   -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null \
   "${ROUTER_USER}@${ROUTER_HOST}" \

@@ -97,11 +97,12 @@ run_locked_script() {
     log "script=skipped label=$label reason=missing_or_not_executable path=$script"
     return 1
   fi
-  if flock -n -E 75 "$lock" "$script" "$@"; then
+  local rc=0
+  flock -n -E 75 "$lock" "$script" "$@" || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
     log "script=ok label=$label path=$script"
     return 0
   fi
-  local rc=$?
   if [[ "$rc" -eq 75 ]]; then
     log "script=skipped label=$label reason=locked rc=$rc path=$script"
     return 0
@@ -222,7 +223,7 @@ if is_required_dev "$rd" && ping_ok; then
   log "tunnel=ok route_dev=$rd target=$TARGET_IP"
 else
   log "tunnel=bad action=watchdog route_dev=${rd:-none} target=$TARGET_IP"
-  if ! PROBE_MODE=ping MAX_RESTARTS_PER_WINDOW="${MAX_RESTARTS_PER_WINDOW:-3}" \
+  if ! PROBE_MODE=ping RESTART_ON_PROBE_FAILURE="${RESTART_ON_PROBE_FAILURE:-0}" MAX_RESTARTS_PER_WINDOW="${MAX_RESTARTS_PER_WINDOW:-3}" \
        TUNNEL_ROUTES="${TUNNEL_ROUTES:-10.10.20.4/32,192.168.80.0/20}" \
        run_locked_script watchdog "$WATCHDOG_LOCK" "$WATCHDOG_SCRIPT"; then
     failed=1

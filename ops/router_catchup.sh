@@ -6,6 +6,10 @@ ROUTER_USER="${ROUTER_USER:-certsync}"
 ROUTER_SSH_KEY="${ROUTER_SSH_KEY_ON_VPS:-/root/.ssh/mikrotik_certsync}"
 LOG_TAG="${LOG_TAG:-nister-router-catchup}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-6}"
+SERVER_ALIVE_INTERVAL="${SERVER_ALIVE_INTERVAL:-5}"
+SERVER_ALIVE_COUNT_MAX="${SERVER_ALIVE_COUNT_MAX:-2}"
+SUCCESS_STAMP="${SUCCESS_STAMP:-/run/nister_router_catchup.success}"
+MIN_SUCCESS_INTERVAL_SEC="${MIN_SUCCESS_INTERVAL_SEC:-1800}"
 HOTSPOT_BASE_URL="${HOTSPOT_BASE_URL:-https://wifi.nister.org/router-sync}"
 SYNC_HOTSPOT_FILES="${SYNC_HOTSPOT_FILES:-0}"
 EXIT_ON_UNREACHABLE="${EXIT_ON_UNREACHABLE:-1}"
@@ -36,11 +40,66 @@ log() {
   printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$msg"
 }
 
+file_age_sec() {
+  local file="$1"
+  [[ -e "$file" ]] || return 1
+  local mtime now
+  mtime="$(date -r "$file" +%s 2>/dev/null || stat -f %m "$file" 2>/dev/null || true)"
+  [[ "$mtime" =~ ^[0-9]+$ ]] || return 1
+  now="$(date +%s)"
+  printf '%s' "$((now - mtime))"
+}
+
+uptime_to_sec() {
+  local raw="$1"
+  local total=0
+  local num unit rest weeks days hours minutes seconds
+  raw="${raw//[[:space:]]/}"
+
+  rest="$raw"
+  if [[ "$rest" =~ ^([0-9]+)w(.*)$ ]]; then
+    weeks="${BASH_REMATCH[1]}"
+    rest="${BASH_REMATCH[2]}"
+    total=$((total + 10#$weeks * 7 * 24 * 3600))
+  fi
+  if [[ "$rest" =~ ^([0-9]+)d(.*)$ ]]; then
+    days="${BASH_REMATCH[1]}"
+    rest="${BASH_REMATCH[2]}"
+    total=$((total + 10#$days * 24 * 3600))
+  fi
+  if [[ "$rest" =~ ^([0-9]+):([0-9]{2}):([0-9]{2})$ ]]; then
+    hours="${BASH_REMATCH[1]}"
+    minutes="${BASH_REMATCH[2]}"
+    seconds="${BASH_REMATCH[3]}"
+    total=$((total + 10#$hours * 3600 + 10#$minutes * 60 + 10#$seconds))
+    printf '%s' "$total"
+    return 0
+  fi
+
+  while [[ "$raw" =~ ^([0-9]+)([wdhms])(.*)$ ]]; do
+    num="${BASH_REMATCH[1]}"
+    unit="${BASH_REMATCH[2]}"
+    raw="${BASH_REMATCH[3]}"
+    case "$unit" in
+      w) total=$((total + 10#$num * 7 * 24 * 3600)) ;;
+      d) total=$((total + 10#$num * 24 * 3600)) ;;
+      h) total=$((total + 10#$num * 3600)) ;;
+      m) total=$((total + 10#$num * 60)) ;;
+      s) total=$((total + 10#$num)) ;;
+    esac
+  done
+  [[ -z "$raw" ]] || return 1
+  printf '%s' "$total"
+}
+
 ssh_base=(
   ssh
   -i "$ROUTER_SSH_KEY"
   -o BatchMode=yes
   -o ConnectTimeout="$CONNECT_TIMEOUT"
+  -o ConnectionAttempts=1
+  -o ServerAliveInterval="$SERVER_ALIVE_INTERVAL"
+  -o ServerAliveCountMax="$SERVER_ALIVE_COUNT_MAX"
   -o StrictHostKeyChecking=no
   -o UserKnownHostsFile=/dev/null
   "${ROUTER_USER}@${ROUTER_HOST}"
@@ -55,7 +114,7 @@ if [[ ! -r "$ROUTER_SSH_KEY" ]]; then
   exit 1
 fi
 
-if ! out="$(ros ':put "ROUTER_OK"; /system identity print' 2>&1)"; then
+if ! out="$(ros ':put "ROUTER_OK"; :put ("UPTIME=" . [/system resource get uptime]); /system identity print' 2>&1)"; then
   log "status=skipped reason=router_unreachable host=$ROUTER_HOST"
   [[ "$EXIT_ON_UNREACHABLE" == "1" ]] && exit 1
   exit 0
@@ -68,6 +127,17 @@ if [[ "$out" != *"ROUTER_OK"* ]]; then
 fi
 
 log "status=reachable host=$ROUTER_HOST"
+stamp_age="$(file_age_sec "$SUCCESS_STAMP" || true)"
+router_uptime_raw="$(printf '%s\n' "$out" | awk -F= '/^UPTIME=/{print $2; exit}')"
+router_uptime_sec="$(uptime_to_sec "${router_uptime_raw:-}" 2>/dev/null || true)"
+if [[ "$stamp_age" =~ ^[0-9]+$ &&
+      "$router_uptime_sec" =~ ^[0-9]+$ &&
+      "$stamp_age" -lt "$MIN_SUCCESS_INTERVAL_SEC" &&
+      "$router_uptime_sec" -gt "$stamp_age" ]]; then
+  log "status=skipped reason=recent_success age=${stamp_age}s router_uptime=${router_uptime_raw}"
+  exit 0
+fi
+
 critical_failed=0
 
 self_heal_cmd=':do { /ip cloud set ddns-enabled=yes update-time=yes } on-error={ :log warning "nister: ip cloud enable failed" }; /system script remove [find where name="nister_vpn_self_heal"]; /system script add name=nister_vpn_self_heal policy=read,write,test source=":local n \"l2tp-over-vps\"; :local i [/interface l2tp-client find where name=\$n]; :if ([:len \$i] = 0) do={ :log error \"nister_vpn_self_heal: missing l2tp client\"; :return; }; :if ([/interface l2tp-client get \$i disabled]) do={ /interface l2tp-client enable \$i; :log warning \"nister_vpn_self_heal: enabled l2tp\"; }; :if (![/interface l2tp-client get \$i running]) do={ :log warning \"nister_vpn_self_heal: restarting l2tp\"; /interface l2tp-client disable \$i; :delay 5; /interface l2tp-client enable \$i; }"; /system scheduler remove [find where name="nister_vpn_self_heal"]; /system scheduler add name=nister_vpn_self_heal interval=2m start-time=startup on-event="/system script run nister_vpn_self_heal"; /system script run nister_vpn_self_heal'
@@ -123,6 +193,7 @@ if [[ "$SYNC_HOTSPOT_FILES" != "1" ]]; then
     log "status=failed hotspot_sync=skipped"
     exit 1
   fi
+  touch "$SUCCESS_STAMP" 2>/dev/null || true
   log "status=done hotspot_sync=skipped"
   exit 0
 fi
@@ -163,4 +234,5 @@ if (( critical_failed != 0 || fetch_failed != 0 )); then
   exit 1
 fi
 
+touch "$SUCCESS_STAMP" 2>/dev/null || true
 log "status=done hotspot_updated=$updated hotspot_failed=$fetch_failed"
