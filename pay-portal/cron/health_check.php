@@ -216,7 +216,6 @@ $overallOk = 1;
 if ($radiusOk === 0) $overallOk = 0;
 if ($tunnelOk === 0) $overallOk = 0;
 if ($coaOk === 0) $overallOk = 0;
-if (($disk['disk_status'] ?? '') === 'critical') $overallOk = 0;
 
 $noteParts = array_filter([
   $radiusNote,

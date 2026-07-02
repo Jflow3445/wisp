@@ -340,6 +340,7 @@ assert_contains "admin_overview_shows_disk_kpi" "$health_content" 'id="health_di
 assert_contains "health_radius_skip_is_unknown" "$health_content" '$radiusOk = null;'
 assert_contains "health_failures_are_debounced" "$health_content" 'HEALTH_FAIL_CONSECUTIVE'
 assert_contains "health_recovery_is_debounced" "$health_content" 'HEALTH_RECOVER_CONSECUTIVE'
+assert_not_contains "health_disk_critical_not_network_overall_fail" "$health_content" 'if (($disk['"'"'disk_status'"'"'] ?? '"'"''"'"') === '"'"'critical'"'"') $overallOk = 0;'
 
 tunnel_watchdog_content="$(cat nister_tunnel_watchdog.sh)"
 assert_not_contains "watchdog_no_source_exec" "$tunnel_watchdog_content" 'source "$STATE_FILE"'
