@@ -33,11 +33,20 @@ body.pay-portal .nister-fab{display:none}
   background:rgba(10,16,14,.56);
   backdrop-filter:blur(10px);
   display:grid;
-  place-items:center;
+  place-items:start center;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  padding:clamp(12px,4vh,28px) 12px;
   z-index:70;
 }
 .nister-modal{
   width:min(680px,92vw);
+  max-height:calc(var(--nister-vh, 100dvh) - 24px);
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  scroll-padding:18px 0 36px;
   background:linear-gradient(180deg,#fffdf8,#fff8ee);
   border:1px solid rgba(229,215,197,.92);
   border-radius:24px;
@@ -118,6 +127,7 @@ body.pay-portal .nister-fab{display:none}
 .nister-row>*{flex:1}
 .nister-input{
   width:100%;
+  scroll-margin:28px;
   background:#fffefb;
   color:var(--ink,#1c2329);
   border:1px solid #dccab5;
@@ -183,7 +193,28 @@ body.pay-portal .nister-fab{display:none}
   font-weight:800;
 }
 @media (max-width:520px){
+  .nister-backdrop{
+    padding:8px;
+    align-items:start;
+  }
+  .nister-modal{
+    width:100%;
+    max-height:calc(var(--nister-vh, 100dvh) - 16px);
+    border-radius:20px;
+    padding:16px;
+  }
+  .nister-modebar{
+    gap:4px;
+    margin:10px 0 12px;
+  }
+  .nister-modebar button{
+    min-width:0;
+    padding:10px 8px;
+  }
   .nister-fab{display:none}
   .nister-actions{flex-direction:column}
   .nister-pay-head{flex-direction:column}
+  .nister-row{
+    display:block;
+  }
 }

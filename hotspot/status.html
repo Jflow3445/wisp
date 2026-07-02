@@ -10,13 +10,56 @@
 <link rel="stylesheet" href="common.css">
 
 <style>
-  .card.wide{max-width:760px}
+  :root{
+    --status-shell:#fffefb;
+    --status-shell-edge:rgba(15,118,110,.16);
+    --status-kv-top:#fffdf8;
+    --status-kv-bottom:#f7efe4;
+  }
+  .card.wide{
+    max-width:860px;
+    position:relative;
+    overflow:hidden;
+    padding:30px;
+    background:linear-gradient(180deg,var(--status-shell),#fdf8f1);
+    border-color:var(--status-shell-edge);
+    box-shadow:
+      0 28px 70px rgba(27,35,42,.14),
+      inset 0 1px 0 rgba(255,255,255,.92);
+  }
+  .card.wide::before{
+    content:"";
+    position:absolute;
+    inset:-140px auto auto -120px;
+    width:360px;
+    height:360px;
+    border-radius:50%;
+    pointer-events:none;
+    background:radial-gradient(circle at center,rgba(15,118,110,.16),rgba(15,118,110,0) 66%);
+  }
+  .card.wide::after{
+    content:"";
+    position:absolute;
+    right:-120px;
+    top:-120px;
+    width:300px;
+    height:300px;
+    border-radius:50%;
+    pointer-events:none;
+    background:radial-gradient(circle at center,rgba(180,83,9,.14),rgba(180,83,9,0) 68%);
+  }
   .headline{
     display:flex;
     align-items:center;
     justify-content:space-between;
     gap:12px;
     flex-wrap:wrap;
+    position:relative;
+    z-index:1;
+  }
+  .headline .h{
+    margin:0;
+    font-size:clamp(2rem,3vw,2.35rem);
   }
   .badge{
     display:inline-flex;
@@ -26,37 +69,83 @@
     padding:4px 10px;
     border-radius:999px;
     border:1px solid var(--line);
-    background:#fff;
+    background:rgba(255,255,255,.92);
     color:var(--muted);
     font-weight:600;
+    box-shadow:0 10px 22px rgba(27,35,42,.08);
   }
   .badge.ok{
-    background:rgba(34,197,94,.12);
-    border-color:rgba(34,197,94,.35);
+    background:linear-gradient(180deg,rgba(34,197,94,.2),rgba(34,197,94,.1));
+    border-color:rgba(34,197,94,.45);
     color:#14532d;
   }
   .badge.warn{
-    background:rgba(217,119,6,.12);
-    border-color:rgba(217,119,6,.35);
+    background:linear-gradient(180deg,rgba(217,119,6,.24),rgba(217,119,6,.1));
+    border-color:rgba(217,119,6,.45);
     color:#7c4a10;
   }
   .badge.err{
-    background:rgba(239,68,68,.12);
-    border-color:rgba(239,68,68,.35);
+    background:linear-gradient(180deg,rgba(239,68,68,.22),rgba(239,68,68,.1));
+    border-color:rgba(239,68,68,.42);
     color:#7f1d1d;
   }
-  .kv{
-    background:var(--bg-2);
-    border:1px solid var(--line);
-    border-radius:14px;
-    padding:12px;
+  .meta-strip{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
     margin-top:12px;
+    position:relative;
+    z-index:1;
+  }
+  .meta-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:.02em;
+    color:#27534e;
+    background:rgba(255,255,255,.88);
+    border:1px solid rgba(15,118,110,.2);
+    border-radius:999px;
+    padding:5px 10px;
+    box-shadow:0 8px 20px rgba(15,118,110,.09);
+  }
+  .meta-pill::before{
+    content:"";
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:linear-gradient(180deg,#18a677,#0f766e);
+    box-shadow:0 0 0 3px rgba(15,118,110,.12);
+  }
+  .kv{
+    position:relative;
+    z-index:1;
+    background:linear-gradient(180deg,var(--status-kv-top),var(--status-kv-bottom));
+    border:1px solid rgba(226,214,200,.95);
+    border-radius:16px;
+    padding:14px;
+    margin-top:12px;
+    box-shadow:
+      0 10px 24px rgba(27,35,42,.08),
+      inset 0 1px 0 rgba(255,255,255,.7);
   }
   .grid{
     display:grid;
-    grid-template-columns:1fr auto;
-    gap:8px;
+    grid-template-columns:1fr minmax(110px,auto);
+    gap:8px 14px;
     align-items:center;
+  }
+  .grid b{
+    font-weight:600;
+    color:#263038;
+    letter-spacing:.01em;
+  }
+  .grid span{
+    text-align:right;
+    font-weight:600;
+    color:#202a31;
   }
   .chips{
     display:flex;
@@ -68,14 +157,14 @@
     font-size:12px;
     padding:3px 10px;
     border-radius:999px;
-    border:1px solid var(--line);
-    background:#fff;
+    border:1px solid rgba(15,118,110,.2);
+    background:rgba(255,255,255,.92);
     color:var(--muted);
   }
   .bar{
-    height:10px;
+    height:12px;
     border-radius:999px;
-    background:#f7f3ec;
+    background:linear-gradient(180deg,#f2ece2,#fbf8f2);
     border:1px solid var(--line);
     overflow:hidden;
     margin-top:8px;
@@ -84,23 +173,40 @@
     display:block;
     height:100%;
     width:0%;
-    background:linear-gradient(135deg,var(--accent),#0f8a7f);
+    background:linear-gradient(135deg,var(--accent),#0f8a7f,#0ea5a2);
+    box-shadow:0 0 22px rgba(15,118,110,.35);
   }
-  .row .btn{flex:1}
+  .row .btn{
+    flex:1;
+    min-height:46px;
+    border-radius:13px;
+  }
   .section-title{
+    display:flex;
+    align-items:center;
+    gap:10px;
     font-size:12px;
-    color:var(--muted);
-    margin-top:18px;
+    color:#5b6977;
+    margin-top:20px;
     margin-bottom:6px;
     text-transform:uppercase;
-    letter-spacing:.08em;
+    letter-spacing:.12em;
+    font-weight:700;
+  }
+  .section-title::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:linear-gradient(90deg,rgba(15,118,110,.28),rgba(15,118,110,0));
   }
   .note{
     display:none;
-    margin-top:10px;
-    border-radius:12px;
-    padding:10px 12px;
+    margin-top:12px;
+    border-radius:13px;
+    padding:11px 12px;
     font-size:12px;
+    line-height:1.45;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.65);
   }
   .note.warn{
     display:block;
@@ -117,8 +223,30 @@
   .small{
     font-size:11px;
     color:var(--muted);
-    margin-top:8px;
+    margin-top:9px;
     word-break:break-all;
+  }
+  #pct,#left{
+    font-weight:600;
+  }
+  #ref_hint{
+    line-height:1.45;
+  }
+  .support{
+    margin-top:16px;
+  }
+  @media (max-width:760px){
+    .card.wide{
+      padding:24px 18px;
+      border-radius:16px;
+    }
+    .headline .h{
+      font-size:1.85rem;
+    }
+    .grid{
+      grid-template-columns:1fr auto;
+      gap:8px;
+    }
   }
 </style>
 
@@ -194,6 +322,12 @@ function fetchWithTimeout(url, opts, ms){
 function sameOriginApiBase(){
   var h = String(location.hostname || '').toLowerCase();
   if (h !== 'wifi.nister.org') return '';
+  // Router-rendered captive pages substitute MikroTik tokens.
+  // Public wifi.nister.org pages leave these tokens untouched.
+  var hostToken = '$(hostname)';
+  var logoutToken = '$(link-logout)';
+  var routerRendered = (hostToken.indexOf('$(') === -1 || logoutToken.indexOf('$(') === -1);
+  if (!routerRendered) return '';
   return location.protocol + '//' + location.host;
 }
 
@@ -204,7 +338,7 @@ function safeApiBase(raw){
     var u = new URL(v, window.location.href);
     if (u.protocol !== 'https:') return '';
     var h = String(u.hostname || '').toLowerCase();
-    var allowed = (h === 'api.nister.org' || h === 'pay.nister.org');
+    var allowed = (h === 'api.nister.org');
     if (!allowed) return '';
     var p = (u.pathname && u.pathname !== '/') ? u.pathname.replace(/\/+$/,'') : '';
     return u.origin + p;
@@ -233,24 +367,29 @@ function pickApiUrl(username){
   var apiOverride = safeApiBase(qs('api'));
   var cfgBase = (window.NISTER_CFG && window.NISTER_CFG.api_base) ? window.NISTER_CFG.api_base : '';
   var safeCfg = safeApiBase(cfgBase);
-  var base = (apiOverride || safeCfg || 'https://api.nister.org').replace(/\/+$/,'');
-  if (!/\/status\.php$/i.test(base) && base.indexOf('/hotspot-api/status.php') === -1) {
-    base = base.replace(/\/+$/,'') + '/hotspot-api/status.php';
-  }
-  if(!/\.php($|\?)/.test(base)) base += '/status.php';
+  var base = (apiOverride || safeCfg || 'https://api.nister.org');
+  base = statusApiBase(base);
+  if (!base) return '';
   var t = Date.now();
   return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t;
 }
 
-function buildApiUrl(base, username){
+function statusApiBase(base){
   if (!base) return '';
-  base = String(base).replace(/\/+$/,'');
-  if (!/\/status\.php$/i.test(base) && base.indexOf('/hotspot-api/status.php') === -1) {
-    base = base + '/hotspot-api/status.php';
-  }
-  if(!/\.php($|\?)/.test(base)) base += '/status.php';
-  var t = Date.now();
-  return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + t;
+  base = String(base).trim().replace(/\/+$/,'');
+  if (!base) return '';
+  if (/\/hotspot-api\/status\.php$/i.test(base)) return base;
+  if (/\/hotspot-api$/i.test(base)) return base + '/status.php';
+  if (/\/status\.php$/i.test(base)) return base;
+  return base + '/hotspot-api/status.php';
+}
+
+function buildApiUrl(base, username, t){
+  base = statusApiBase(base);
+  if (!base) return '';
+  if (location.protocol === 'https:' && /^http:\/\//i.test(base)) return '';
+  var stamp = (typeof t === 'number' && isFinite(t)) ? t : Date.now();
+  return base + (base.indexOf('?')>-1 ? '&' : '?') + 'username=' + encodeURIComponent(username) + '&_t=' + stamp;
 }
 
 function apiCandidates(username){
@@ -266,10 +405,17 @@ function apiCandidates(username){
   ];
   if (location.protocol !== 'https:') raw.push('http://api.nister.org');
   var out = [];
+  var seenBase = {};
+  var t = Date.now();
   raw.forEach(function(b){
-    var u = buildApiUrl(b, username);
-    if (location.protocol === 'https:' && /^http:\/\//i.test(u)) return;
-    if (u && out.indexOf(u) === -1) out.push(u);
+    var base = statusApiBase(b);
+    if (!base) return;
+    if (location.protocol === 'https:' && /^http:\/\//i.test(base)) return;
+    var key = base.toLowerCase();
+    if (seenBase[key]) return;
+    seenBase[key] = true;
+    var u = buildApiUrl(base, username, t);
+    if (u) out.push(u);
   });
   return out;
 }
@@ -298,6 +444,9 @@ var state = {
   },
   lastUrl:'',
   lastErr:'',
+  lastGoodAt:0,
+  inFlight:false,
+  pendingRefresh:false,
   fetchSupported:(typeof fetch === 'function')
 };
 
@@ -400,6 +549,8 @@ function setHeaderByAccount(j){
 
 function populateFromServer(j){
   setHeaderByAccount(j);
+  state.lastGoodAt = Date.now();
+
 
   var isNoPaid = state.flags.isNoPaid;
   var q=Number(j.quota_bytes||0), u=effectiveUsedBytes(j.used_bytes), r=(q>0)? Math.max(q-u,0):0;
@@ -495,12 +646,127 @@ function populateFromServer(j){
   h('btnChange').href = changeUrl;
 }
 
+function makeError(msg, retryable){
+  var e = new Error(msg || 'api failed');
+  e.retryable = (retryable !== false);
+  return e;
+}
+
+function errMsg(err){
+  if (!err) return 'api failed';
+  return String(err.message || err.name || err || 'api failed');
+}
+
+function retryableHttpStatus(status){
+  status = Number(status || 0);
+  return status === 0 || status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+}
+
+function sleep(ms){
+  return new Promise(function(resolve){ setTimeout(resolve, ms || 0); });
+}
+
+function redactedUrl(url){
+  return String(url || '').replace(/([?&]username=)[^&]*/i, '$1***');
+}
+
+function validateStatusJson(j){
+  if (!j || j.ok !== true) throw makeError('badjson', true);
+  return j;
+}
+
+function loadViaXHR(url, ms){
+  return new Promise(function(resolve,reject){
+    try{
+      var x = new XMLHttpRequest();
+      x.open('GET', url, true);
+      x.timeout = ms || 7000;
+      x.onreadystatechange = function(){
+        if (x.readyState === 4){
+          if (x.status >= 200 && x.status < 300){
+            try{ resolve(JSON.parse(x.responseText)); }catch(e){ reject(makeError('badjson', true)); }
+          } else {
+            reject(makeError('HTTP ' + x.status, retryableHttpStatus(x.status)));
+          }
+        }
+      };
+      x.ontimeout = function(){ reject(makeError('timeout', true)); };
+      x.onerror = function(){ reject(makeError('xhr error', true)); };
+      x.onabort = function(){ reject(makeError('xhr abort', true)); };
+      x.send();
+    }catch(e){
+      reject(makeError(errMsg(e), true));
+    }
+  });
+}
+
+function fetchJson(url, ms){
+  if (!state.fetchSupported) return loadViaXHR(url, ms);
+  return fetchWithTimeout(url, {}, ms || 7000)
+    .then(function(r){
+      if(!r.ok) throw makeError('HTTP ' + r.status, retryableHttpStatus(r.status));
+      return r.json().catch(function(){ throw makeError('badjson', true); });
+    });
+}
+
+function loadJsonOnce(url, ms){
+  if (!state.fetchSupported) return loadViaXHR(url, ms).then(validateStatusJson);
+
+  return fetchJson(url, ms)
+    .catch(function(fetchErr){
+      // Do not waste time retrying a deterministic endpoint error with XHR.
+      if (fetchErr && fetchErr.retryable === false) throw fetchErr;
+      return loadViaXHR(url, ms).catch(function(xhrErr){
+        var fe = errMsg(fetchErr);
+        var xe = errMsg(xhrErr);
+        var retryable = !(fetchErr && fetchErr.retryable === false) && !(xhrErr && xhrErr.retryable === false);
+        throw makeError(fe + ' / ' + xe, retryable);
+      });
+    })
+    .then(validateStatusJson);
+}
+
+function loadJsonRobust(url){
+  // Retry the same API endpoint before fallback. This covers phone Wi-Fi rejoin,
+  // captive-portal route settling, DNS/TLS warm-up, and transient TCP resets.
+  var delays = [0, 1200, 3000];
+  var timeoutMs = 7000;
+
+  function attempt(i){
+    var d2 = h('debug2');
+    if (d2) d2.textContent = i > 0 ? ('retrying api check ' + (i + 1) + '/' + delays.length) : '';
+
+    return sleep(delays[i] || 0)
+      .then(function(){ return loadJsonOnce(url, timeoutMs); })
+      .catch(function(err){
+        if ((err && err.retryable === false) || i >= delays.length - 1) throw err;
+        return attempt(i + 1);
+      });
+  }
+
+  return attempt(0);
+}
+
 function setUnknownUI(){
-  var badge=h('statusBadge'); badge.className='badge warn';
-  badge.textContent='Unable to verify - limited access assumed';
-  h('title').textContent='Status unknown';
+  var recentGood = state.lastGoodAt && ((Date.now() - state.lastGoodAt) <= 5 * 60 * 1000);
+  var badge=h('statusBadge');
+  badge.className='badge warn';
+
+  if (recentGood) {
+    badge.textContent='Verification delayed';
+    h('title').textContent='Using last verified status';
+    var noteRecent=h('statusNote');
+    noteRecent.className='note warn';
+    noteRecent.textContent='The billing server did not respond to this refresh. The details shown are from the last successful verification; refresh again after the connection stabilizes.';
+    noteRecent.style.display='block';
+    h('debug').textContent = 'build v2026-06-15d';
+    return;
+  }
+
+  badge.textContent='Unable to verify right now';
+  h('title').textContent='Status temporarily unavailable';
   var note=h('statusNote'); note.className='note warn';
-  note.textContent='We could not reach the billing server. You may have limited access until verification succeeds.';
+  note.textContent='We could not reach the billing server. Your hotspot access policy still applies; refresh once connection stabilizes.';
   note.style.display='block';
 
   ['quota','used','remain','period','expiry','left','group','alist','pct','rate'].forEach(function(id){
@@ -509,33 +775,35 @@ function setUnknownUI(){
   h('barfill').style.width='0%';
 
   // Keep a minimal version marker only
-  h('debug').textContent = 'build v2026-03-01a';
-}
-
-function loadViaXHR(url){
-  return new Promise(function(resolve,reject){
-    try{
-      var x = new XMLHttpRequest();
-      x.open('GET', url, true);
-      x.timeout = 6000;
-      x.onreadystatechange = function(){
-        if (x.readyState === 4){
-          if (x.status >= 200 && x.status < 300){
-            try{ resolve(JSON.parse(x.responseText)); }catch(e){ reject(e); }
-          } else reject(new Error('HTTP '+x.status));
-        }
-      };
-      x.ontimeout = function(){ reject(new Error('timeout')); };
-      x.onerror = function(){ reject(new Error('xhr error')); };
-      x.send();
-    }catch(e){ reject(e); }
-  });
+  h('debug').textContent = 'build v2026-06-15d';
 }
 
 function loadRadiusStatus(){
+  if (state.inFlight) {
+    state.pendingRefresh = true;
+    var d2busy = h('debug2');
+    if (d2busy) d2busy.textContent = 'api check already running; queued refresh';
+    return;
+  }
+
+  state.inFlight = true;
+  state.pendingRefresh = false;
+  var finished = false;
+
+  function finish(){
+    if (finished) return;
+    finished = true;
+    state.inFlight = false;
+    if (state.pendingRefresh) {
+      state.pendingRefresh = false;
+      setTimeout(loadRadiusStatus, 300);
+    }
+  }
+
   h('title').textContent='Checking account...';
   h('statusNote').style.display='none';
   var badge=h('statusBadge'); badge.className='badge'; badge.textContent='Verifying...';
+  state.lastErr = '';
 
   var user = (qs('username') || '$(username)' || '').trim();
   if (user.indexOf('$(') !== -1) user = '';
@@ -544,41 +812,46 @@ function loadRadiusStatus(){
     h('title').textContent='Status needs your username';
     var note=h('statusNote'); note.className='note warn'; note.style.display='block';
     note.textContent='Open this page from the hotspot success screen or add ?username=YOUR_NUMBER to the URL.';
+    finish();
     return;
   }
 
   var urls = apiCandidates(user);
   var tryOne = function(idx){
     if (idx >= urls.length){
+      if (state.lastErr) {
+        var d2f = h('debug2');
+        if (d2f) d2f.textContent = 'api fail: ' + state.lastErr;
+      }
       setUnknownUI();
+      finish();
       return;
     }
+
     var url = urls[idx];
     state.lastUrl = url;
+    var d3 = h('debug3');
+    if (d3) d3.textContent = 'api url: ' + redactedUrl(url);
 
     var next = function(err){
       try{
-        var msg = (err && (err.message || err.name)) || 'api failed';
-        state.lastErr = msg;
+        var msg = errMsg(err);
+        var wifiFallback404 = /^HTTP 404\b/i.test(msg) && /^https?:\/\/wifi\.nister\.org\/hotspot-api\/status\.php/i.test(url);
+        if (!wifiFallback404 || !state.lastErr) state.lastErr = msg;
         var d2 = h('debug2');
-        if (d2) d2.textContent = 'api fail: ' + msg + '; trying fallback';
-      }catch(_){}
+        if (d2) d2.textContent = 'api fail: ' + state.lastErr + '; trying fallback';
+      }catch(_){ }
       tryOne(idx + 1);
     };
 
-    var handleJson = function(j){
-      if(!j || j.ok!==true) throw new Error('badjson');
-      populateFromServer(j);
-    };
-
-    if (state.fetchSupported){
-      fetchWithTimeout(url, {}, 6000)
-        .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-        .then(handleJson)
-        .catch(function(){ loadViaXHR(url).then(handleJson).catch(next); });
-    } else {
-      loadViaXHR(url).then(handleJson).catch(next);
-    }
+    loadJsonRobust(url)
+      .then(function(j){
+        populateFromServer(j);
+        var d2ok = h('debug2');
+        if (d2ok) d2ok.textContent = 'api ok';
+        finish();
+      })
+      .catch(next);
   };
 
   tryOne(0);
@@ -586,7 +859,9 @@ function loadRadiusStatus(){
 
 var _poll;
 document.addEventListener('DOMContentLoaded', function(){
-  loadRadiusStatus();
+  // Give mobile devices a brief moment after Wi-Fi rejoin/captive redirect
+  // before the first billing API check.
+  setTimeout(loadRadiusStatus, 900);
   clearInterval(_poll);
   _poll = setInterval(loadRadiusStatus, 15000);
 
@@ -669,6 +944,10 @@ document.addEventListener('DOMContentLoaded', function(){
       <span class="badge" id="statusBadge">Verifying...</span>
     </div>
     <div class="note" id="statusNote"></div>
+    <div class="meta-strip" aria-hidden="true">
+      <span class="meta-pill">Live billing sync</span>
+      <span class="meta-pill">Router session telemetry</span>
+    </div>
 
     <div class="section-title">Session</div>
     <div class="kv">
@@ -682,9 +961,9 @@ document.addEventListener('DOMContentLoaded', function(){
         <span class="chip">Device: $(mac)</span>
         <span class="chip">Hotspot: $(hostname)</span>
       </div>
-      <div class="small" id="debug">build v2026-03-01a</div>
-      <div class="small" id="debug3"></div>
-      <div class="small" id="debug2"></div>
+      <div class="small" id="debug">build v2026-06-15d</div>
+      <div class="small" id="debug3" style="display:none"></div>
+      <div class="small" id="debug2" style="display:none"></div>
     </div>
 
     <div class="section-title">Plan and usage</div>

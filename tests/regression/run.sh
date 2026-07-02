@@ -284,6 +284,36 @@ assert_not_contains "admin_scope_check_no_profile_side_effect" "$scope_block" "l
 location_filter_block="$(awk '/function location_filter_msisdns/,/^}/' pay-portal/lib/location.php)"
 assert_not_contains "location_filter_no_unbound_default_fallback" "$location_filter_block" 'if ($isDefault)'
 
+router_discovery_identity="$(php_run <<'PHP'
+<?php
+putenv('DB_DSN=sqlite::memory:');
+putenv('DB_USER=test');
+putenv('DB_PASS=test');
+require getcwd() . '/pay-portal/lib/location.php';
+$a = location_router_discovery_identity_key([
+  'nas_ip' => '10.16.0.5',
+  'router_ip_hint' => '10.10.20.2',
+  'host_ip' => '10.16.0.1',
+]);
+$b = location_router_discovery_identity_key([
+  'nas_ip' => '10.16.0.5',
+  'router_ip_hint' => '10.10.99.2',
+  'host_ip' => '10.16.0.254',
+]);
+$c = location_router_discovery_identity_key([
+  'nas_ip' => '10.16.0.6',
+  'router_ip_hint' => '10.10.20.2',
+  'host_ip' => '10.16.0.1',
+]);
+echo ($a === $b && $a !== $c) ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "router_discovery_identity_uses_stable_nas" "$router_discovery_identity" "OK"
+
+location_discovery_content="$(cat pay-portal/lib/location.php)"
+assert_contains "location_discovery_reconciles_assigned_rows" "$location_discovery_content" "Legacy rows may have been assigned before a complete router map existed."
+assert_contains "location_discovery_unassigned_hides_known_maps" "$location_discovery_content" "AND NOT EXISTS ("
+
 netflow_setup_content="$(cat nister_netflow_setup.sh)"
 assert_not_contains "netflow_setup_no_source_exec" "$netflow_setup_content" 'source "$ENV_FILE"'
 assert_contains "netflow_setup_checks_gid" "$netflow_setup_content" 'file_gid()'
@@ -307,6 +337,9 @@ assert_contains "health_records_disk_free_bytes" "$health_content" 'disk_free_by
 assert_contains "health_inserts_disk_alerts" "$health_content" 'health_update_disk_alert'
 assert_contains "health_warns_before_disk_full" "$health_content" 'HEALTH_DISK_WARN_PCT'
 assert_contains "admin_overview_shows_disk_kpi" "$health_content" 'id="health_disk"'
+assert_contains "health_radius_skip_is_unknown" "$health_content" '$radiusOk = null;'
+assert_contains "health_failures_are_debounced" "$health_content" 'HEALTH_FAIL_CONSECUTIVE'
+assert_contains "health_recovery_is_debounced" "$health_content" 'HEALTH_RECOVER_CONSECUTIVE'
 
 tunnel_watchdog_content="$(cat nister_tunnel_watchdog.sh)"
 assert_not_contains "watchdog_no_source_exec" "$tunnel_watchdog_content" 'source "$STATE_FILE"'

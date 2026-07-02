@@ -296,7 +296,7 @@ if ($siteCode !== null && $siteCode !== '') {
             <h1>Manage your access and get back online.</h1>
             <p class="lead">Check your wallet, buy a plan, turn on auto-renew, track rewards, and reach support from one secure portal.</p>
             <div class="hero-actions">
-              <a class="btn primary" data-menu-link href="#wallet_section">Top up wallet</a>
+              <button class="btn primary" data-topup-open type="button">Top up wallet</button>
               <a class="btn ghost" data-menu-link href="#plans_section">Choose a plan</a>
               <?php if (!$loggedIn): ?>
                 <a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login to your account</a>
@@ -379,6 +379,7 @@ if ($siteCode !== null && $siteCode !== '') {
               <span class="pill soft">MoMo</span>
             </div>
             <p>Use Momo Pay for automated confirmation, or use Manual Payment after sending MoMo and keeping the receipt details. Minimum top up is <b>GHS <?=htmlspecialchars(number_format($minTopupCents / 100, 2, '.', ''), ENT_QUOTES, 'UTF-8')?></b>.</p>
+            <button class="btn primary" data-topup-open type="button"<?= $loggedIn ? '' : ' disabled' ?>>Choose payment option</button>
             <div class="callout">
               <div class="callout-title">Top-up checklist</div>
               <ul>
@@ -488,6 +489,6 @@ if ($siteCode !== null && $siteCode !== '') {
     window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
     window.NISTER_MIN_TOPUP_CENTS = <?= (int)$minTopupCents ?>;
   </script>
-  <script src="assets/topup.js?v=19"></script>
+  <script src="assets/topup.js?v=20"></script>
 </body>
 </html>

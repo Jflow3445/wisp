@@ -398,7 +398,7 @@
 
     // ensure CSS
     if (!document.querySelector('link[href*="topup.css"]')) {
-      var l=document.createElement('link'); l.rel='stylesheet'; l.href='assets/topup.css?v=10'; document.head.appendChild(l);
+      var l=document.createElement('link'); l.rel='stylesheet'; l.href='assets/topup.css?v=11'; document.head.appendChild(l);
     }
 
     var fab = ce('div',{className:'nister-fab'});
@@ -417,11 +417,15 @@
 
     var bd = ce('div',{className:'nister-backdrop'}), md=ce('div',{className:'nister-modal'});
     bd.style.display='none';
+    bd.setAttribute('role', 'presentation');
+    md.setAttribute('role', 'dialog');
+    md.setAttribute('aria-modal', 'true');
+    md.setAttribute('aria-labelledby', 'n_topup_title');
     bd.appendChild(md); document.body.appendChild(bd);
 
     var minExample = (MIN_TOPUP_CENTS / 100).toFixed(2).replace(/\.00$/, '');
     md.innerHTML =
-      '<h3 style="margin:0 0 8px">Top up your wallet</h3>'
+      '<h3 id="n_topup_title" style="margin:0 0 8px">Top up your wallet</h3>'
       + '<div class="nister-alert nister-ok" id="n_ok"></div>'
       + '<div class="nister-alert nister-err" id="n_err"></div>'
       + '<div class="nister-modebar" id="n_modes">'
@@ -447,6 +451,23 @@
       + '<div class="nister-actions"><button class="nister-btn nister-ghost" id="n_cancel" type="button">Close</button></div>';
 
     var instrLoaded = false;
+    function syncTopupViewport(){
+      var h = window.innerHeight || 0;
+      if (window.visualViewport && window.visualViewport.height) h = window.visualViewport.height;
+      if (h > 0) document.documentElement.style.setProperty('--nister-vh', h + 'px');
+    }
+    syncTopupViewport();
+    window.addEventListener('resize', syncTopupViewport);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', syncTopupViewport);
+    function keepFieldVisible(ev){
+      var el = ev && ev.target;
+      if (!el || !el.matches || !el.matches('.nister-input')) return;
+      syncTopupViewport();
+      setTimeout(function(){
+        try{ el.scrollIntoView({block:'center', inline:'nearest', behavior:'smooth'}); }
+        catch(_){ el.scrollIntoView(true); }
+      }, 180);
+    }
     function loadManualInstructions(){
       var instr = $('#n_instr');
       if (!instr || instrLoaded) return;
@@ -497,6 +518,7 @@
 
     function openModal(){
       if (!window.NISTER_LOGGED_IN) { window.location.href = '/login.php'; return; }
+      syncTopupViewport();
       var raw = (window.NISTER_MSISDN||'').trim();
       var x = $('#in_msisdn'); if (x) { x.value = raw; x.readOnly = true; }
       var ok=$('#n_ok'), err=$('#n_err'); if(ok) ok.style.display='none'; if(err){err.style.display='none'; err.textContent='';}
@@ -508,6 +530,16 @@
     bTop.addEventListener('click', openModal);
     var topupNow = document.getElementById('topup_now');
     if (topupNow) topupNow.addEventListener('click', openModal);
+    Array.prototype.slice.call(document.querySelectorAll('[data-topup-open]')).forEach(function(btn){
+      btn.addEventListener('click', openModal);
+    });
+    bd.addEventListener('click', function(ev){
+      if (ev.target === bd) closeModal();
+    });
+    document.addEventListener('keydown', function(ev){
+      if (ev.key === 'Escape' && bd.style.display !== 'none') closeModal();
+    });
+    md.addEventListener('focusin', keepFieldVisible);
     $('#n_cancel').addEventListener('click', closeModal);
     $('#n_mode_paystack').addEventListener('click', function(){ setTopupMode('paystack'); });
     $('#n_mode_manual').addEventListener('click', function(){ setTopupMode('manual'); });

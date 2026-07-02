@@ -46,7 +46,7 @@ if ($radiusUser !== '' && $radiusPass !== '' && $radiusSecret !== '') {
   $radiusOk = (strpos($out, 'Access-Accept') !== false) ? 1 : 0;
   if ($radiusOk === 0) $radiusNote = 'radius_auth_failed';
 } else {
-  $radiusOk = 0;
+  $radiusOk = null;
   $radiusNote = 'radius_auth_skipped';
 }
 
@@ -250,4 +250,4 @@ $sample = [
 $pdo = health_pdo($ENV);
 health_insert_sample($pdo, $sample);
 health_update_disk_alert($pdo, $sample);
-health_update_events($pdo, $sample);
+health_update_events($pdo, $sample, $ENV);

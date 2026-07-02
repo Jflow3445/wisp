@@ -811,13 +811,19 @@ function location_router_discovery_norm_id(string $raw): string {
 }
 
 function location_router_discovery_identity_key(array $in): string {
-  return hash('sha256', implode('|', [
-    strtolower((string)($in['nas_ip'] ?? '')),
-    strtolower((string)($in['exporter_ip'] ?? '')),
-    strtolower((string)($in['exporter_id'] ?? '')),
-    strtolower((string)($in['router_ip_hint'] ?? '')),
-    strtolower((string)($in['host_ip'] ?? '')),
-  ]));
+  $exporterId = strtolower(trim((string)($in['exporter_id'] ?? '')));
+  $nasIp = strtolower(trim((string)($in['nas_ip'] ?? '')));
+  $exporterIp = strtolower(trim((string)($in['exporter_ip'] ?? '')));
+  $routerIpHint = strtolower(trim((string)($in['router_ip_hint'] ?? '')));
+  $hostIp = strtolower(trim((string)($in['host_ip'] ?? '')));
+
+  if ($exporterId !== '') return hash('sha256', 'exporter_id|'.$exporterId);
+  if ($nasIp !== '') return hash('sha256', 'nas_ip|'.$nasIp);
+  if ($exporterIp !== '') return hash('sha256', 'exporter_ip|'.$exporterIp);
+  if ($routerIpHint !== '') return hash('sha256', 'router_ip_hint|'.$routerIpHint);
+  if ($hostIp !== '') return hash('sha256', 'host_ip|'.$hostIp);
+
+  return hash('sha256', 'empty');
 }
 
 function location_router_discovery_capture(array $in): ?array {
@@ -926,17 +932,31 @@ function location_discovery_list(?int $locationId = null, bool $onlyUnassigned =
                  remote_addr, x_forwarded_for, link_login_only, source, status, note,
                  first_seen_at, last_seen_at, seen_count, assigned_location_id, assigned_mapping_id,
                  assigned_by, assigned_at
-          FROM location_router_discovery
+          FROM location_router_discovery d
           WHERE 1=1";
   $bind = [];
   if ($onlyUnassigned) {
-    $sql .= " AND (assigned_location_id IS NULL OR assigned_location_id=0) AND status<>'ignored'";
+    $sql .= " AND (d.assigned_location_id IS NULL OR d.assigned_location_id=0)
+              AND d.status<>'ignored'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM location_nas n
+                JOIN locations l ON l.id=n.location_id AND l.active=1
+                WHERE n.active=1
+                  AND (
+                    (COALESCE(d.nas_ip,'')<>'' AND d.nas_ip=n.nas_ip)
+                    OR (COALESCE(d.exporter_ip,'')<>'' AND d.exporter_ip=n.exporter_ip)
+                    OR (COALESCE(d.exporter_id,'')<>'' AND d.exporter_id=n.exporter_id)
+                    OR (COALESCE(d.host_ip,'')<>'' AND d.host_ip=n.nas_ip)
+                    OR (COALESCE(d.router_ip_hint,'')<>'' AND d.router_ip_hint=n.nas_ip)
+                  )
+              )";
   }
   if (!$onlyUnassigned && $locationId !== null && $locationId > 0) {
-    $sql .= " AND assigned_location_id=:l";
+    $sql .= " AND d.assigned_location_id=:l";
     $bind[':l'] = $locationId;
   }
-  $sql .= " ORDER BY last_seen_at DESC, id DESC LIMIT :lim";
+  $sql .= " ORDER BY d.last_seen_at DESC, d.id DESC LIMIT :lim";
 
   $st = $PDO->prepare($sql);
   foreach ($bind as $k => $v) $st->bindValue($k, $v, PDO::PARAM_INT);
@@ -1165,6 +1185,31 @@ function location_router_discovery_reconcile_known(): void {
      WHERE d.status<>'ignored'
        AND COALESCE(d.assigned_location_id,0)=0"
   );
+
+  // Legacy rows may have been assigned before a complete router map existed.
+  // Keep later fingerprints for the same router from reappearing as pending.
+  $PDO->exec(
+    "UPDATE location_router_discovery d
+     JOIN location_router_discovery a
+       ON a.id<>d.id
+      AND a.status='assigned'
+      AND COALESCE(a.assigned_location_id,0)>0
+      AND (
+        (COALESCE(d.nas_ip,'')<>'' AND d.nas_ip=a.nas_ip)
+        OR (COALESCE(d.exporter_ip,'')<>'' AND d.exporter_ip=a.exporter_ip)
+        OR (COALESCE(d.exporter_id,'')<>'' AND d.exporter_id=a.exporter_id)
+        OR (COALESCE(d.host_ip,'')<>'' AND (d.host_ip=a.host_ip OR d.host_ip=a.nas_ip OR d.host_ip=a.router_ip_hint))
+        OR (COALESCE(d.router_ip_hint,'')<>'' AND (d.router_ip_hint=a.router_ip_hint OR d.router_ip_hint=a.nas_ip OR d.router_ip_hint=a.host_ip))
+      )
+     JOIN locations l ON l.id=a.assigned_location_id AND l.active=1
+     SET d.status='assigned',
+         d.assigned_location_id=a.assigned_location_id,
+         d.assigned_mapping_id=COALESCE(d.assigned_mapping_id, a.assigned_mapping_id),
+         d.assigned_by=COALESCE(d.assigned_by, a.assigned_by),
+         d.assigned_at=COALESCE(d.assigned_at, NOW())
+     WHERE d.status<>'ignored'
+       AND COALESCE(d.assigned_location_id,0)=0"
+  );
 }
 
 function location_resolve_assigned_discovery_context(array $ips, array $ids): ?array {
@@ -1258,12 +1303,14 @@ function location_resolve_from_router_context(array $in = []): ?array {
     $st->execute($params);
     $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     if (!$row) return null;
-    return [
+    $out = [
       'id' => (int)($row['id'] ?? 0),
       'code' => (string)($row['code'] ?? ''),
       'name' => (string)($row['name'] ?? ''),
       'active' => (int)($row['active'] ?? 0),
     ];
+    if (array_key_exists('mapping_id', $row)) $out['mapping_id'] = (int)($row['mapping_id'] ?? 0);
+    return $out;
   };
 
   $remoteAddr = (string)($in['remote_addr'] ?? ($_SERVER['REMOTE_ADDR'] ?? ''));
@@ -1311,19 +1358,31 @@ function location_resolve_from_router_context(array $in = []): ?array {
   $primaryExporterIp = filter_var(trim($exporterIpHint), FILTER_VALIDATE_IP) ? trim($exporterIpHint) : '';
   $primaryExporterId = (string)($ids[0] ?? '');
 
-  try {
-    location_router_discovery_track([
-      'nas_ip' => $primaryNas,
-      'exporter_ip' => $primaryExporterIp,
-      'exporter_id' => $primaryExporterId,
-      'router_ip_hint' => $routerIp,
-      'host_ip' => $hostIp ?? $hostIp2 ?? '',
-      'remote_addr' => $remoteAddr,
-      'x_forwarded_for' => $xff,
-      'link_login_only' => (string)($in['link_login_only'] ?? from_any([$in, $_POST ?? [], $_GET ?? [], $_REQUEST ?? []], 'link_login_only', '')),
-      'source' => (string)($in['source'] ?? 'router_context'),
-    ], null);
-  } catch (Throwable $e) { /* non-fatal */ }
+  $trackDiscovery = static function(?array $resolvedLocation = null) use (
+    $primaryNas,
+    $primaryExporterIp,
+    $primaryExporterId,
+    $routerIp,
+    $hostIp,
+    $hostIp2,
+    $remoteAddr,
+    $xff,
+    $in
+  ): void {
+    try {
+      location_router_discovery_track([
+        'nas_ip' => $primaryNas,
+        'exporter_ip' => $primaryExporterIp,
+        'exporter_id' => $primaryExporterId,
+        'router_ip_hint' => $routerIp,
+        'host_ip' => $hostIp ?? $hostIp2 ?? '',
+        'remote_addr' => $remoteAddr,
+        'x_forwarded_for' => $xff,
+        'link_login_only' => (string)($in['link_login_only'] ?? from_any([$in, $_POST ?? [], $_GET ?? [], $_REQUEST ?? []], 'link_login_only', '')),
+        'source' => (string)($in['source'] ?? 'router_context'),
+      ], $resolvedLocation);
+    } catch (Throwable $e) { /* non-fatal */ }
+  };
 
   if (!$ips && !$ids) return null;
 
@@ -1333,7 +1392,7 @@ function location_resolve_from_router_context(array $in = []): ?array {
     // Prefer mapping where both identity and IP context match.
     if ($ips) {
       $ipPh = implode(',', array_fill(0, count($ips), '?'));
-      $sql = "SELECT l.id, l.code, l.name, l.active
+      $sql = "SELECT l.id, l.code, l.name, l.active, n.id AS mapping_id
               FROM location_nas n
               JOIN locations l ON l.id = n.location_id
               WHERE n.active=1
@@ -1348,15 +1407,18 @@ function location_resolve_from_router_context(array $in = []): ?array {
               LIMIT 1";
       $m = $fetchLoc($sql, array_merge($ids, $ips, $ips));
       if ($m) {
+        $mid = (int)($m['mapping_id'] ?? 0);
+        $trackDiscovery($m);
         try {
-          location_router_discovery_mark_assigned((int)($m['id'] ?? 0), $primaryNas, $primaryExporterIp, $primaryExporterId, null, null);
+          location_router_discovery_mark_assigned((int)($m['id'] ?? 0), $primaryNas, $primaryExporterIp, $primaryExporterId, $mid > 0 ? $mid : null, null);
         } catch (Throwable $e) { /* non-fatal */ }
+        unset($m['mapping_id']);
         return $m;
       }
     }
 
     // Fallback: identity-only mapping.
-    $sql = "SELECT l.id, l.code, l.name, l.active
+    $sql = "SELECT l.id, l.code, l.name, l.active, n.id AS mapping_id
             FROM location_nas n
             JOIN locations l ON l.id = n.location_id
             WHERE n.active=1
@@ -1366,16 +1428,19 @@ function location_resolve_from_router_context(array $in = []): ?array {
             LIMIT 1";
     $m = $fetchLoc($sql, $ids);
     if ($m) {
+      $mid = (int)($m['mapping_id'] ?? 0);
+      $trackDiscovery($m);
       try {
-        location_router_discovery_mark_assigned((int)($m['id'] ?? 0), $primaryNas, $primaryExporterIp, $primaryExporterId, null, null);
+        location_router_discovery_mark_assigned((int)($m['id'] ?? 0), $primaryNas, $primaryExporterIp, $primaryExporterId, $mid > 0 ? $mid : null, null);
       } catch (Throwable $e) { /* non-fatal */ }
+      unset($m['mapping_id']);
       return $m;
     }
   }
 
   if ($ips) {
     $ipPh = implode(',', array_fill(0, count($ips), '?'));
-    $sql = "SELECT l.id, l.code, l.name, l.active
+    $sql = "SELECT l.id, l.code, l.name, l.active, n.id AS mapping_id
             FROM location_nas n
             JOIN locations l ON l.id = n.location_id
             WHERE n.active=1
@@ -1389,15 +1454,19 @@ function location_resolve_from_router_context(array $in = []): ?array {
             LIMIT 1";
     $m = $fetchLoc($sql, array_merge($ips, $ips));
     if ($m) {
+      $mid = (int)($m['mapping_id'] ?? 0);
+      $trackDiscovery($m);
       try {
-        location_router_discovery_mark_assigned((int)($m['id'] ?? 0), $primaryNas, $primaryExporterIp, $primaryExporterId, null, null);
+        location_router_discovery_mark_assigned((int)($m['id'] ?? 0), $primaryNas, $primaryExporterIp, $primaryExporterId, $mid > 0 ? $mid : null, null);
       } catch (Throwable $e) { /* non-fatal */ }
+      unset($m['mapping_id']);
       return $m;
     }
   }
 
   $m = location_resolve_assigned_discovery_context($ips, $ids);
   if ($m) {
+    $trackDiscovery($m);
     try {
       $mid = (int)($m['mapping_id'] ?? 0);
       location_router_discovery_mark_assigned((int)($m['id'] ?? 0), $primaryNas, $primaryExporterIp, $primaryExporterId, $mid > 0 ? $mid : null, null);
@@ -1406,6 +1475,7 @@ function location_resolve_from_router_context(array $in = []): ?array {
     return $m;
   }
 
+  $trackDiscovery(null);
   return null;
 }
 

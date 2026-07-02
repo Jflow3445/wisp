@@ -191,17 +191,52 @@ function health_update_disk_alert(PDO $pdo, array $s): void {
   alerts_insert($pdo, (string)($s['ts'] ?? date('Y-m-d H:i:s')), $type, null, health_disk_alert_message($s), null);
 }
 
-function health_update_events(PDO $pdo, array $s): void {
+function health_config_int(array $env, string $key, int $default, int $min, int $max): int {
+  $raw = trim((string)($env[$key] ?? (getenv($key) ?: ($_ENV[$key] ?? ''))));
+  $n = is_numeric($raw) ? (int)$raw : $default;
+  if ($n < $min) return $min;
+  if ($n > $max) return $max;
+  return $n;
+}
+
+function health_consecutive_overall(PDO $pdo, int $target, int $limit): array {
   health_bootstrap($pdo);
-  $overall = $s['overall_ok'];
+  $limit = max(1, min(24, $limit));
+  $st = $pdo->prepare("SELECT ts, overall_ok FROM health_samples ORDER BY id DESC LIMIT :lim");
+  $st->bindValue(':lim', $limit, PDO::PARAM_INT);
+  $st->execute();
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $count = 0;
+  $oldestTs = null;
+  foreach ($rows as $row) {
+    if ((int)($row['overall_ok'] ?? -1) !== $target) break;
+    $count++;
+    $oldestTs = (string)($row['ts'] ?? '');
+  }
+
+  return [
+    'count' => $count,
+    'oldest_ts' => $oldestTs !== '' ? $oldestTs : null,
+  ];
+}
+
+function health_update_events(PDO $pdo, array $s, array $env = []): void {
+  health_bootstrap($pdo);
+  $overall = array_key_exists('overall_ok', $s) && $s['overall_ok'] !== null ? (int)$s['overall_ok'] : null;
   $note = (string)($s['note'] ?? '');
   $now = (string)($s['ts'] ?? date('Y-m-d H:i:s'));
+  $failThreshold = health_config_int($env, 'HEALTH_FAIL_CONSECUTIVE', 2, 1, 12);
+  $recoverThreshold = health_config_int($env, 'HEALTH_RECOVER_CONSECUTIVE', 1, 1, 12);
 
   $open = $pdo->query("SELECT id FROM health_events WHERE end_ts IS NULL ORDER BY id DESC LIMIT 1")->fetchColumn();
   if ($overall === 0) {
+    $failRun = health_consecutive_overall($pdo, 0, $failThreshold);
+    if ((int)$failRun['count'] < $failThreshold) return;
+
     if (!$open) {
       $st = $pdo->prepare("INSERT INTO health_events (start_ts, reason, last_msg) VALUES (:s, :r, :m)");
-      $st->execute([':s'=>$now, ':r'=>'health_fail', ':m'=>$note]);
+      $st->execute([':s'=>($failRun['oldest_ts'] ?? $now), ':r'=>'health_fail', ':m'=>$note]);
       alerts_insert($pdo, $now, 'health_fail', null, 'Health check failed: '.$note, null);
     } else {
       $st = $pdo->prepare("UPDATE health_events SET last_msg=:m WHERE id=:id");
@@ -209,6 +244,9 @@ function health_update_events(PDO $pdo, array $s): void {
     }
   } else {
     if ($open) {
+      $okRun = health_consecutive_overall($pdo, 1, $recoverThreshold);
+      if ((int)$okRun['count'] < $recoverThreshold) return;
+
       $st = $pdo->prepare("UPDATE health_events SET end_ts=:e WHERE id=:id");
       $st->execute([':e'=>$now, ':id'=>$open]);
       alerts_insert($pdo, $now, 'health_ok', null, 'Health check recovered', null);
