@@ -98,6 +98,15 @@ if ($enabled) {
     echo json_encode(['ok'=>false,'error'=>'invalid_plan'], JSON_UNESCAPED_SLASHES);
     exit;
   }
+  if (!radius_plan_is_active($plan)) {
+    http_response_code(409);
+    echo json_encode([
+      'ok'=>false,
+      'error'=>'plan_inactive',
+      'message'=>'This plan is no longer available. Please choose one of the current plans.'
+    ], JSON_UNESCAPED_SLASHES);
+    exit;
+  }
 }
 
 $auto = auto_renew_set($msisdn, $enabled, $planCode !== '' ? $planCode : null, $locId);

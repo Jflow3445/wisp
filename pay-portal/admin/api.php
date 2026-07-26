@@ -443,7 +443,7 @@ function sms_fetch_all_users(PDO $r): array {
     $v = sms_recipient_normalize((string)$u);
     if ($v !== '') $out[$v] = true;
   }
-  return array_keys($out);
+  return array_map('strval', array_keys($out));
 }
 
 function sms_fetch_group_users(PDO $r, string $group): array {
@@ -454,7 +454,7 @@ function sms_fetch_group_users(PDO $r, string $group): array {
     $v = sms_recipient_normalize((string)$u);
     if ($v !== '') $out[$v] = true;
   }
-  return array_keys($out);
+  return array_map('strval', array_keys($out));
 }
 
 function parse_quota_bytes(array $in): ?int {
@@ -499,7 +499,7 @@ function promo_user_list_dedupe(array $rows): array {
     if (!preg_match('/^233\d{9}$/', $m)) continue;
     $out[$m] = true;
   }
-  return array_keys($out);
+  return array_map('strval', array_keys($out));
 }
 
 function promo_fetch_recent_users(PDO $pdo, PDO $r, int $days, ?int $locationId = null): array {
@@ -636,6 +636,174 @@ function promo_bootstrap_wallet_table(PDO $pdo): void {
     'location_id',
     "`location_id` INT NULL AFTER `msisdn`, ADD KEY `idx_wallet_promo_location` (`location_id`)"
   );
+}
+
+function promo_plan_days(array $in, array $plan): int {
+  $days = (int)($plan['duration_days'] ?? 0);
+  return $days > 0 ? $days : 0;
+}
+
+function promo_current_purchase_expiry(PDO $pdo, array $users, DateTimeImmutable $now, DateTimeZone $tz): ?DateTimeImmutable {
+  try {
+    if (!table_exists($pdo, 'purchases') || !column_exists($pdo, 'purchases', 'msisdn') || !column_exists($pdo, 'purchases', 'expires_at')) {
+      return null;
+    }
+    $users = array_values(array_unique(array_filter(array_map('strval', $users))));
+    if (!$users) return null;
+    $ph = implode(',', array_fill(0, count($users), '?'));
+    $where = ["msisdn IN ($ph)", "expires_at IS NOT NULL", "expires_at > ?"];
+    $params = $users;
+    $when = $now->format('Y-m-d H:i:s');
+    $params[] = $when;
+    if (column_exists($pdo, 'purchases', 'status')) {
+      $where[] = "status='applied'";
+    }
+    if (column_exists($pdo, 'purchases', 'activated_at')) {
+      $where[] = "(activated_at IS NULL OR activated_at <= ?)";
+      $params[] = $when;
+    }
+    $sql = "SELECT MAX(expires_at) FROM purchases WHERE " . implode(' AND ', $where);
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    $raw = trim((string)($st->fetchColumn() ?: ''));
+    if ($raw === '') return null;
+    $dt = new DateTimeImmutable($raw, $tz);
+    return $dt > $now ? $dt : null;
+  } catch (Throwable $e) {
+    return null;
+  }
+}
+
+function promo_insert_pending_purchase(PDO $pdo, string $msisdn, ?int $locationId, string $planCode, string $ref, string $createdBy): ?int {
+  if (!table_exists($pdo, 'purchases')) {
+    throw new RuntimeException('purchases_table_missing');
+  }
+  $cols = $pdo->query("SHOW COLUMNS FROM purchases")->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $has = [];
+  foreach ($cols as $c) $has[strtolower((string)$c['Field'])] = true;
+
+  $fields = [];
+  $vals = [];
+  $bind = [];
+  $add = static function(string $c, $v) use (&$fields, &$vals, &$bind): void {
+    $fields[] = "`$c`";
+    $vals[] = ":$c";
+    $bind[":$c"] = $v;
+  };
+
+  if (!empty($has['msisdn'])) $add('msisdn', $msisdn);
+  if (!empty($has['location_id']) && $locationId !== null && $locationId > 0) $add('location_id', $locationId);
+  if (!empty($has['plan_code'])) $add('plan_code', $planCode);
+  if (!empty($has['price_cents'])) $add('price_cents', 0);
+  if (!empty($has['price'])) $add('price', 0);
+  if (!empty($has['status'])) $add('status', 'pending');
+  if (!empty($has['ref'])) $add('ref', $ref);
+  if (!empty($has['payment_ref'])) $add('payment_ref', $ref);
+  if (!empty($has['source'])) $add('source', 'admin_promo');
+  if (!empty($has['created_by'])) $add('created_by', $createdBy);
+
+  if (!$fields) throw new RuntimeException('purchases_columns_missing');
+  $sql = "INSERT INTO purchases (" . implode(',', $fields) . ") VALUES (" . implode(',', $vals) . ")";
+  $st = $pdo->prepare($sql);
+  foreach ($bind as $k=>$v) $st->bindValue($k, $v);
+  $st->execute();
+  $id = (int)$pdo->lastInsertId();
+  return $id > 0 ? $id : null;
+}
+
+function promo_mark_purchase_applied(PDO $pdo, ?int $purchaseId, DateTimeImmutable $expiresAt): void {
+  if (!$purchaseId || !table_exists($pdo, 'purchases')) return;
+  $sets = [];
+  $bind = [':id' => $purchaseId];
+  if (column_exists($pdo, 'purchases', 'status')) $sets[] = "status='applied'";
+  if (column_exists($pdo, 'purchases', 'activated_at')) $sets[] = 'activated_at=NOW()';
+  if (column_exists($pdo, 'purchases', 'expires_at')) {
+    $sets[] = 'expires_at=:expires_at';
+    $bind[':expires_at'] = $expiresAt->format('Y-m-d H:i:s');
+  }
+  if (!$sets) return;
+  $st = $pdo->prepare('UPDATE purchases SET ' . implode(',', $sets) . ' WHERE id=:id');
+  foreach ($bind as $k=>$v) $st->bindValue($k, $v);
+  $st->execute();
+}
+
+function promo_mark_purchase_failed(PDO $pdo, ?int $purchaseId): void {
+  if (!$purchaseId || !table_exists($pdo, 'purchases') || !column_exists($pdo, 'purchases', 'status')) return;
+  try {
+    $pdo->prepare("UPDATE purchases SET status='failed' WHERE id=:id AND status='pending'")->execute([':id'=>$purchaseId]);
+  } catch (Throwable $e) { /* non-fatal */ }
+}
+
+function promo_apply_plan_access(PDO $pdo, PDO $r, string $msisdn, array $plan, int $days, DateTimeImmutable $purchaseAt, ?int $locationId, string $ref, string $createdBy, array $env = []): array {
+  if ($days <= 0) throw new RuntimeException('invalid_plan_duration');
+  $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
+  if (!$targets) throw new RuntimeException('invalid_msisdn');
+
+  $tz = $purchaseAt->getTimezone();
+  $currentExpiry = promo_current_purchase_expiry($pdo, $targets, $purchaseAt, $tz);
+  $base = ($currentExpiry instanceof DateTimeImmutable && $currentExpiry > $purchaseAt) ? $currentExpiry : $purchaseAt;
+  $expiresAt = $base->modify('+' . $days . ' days');
+  $expStr = $expiresAt->format('d M Y H:i:s');
+
+  $planCode = (string)($plan['code'] ?? 'UNKNOWN');
+  $planName = (string)($plan['display_name'] ?? $plan['name'] ?? $planCode);
+  $addrList = trim((string)($plan['address_list'] ?? 'HS_ACTIVE'));
+  if ($addrList === '' || in_array(strtoupper($addrList), ['HS_LIMITED','HS_NOPAID'], true)) $addrList = 'HS_ACTIVE';
+  $rateLimit = trim((string)($plan['rate_limit'] ?? ''));
+  $quotaBytes = (int)($plan['quota_bytes'] ?? 0);
+  if ($quotaBytes < 0) $quotaBytes = 0;
+  $preserveExistingPlanAttrs = ($currentExpiry instanceof DateTimeImmutable && $currentExpiry > $purchaseAt);
+
+  $pid = promo_insert_pending_purchase($pdo, $msisdn, $locationId, $planCode, $ref, $createdBy);
+  $started = false;
+  try {
+    if (function_exists('radius_normalize_legacy_nopaid')) radius_normalize_legacy_nopaid($r);
+    if (!$r->inTransaction()) { $r->beginTransaction(); $started = true; }
+    foreach ($targets as $u) {
+      if ($u === '') continue;
+      radius_set_check($r, $u, 'Expiration', ':=', $expStr);
+      radius_set_check($r, $u, 'Simultaneous-Use', ':=', radius_simultaneous_use_limit());
+      $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")
+        ->execute([':u'=>$u]);
+
+      if (!$preserveExistingPlanAttrs) {
+        if ($quotaBytes > 0) {
+          radius_set_reply($r, $u, 'Nister-Quota-Bytes', ':=', (string)$quotaBytes);
+          $hi = intdiv($quotaBytes, 4294967296);
+          $lo = (int)($quotaBytes - ($hi * 4294967296));
+          radius_set_reply($r, $u, 'Mikrotik-Total-Limit', ':=', (string)$lo);
+          if ($hi > 0) radius_set_reply($r, $u, 'Mikrotik-Total-Limit-Gigawords', ':=', (string)$hi);
+        }
+        radius_set_reply($r, $u, 'Nister-Plan-Code', ':=', $planCode);
+        radius_set_reply($r, $u, 'Nister-Plan-Name', ':=', $planName);
+        radius_set_reply($r, $u, 'Nister-Duration-Days', ':=', (string)$days);
+        radius_set_reply($r, $u, 'Nister-Window-Start', ':=', $purchaseAt->format('Y-m-d H:i:s'));
+        $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute='Mikrotik-Rate-Limit'")->execute([':u'=>$u]);
+        if ($rateLimit !== '') radius_set_reply($r, $u, 'Mikrotik-Rate-Limit', ':=', $rateLimit);
+      }
+
+      $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid','HS_ACTIVE')")->execute([':u'=>$u]);
+      $r->prepare("INSERT INTO radusergroup (username, groupname, priority) VALUES (:u, 'HS_ACTIVE', 0)")->execute([':u'=>$u]);
+      $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Address-List','MT-Address-List')")->execute([':u'=>$u]);
+      radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addrList);
+    }
+    if ($started && $r->inTransaction()) $r->commit();
+  } catch (Throwable $e) {
+    if ($started && $r->inTransaction()) $r->rollBack();
+    promo_mark_purchase_failed($pdo, $pid);
+    throw $e;
+  }
+
+  promo_mark_purchase_applied($pdo, $pid, $expiresAt);
+  if (function_exists('radius_try_disconnect')) {
+    try { radius_try_disconnect($msisdn, $env, $locationId); } catch (Throwable $e) { /* non-fatal */ }
+  }
+
+  return [
+    'purchase_id' => $pid,
+    'expires_at' => $expiresAt->format('Y-m-d H:i:s'),
+    'extended_from_current_purchase' => $preserveExistingPlanAttrs,
+  ];
 }
 
 function admin_user_canon(string $username): string {
@@ -3396,9 +3564,9 @@ try {
       $locationId = isset($locScope['location_id']) && $locScope['location_id'] !== null ? (int)$locScope['location_id'] : null;
 
       $kind = strtolower(trim((string)from_any([$in], 'kind', from_any([$in], 'promo_type', ''))));
-      if (!in_array($kind, ['wallet','data'], true)) {
+      if (!in_array($kind, ['wallet','data','plan'], true)) {
         http_response_code(400);
-        echo json_encode(['ok'=>false,'error'=>'invalid_kind','detail'=>'Use wallet or data']);
+        echo json_encode(['ok'=>false,'error'=>'invalid_kind','detail'=>'Use wallet, data, or plan']);
         break;
       }
 
@@ -3409,6 +3577,56 @@ try {
         break;
       }
 
+      $tz = new DateTimeZone(date_default_timezone_get());
+      $now = new DateTimeImmutable('now', $tz);
+      $exp = null;
+      $expUtc = null;
+      if ($kind !== 'plan') {
+        $exp = promo_parse_expiry($in, $tz);
+        if (!$exp) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'expiry_required','detail'=>'Provide expires_at or days']);
+          break;
+        }
+        if ($exp <= $now) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'expiry_in_past','detail'=>'Promo expiry must be in the future']);
+          break;
+        }
+        $expUtc = $exp->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+      }
+
+      $plan = null;
+      $planDays = 0;
+      $planCode = '';
+      if ($kind === 'plan') {
+        $planCode = trim((string)from_any([$in], 'plan_code', from_any([$in], 'plan', '')));
+        if ($planCode === '') {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'plan_required','detail'=>'Plan access promo needs an active plan code']);
+          break;
+        }
+        $strictLocationPlan = ($locationId !== null && $locationId > 0);
+        $candidatePlan = radius_find_plan($planCode, $locationId, $strictLocationPlan);
+        if (!$candidatePlan) {
+          http_response_code(404);
+          echo json_encode(['ok'=>false,'error'=>'unknown_plan']);
+          break;
+        }
+        if (!radius_plan_is_active($candidatePlan)) {
+          http_response_code(409);
+          echo json_encode(['ok'=>false,'error'=>'plan_inactive','message'=>'This plan is inactive. Choose a current plan before running plan access promo.']);
+          break;
+        }
+        $plan = $candidatePlan;
+        $planDays = promo_plan_days($in, $plan);
+        if ($planDays <= 0) {
+          http_response_code(400);
+          echo json_encode(['ok'=>false,'error'=>'plan_duration_required','detail'=>'Selected plan needs duration_days']);
+          break;
+        }
+      }
+
       $r = rdb_pdo();
       $targets = promo_collect_targets($PDO, $r, $in, $locationId);
       if (!$targets) {
@@ -3416,15 +3634,6 @@ try {
         echo json_encode(['ok'=>false,'error'=>'no_targets']);
         break;
       }
-
-      $tz = new DateTimeZone(date_default_timezone_get());
-      $exp = promo_parse_expiry($in, $tz);
-      if (!$exp) {
-        http_response_code(400);
-        echo json_encode(['ok'=>false,'error'=>'expiry_required','detail'=>'Provide expires_at or days']);
-        break;
-      }
-      $expUtc = $exp->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
       $notes = trim((string)from_any([$in], 'notes', 'Admin promo'));
       $createdBy = (string)($_SESSION['admin_user'] ?? 'admin');
       $baseRef = 'PROMO-' . date('YmdHis') . '-' . bin2hex(random_bytes(3));
@@ -3448,6 +3657,7 @@ try {
 
         $i = 0;
         foreach ($targets as $msisdn) {
+          $msisdn = (string)$msisdn;
           $i++;
           $ref = $baseRef . '-W-' . $i;
           try {
@@ -3469,6 +3679,42 @@ try {
           'total_targets'=>count($targets),
           'created'=>$created,
           'failed'=>$failed,
+          'errors'=>$errors,
+        ]);
+        break;
+      }
+
+      if ($kind === 'plan') {
+        $extended = 0;
+        $fresh = 0;
+        $purchaseAt = $now;
+        $i = 0;
+        foreach ($targets as $msisdn) {
+          $msisdn = (string)$msisdn;
+          $i++;
+          $ref = $baseRef . '-P-' . $i;
+          try {
+            $result = promo_apply_plan_access($PDO, $r, $msisdn, $plan, $planDays, $purchaseAt, $locationId, $ref, $createdBy, is_array($ENV) ? $ENV : []);
+            $created++;
+            if (!empty($result['extended_from_current_purchase'])) $extended++; else $fresh++;
+          } catch (Throwable $e) {
+            $failed++;
+            if (count($errors) < 20) $errors[] = ['msisdn'=>$msisdn, 'detail'=>$e->getMessage()];
+          }
+        }
+
+        echo json_encode([
+          'ok'=>true,
+          'kind'=>'plan',
+          'scope'=>$scope,
+          'location_id'=>$locationId,
+          'plan_code'=>(string)($plan['code'] ?? $planCode),
+          'days'=>$planDays,
+          'total_targets'=>count($targets),
+          'created'=>$created,
+          'failed'=>$failed,
+          'fresh'=>$fresh,
+          'extended'=>$extended,
           'errors'=>$errors,
         ]);
         break;
@@ -3500,6 +3746,7 @@ try {
       }
       $i = 0;
       foreach ($targets as $msisdn) {
+        $msisdn = (string)$msisdn;
         $i++;
         $ref = $baseRef . '-D-' . $i;
         try {
@@ -3562,6 +3809,15 @@ try {
       $strictLocationPlan = ($effectiveLocationId !== null && $effectiveLocationId > 0);
       $plan = radius_find_plan($code, $effectiveLocationId, $strictLocationPlan);
       if (!$plan) { http_response_code(404); echo json_encode(['ok'=>false,'error'=>'unknown_plan']); break; }
+      if (!radius_plan_is_active($plan)) {
+        http_response_code(409);
+        echo json_encode([
+          'ok'=>false,
+          'error'=>'plan_inactive',
+          'message'=>'This plan is inactive. Choose a current plan code before applying access.'
+        ]);
+        break;
+      }
 
       $price = parse_amount_cents($in);
       if ($price <= 0 && isset($plan['price_cents'])) $price = (int)$plan['price_cents'];

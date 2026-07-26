@@ -120,6 +120,9 @@ if ($msisdn === '') json_out(['ok'=>false,'error'=>'unauthorized'],401);
 
   $plan = radius_find_plan($code, $locationId, true);
   if (!$plan) json_out(['ok'=>false,'error'=>'unknown_plan'],404);
+  if (!radius_plan_is_active($plan)) {
+    json_out(['ok'=>false,'error'=>'plan_inactive','message'=>'This plan is no longer available. Please choose one of the current plans.'],409);
+  }
   if (!isset($plan['price_cents'])) json_out(['ok'=>false,'error'=>'plan_not_configured','message'=>'Plan has no Nister-Price-Cents in FreeRADIUS.'],409);
 
   $lockHeld = purchase_try_lock($PDO, $msisdn, 5);

@@ -39,6 +39,10 @@ function radius_set_check(PDO $r, string $user, string $attr, string $op, string
   }
 }
 
+function radius_simultaneous_use_limit(): string {
+  return '1';
+}
+
 
 function radius_set_user_group(PDO $r, string $user, string $group): void {
   // Single group model: clear others and set priority 1 for simplicity
@@ -474,10 +478,64 @@ function nister_effective_total_quota(PDO $r, array $users, ?string $group, ?Dat
   return ($total >= 0) ? $total : 0;
 }
 
+function nister_max_expiry_carry_days(): int {
+  $raw = getenv('NISTER_MAX_EXPIRY_CARRY_DAYS');
+  if ($raw === false || trim((string)$raw) === '') return 0;
+  $days = (int)$raw;
+  if ($days < 0) return 0;
+  if ($days > 365) return 365;
+  return $days;
+}
+
+function nister_expiry_base_start(DateTimeImmutable $now, ?DateTimeImmutable $currentExpiry): DateTimeImmutable {
+  if (!($currentExpiry instanceof DateTimeImmutable) || $currentExpiry <= $now) {
+    return $now;
+  }
+  $maxCarryDays = nister_max_expiry_carry_days();
+  $maxCarryUntil = $now->modify('+' . $maxCarryDays . ' days');
+  return ($currentExpiry <= $maxCarryUntil) ? $currentExpiry : $now;
+}
+
+function nister_radius_table_exists(PDO $r, string $table): bool {
+  if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) return false;
+  try {
+    $st = $r->query("SHOW TABLES LIKE " . $r->quote($table));
+    return (bool)$st->fetchColumn();
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
+function nister_has_current_purchase(PDO $r, array $users, ?DateTimeImmutable $at=null): bool {
+  $users = array_values(array_unique(array_filter($users, static fn($u) => (string)$u !== '')));
+  if (!$users || !nister_radius_table_exists($r, 'purchases')) return false;
+  $ph = implode(",", array_fill(0, count($users), "?"));
+  $when = ($at ?: new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get())))->format('Y-m-d H:i:s');
+  try {
+    $st = $r->prepare("
+      SELECT 1
+      FROM purchases
+      WHERE status='applied'
+        AND msisdn IN ($ph)
+        AND (activated_at IS NULL OR activated_at <= ?)
+        AND expires_at IS NOT NULL
+        AND expires_at > ?
+      LIMIT 1
+    ");
+    $params = $users;
+    $params[] = $when;
+    $params[] = $when;
+    $st->execute($params);
+    return (bool)$st->fetchColumn();
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
 /**
- * Apply plan with ADDITIVE QUOTA semantics:
- * - Carry over remaining data from the current window, then add the new plan's quota
- * - Extend expiry from later of purchase time/current expiry (exact timestamp)
+ * Apply plan with bounded additive semantics:
+ * - Carry over remaining positive data quota when a capped plan still has balance
+ * - Default expiry starts at purchase time; optional carryover is capped by NISTER_MAX_EXPIRY_CARRY_DAYS
  * - Apply address list, rate limit, and set per-user plan attributes
  * - Annotate with Nister-Duration-Days and Nister-Plan-Name
  */
@@ -517,7 +575,7 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purch
       : 0;
 
     // Expiration: extend from later of now/current expiry
-    $baseStart = ($currExp instanceof DateTimeImmutable && $currExp > $now) ? $currExp : $now;
+    $baseStart = nister_expiry_base_start($now, $currExp);
     $expAt = $baseStart->modify('+' . $durDays . ' days');
     // DB enforces "DD Mon YYYY HH:MM:SS"
     $expStr = $expAt->format('d M Y H:i:s');
@@ -553,7 +611,7 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purch
           }
           radius_set_check($r, $u, 'Expiration', ':=', $expStr);
           // Defense-in-depth: keep hard session cap aligned even if group checks drift.
-          radius_set_check($r, $u, 'Simultaneous-Use', ':=', '3');
+          radius_set_check($r, $u, 'Simultaneous-Use', ':=', radius_simultaneous_use_limit());
 
           // Enforce final combined quota after proc (avoid accidental double-add).
           $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')")
@@ -684,9 +742,8 @@ function radius_user_state_exact(string $msisdn, ?PDO $r=null): ?array {
   }
 
   $exhaustedFlag = 0;
-  if ($quotaBytes !== null) {
-    if ($quotaBytes <= 0) $exhaustedFlag = 1;
-    elseif ($usedBytes >= $quotaBytes) $exhaustedFlag = 1;
+  if ($quotaBytes !== null && $quotaBytes > 0) {
+    if ($usedBytes >= $quotaBytes) $exhaustedFlag = 1;
   }
 
   return [
@@ -762,7 +819,7 @@ function radius_user_status(string $msisdn): array {
   $quotaBytes = nister_effective_total_quota($r, $targets, $planGroup, $now);
   $usedBytes = 0;
   $exhausted = false;
-  if ($quotaBytes !== null) {
+  if ($quotaBytes !== null && $quotaBytes > 0) {
     // Prefer explicit window anchor written at plan/top-up apply time.
     $windowStart = nister_fetch_window_start($r, $targets, $tz);
     if (!($windowStart instanceof DateTimeImmutable)) {
@@ -777,8 +834,9 @@ function radius_user_status(string $msisdn): array {
   $noPaidMarker = ($hsGroup === 'HS_NOPAID');
   if ($addrList !== null && strtoupper($addrList) === 'HS_NOPAID') $noPaidMarker = true;
 
+  $hasCurrentPurchase = nister_has_current_purchase($r, $targets, $now);
   $paid = false;
-  if (!$noPaidMarker && $planGroup) $paid = true;
+  if (!$noPaidMarker && $hasCurrentPurchase) $paid = true;
   if (!$paid && !$noPaidMarker && $quotaBytes !== null && $quotaBytes > 0) $paid = true;
 
   $canBrowse = $paid && !$expired && !$exhausted && !$policyLimited;

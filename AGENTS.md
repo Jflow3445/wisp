@@ -3,6 +3,19 @@
 These rules are production boundaries. Do not weaken them while making UI,
 copy, captive portal, payment, or deployment changes.
 
+## Brand Expansion Boundary
+
+- Treat the current WISP implementation as a fully functional production
+  service and the stable baseline for future work.
+- New brand surfaces, products, sites, portals, or integrations must be added
+  around the existing WISP service without changing its current behavior,
+  routing, captive portal flow, payment flow, deployment assumptions, or
+  operational contracts unless the change is explicitly requested.
+- Shared branding should integrate with WISP through additive assets,
+  configuration, links, APIs, or clearly separated modules. Do not refactor,
+  rename, relocate, or redesign existing WISP components as part of brand
+  expansion work unless that WISP-specific change is approved.
+
 ## Domain Boundaries
 
 - `api.nister.org` is the canonical host for hotspot API services:

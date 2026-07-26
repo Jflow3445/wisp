@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "NISTER Market",
+    "slug": "nister-buyer",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "nister-buyer",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.nister.market.buyer"
+    },
+    "android": {
+      "package": "org.nister.market.buyer"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

@@ -278,6 +278,35 @@ assert_contains "autopost_preserves_router_login_action" "$autopost_router_conte
 hotspot_fallback_sources="$(cat api/hotspot/change_password.php api/hotspot/reset_password.php api/hotspot/signup.php api/hotspot/autopost.php pay-portal/cron/auto_renew.php pay-portal/purchase.php)"
 assert_not_contains "fallback_sources_no_public_login_html_default" "$hotspot_fallback_sources" "https://wifi.nister.org/login.html"
 
+plans_radius_content="$(cat pay-portal/lib/plans_radius.php)"
+purchase_content="$(cat pay-portal/purchase.php)"
+auto_renew_content="$(cat pay-portal/auto_renew.php)"
+auto_renew_cron_content="$(cat pay-portal/cron/auto_renew.php)"
+admin_api_content="$(cat pay-portal/admin/api.php)"
+admin_index_content="$(cat pay-portal/admin/index.php)"
+assert_contains "plan_active_helper_exists" "$plans_radius_content" 'function radius_plan_is_active(?array $p): bool'
+assert_contains "purchase_blocks_inactive_plans" "$purchase_content" "error'=>'plan_inactive'"
+assert_contains "auto_renew_blocks_inactive_plans" "$auto_renew_content" "'error'=>'plan_inactive'"
+assert_contains "auto_renew_cron_marks_inactive_plan" "$auto_renew_cron_content" "auto_renew_mark_attempt(\$msisdn, 'plan_inactive')"
+assert_contains "admin_apply_blocks_inactive_plans" "$admin_api_content" "'error'=>'plan_inactive'"
+assert_contains "admin_promo_ui_has_plan_access" "$admin_index_content" '<option value="plan">Plan access</option>'
+assert_contains "admin_promo_ui_sends_plan_code" "$admin_index_content" 'const plan_code = toolValue('
+assert_contains "admin_promo_ui_plan_skips_expiry_requirement" "$admin_index_content" "kind !== 'plan' && !expires_at && !days"
+assert_contains "admin_promo_ui_requires_plan_code" "$admin_index_content" 'Plan access promo requires an active plan code.'
+assert_contains "admin_promo_options_populated_from_active_plans" "$admin_index_content" 'function populatePromoPlanOptions(plansOrGroups)'
+assert_contains "admin_promo_ui_hides_irrelevant_fields" "$admin_index_content" 'function updatePromoKindFields()'
+assert_contains "admin_promo_ui_hides_plan_expiry_fields" "$admin_index_content" "setVisible('promo_expires_at', kind !== 'plan')"
+assert_contains "admin_api_accepts_plan_promo" "$admin_api_content" "['wallet','data','plan']"
+assert_contains "admin_api_rejects_past_promo_expiry" "$admin_api_content" "'error'=>'expiry_in_past'"
+assert_contains "admin_api_plan_promo_requires_active_plan" "$admin_api_content" "Choose a current plan before running plan access promo"
+assert_contains "admin_api_plan_promo_uses_purchase_entitlement" "$admin_api_content" 'function promo_current_purchase_expiry'
+assert_contains "admin_api_plan_promo_does_not_trust_radius_expiry" "$admin_api_content" 'SELECT MAX(expires_at) FROM purchases'
+assert_contains "admin_api_plan_promo_creates_zero_cost_purchase" "$admin_api_content" "\$add('price_cents', 0)"
+assert_contains "admin_api_plan_promo_clears_legacy_caps" "$admin_api_content" "attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')"
+assert_contains "admin_api_plan_promo_keeps_one_device_limit" "$admin_api_content" "radius_set_check(\$r, \$u, 'Simultaneous-Use', ':=', radius_simultaneous_use_limit())"
+assert_contains "admin_api_promo_targets_remain_strings" "$admin_api_content" "array_map('strval', array_keys(\$out))"
+assert_contains "admin_api_plan_promo_casts_target_msisdn" "$admin_api_content" "\$msisdn = (string)\$msisdn;"
+
 scope_block="$(awk '/function admin_user_scope_check/,/function admin_emit_scope_error/' pay-portal/admin/api.php)"
 assert_not_contains "admin_scope_check_no_profile_side_effect" "$scope_block" "location_profile_set"
 
@@ -350,6 +379,22 @@ starlink_sync_content="$(cat nister_radius_starlink_sync.sh)"
 assert_contains "starlink_sync_adopt_failure_exits" "$starlink_sync_content" 'reason=adopt_unknown_failed'
 assert_contains "starlink_sync_restart_failure_visible" "$starlink_sync_content" 'action=restart_after_update'
 
+session_limit_value="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/radius.php';
+echo radius_simultaneous_use_limit();
+PHP
+)"
+assert_eq "radius_session_limit_is_one" "$session_limit_value" "1"
+
+signup_content="$(cat api/hotspot/signup.php)"
+assert_contains "signup_session_limit_is_one" "$signup_content" '$SIMULTANEOUS_USE = 1;'
+assert_not_contains "signup_session_limit_never_three" "$signup_content" '$SIMULTANEOUS_USE = 3;'
+
+user_auth_content="$(cat pay-portal/lib/user_auth.php)"
+assert_contains "login_sync_uses_canonical_session_limit" "$user_auth_content" '$simVal = radius_simultaneous_use_limit();'
+assert_not_contains "login_sync_never_falls_back_to_three" "$user_auth_content" '$simVal = '"'"'3'"'"';'
+
 router_catchup_content="$(cat ops/router_catchup.sh)"
 assert_contains "router_catchup_capport_url_configurable" "$router_catchup_content" 'CAPPORT_API_URL="${CAPPORT_API_URL:-https://wifi.nister.org/api.json?v=20260601-remote-refresh}"'
 assert_contains "router_catchup_capport_url_sanitized" "$router_catchup_content" 'invalid CAPPORT_API_URL: unsafe RouterOS characters'
@@ -358,9 +403,13 @@ assert_contains "router_catchup_winbox_firewall_guardrail" "$router_catchup_cont
 assert_contains "router_catchup_management_refresh_logged" "$router_catchup_content" 'action=management_refreshed'
 assert_contains "router_catchup_enables_mac_cookie_login" "$router_catchup_content" 'login-by=mac-cookie,http-chap,https'
 assert_contains "router_catchup_logs_hotspot_login_refresh" "$router_catchup_content" 'action=hotspot_login_refreshed'
-assert_contains "router_catchup_refreshes_active_cookie_profile" "$router_catchup_content" 'name="active"] add-mac-cookie=yes mac-cookie-timeout=4w2d'
+assert_contains "router_catchup_refreshes_active_cookie_profile" "$router_catchup_content" ':if ($prof = "active") do={ /ip hotspot user profile set $ids shared-users=1 add-mac-cookie=yes mac-cookie-timeout=4w2d }'
 assert_contains "router_catchup_zeroes_blocked_cookie_profiles" "$router_catchup_content" '"default";"limited";"nopaid"'
 assert_contains "router_catchup_logs_user_profile_refresh" "$router_catchup_content" 'action=hotspot_user_profiles_refreshed'
+assert_contains "router_catchup_enforces_one_shared_user" "$router_catchup_content" 'shared-users=1'
+assert_not_contains "router_catchup_never_allows_three_shared_users" "$router_catchup_content" 'shared-users=3'
+assert_contains "router_catchup_restores_anti_share_ttl" "$router_catchup_content" 'chain=postrouting action=change-ttl new-ttl=set:1 passthrough=no dst-address-list=HS_ACTIVE out-interface=bridge'
+assert_contains "router_catchup_logs_anti_share_refresh" "$router_catchup_content" 'action=anti_share_refreshed'
 assert_contains "router_catchup_ssh_server_alive" "$router_catchup_content" 'ServerAliveInterval'
 assert_contains "router_catchup_parses_colon_uptime" "$router_catchup_content" '([0-9]+):([0-9]{2}):([0-9]{2})'
 assert_contains "router_catchup_success_throttle_30m" "$router_catchup_content" 'MIN_SUCCESS_INTERVAL_SEC="${MIN_SUCCESS_INTERVAL_SEC:-1800}"'
@@ -407,10 +456,29 @@ quota_enforce_content="$(cat nister_quota_enforce.sh)"
 assert_contains "quota_enforce_group_validation_active" "$quota_enforce_content" 'validate_group_name HS_ACTIVE "$HS_ACTIVE"'
 assert_contains "quota_enforce_broad_coa_fallback_off" "$quota_enforce_content" 'BROAD_COA_FALLBACK="${BROAD_COA_FALLBACK:-0}"'
 assert_contains "quota_enforce_requires_strong_coa_match" "$quota_enforce_content" 'required=sid_and_ip_or_mac'
+assert_contains "quota_enforce_zero_cap_limited_by_default" "$quota_enforce_content" 'ZERO_CAP_EXHAUST_ACTIVE="${ZERO_CAP_EXHAUST_ACTIVE:-1}"'
+assert_contains "quota_enforce_invalid_zero_cap_override_falls_limited" "$quota_enforce_content" '[[ "$ZERO_CAP_EXHAUST_ACTIVE" =~ ^[01]$ ]] || ZERO_CAP_EXHAUST_ACTIVE=1'
+assert_contains "quota_enforce_clears_legacy_zero_nister_quota" "$quota_enforce_content" "attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')"
+assert_contains "quota_enforce_checks_current_purchase" "$quota_enforce_content" 'get_current_purchase_expiry_epoch()'
+assert_contains "quota_enforce_purchase_extends_expiry_source" "$quota_enforce_content" 'PURCHASE_EXP_EPOCH="$(get_current_purchase_expiry_epoch)"'
+assert_contains "quota_enforce_zero_cap_allows_current_purchase" "$quota_enforce_content" 'CURRENT_PURCHASE == 0'
+assert_contains "quota_enforce_purchase_requires_applied_window" "$quota_enforce_content" "status='applied'"
+assert_contains "quota_enforce_purchase_requires_unexpired_window" "$quota_enforce_content" 'AND expires_at > UTC_TIMESTAMP()'
 
 radius_content="$(cat pay-portal/lib/radius.php)"
 assert_not_contains "radius_disconnect_no_suffix_like" "$radius_content" 'username LIKE CONCAT'
 assert_not_contains "radius_force_kick_no_blank_user" "$radius_content" "\$tryUsers[] = '';"
 assert_contains "radius_force_kick_requires_fresh_session" "$radius_content" "'error'=>'no_fresh_session'"
+assert_contains "topup_uses_canonical_session_limit" "$radius_content" "radius_set_check(\$r, \$u, 'Simultaneous-Use', ':=', radius_simultaneous_use_limit())"
+assert_not_contains "topup_never_resets_session_limit_to_three" "$radius_content" "radius_set_check(\$r, \$u, 'Simultaneous-Use', ':=', '3')"
+assert_contains "radius_caps_expiry_carryover" "$radius_content" 'function nister_expiry_base_start(DateTimeImmutable $now, ?DateTimeImmutable $currentExpiry): DateTimeImmutable'
+assert_contains "radius_expiry_carryover_default_zero_days" "$radius_content" 'return 0;'
+assert_contains "radius_apply_plan_uses_capped_expiry_anchor" "$radius_content" '$baseStart = nister_expiry_base_start($now, $currExp);'
+assert_contains "radius_zero_quota_not_exhausted_exact_status" "$radius_content" 'if ($quotaBytes !== null && $quotaBytes > 0) {'
+assert_contains "radius_status_requires_current_purchase_or_positive_quota" "$radius_content" '$hasCurrentPurchase = nister_has_current_purchase($r, $targets, $now);'
+assert_contains "radius_purchase_requires_activation_window" "$radius_content" 'AND (activated_at IS NULL OR activated_at <= ?)'
+assert_contains "radius_purchase_requires_expiry_window" "$radius_content" 'AND expires_at > ?'
+assert_not_contains "radius_no_future_expiry_active_fallback" "$radius_content" "\$hsGroup === 'HS_ACTIVE' && \$expiry instanceof DateTimeImmutable && \$expiry > \$now"
+assert_not_contains "radius_never_marks_zero_quota_exhausted" "$radius_content" 'if ($quotaBytes <= 0) $exhaustedFlag = 1;'
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

@@ -1,0 +1,91 @@
+name: Commerce Platform CI
+
+on:
+  pull_request:
+    paths:
+      - "commerce-platform/**"
+      - ".github/workflows/commerce-platform-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "commerce-platform/**"
+      - ".github/workflows/commerce-platform-ci.yml"
+
+concurrency:
+  group: commerce-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: commerce-platform
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: nister_commerce_test
+          POSTGRES_USER: nister
+          POSTGRES_PASSWORD: nister
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U nister -d nister_commerce_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 56379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://nister:nister@localhost:55432/nister_commerce_test
+      REDIS_URL: redis://localhost:56379
+      STOREFRONT_ORIGIN: http://localhost:4200
+      VENDOR_ORIGIN: http://localhost:4201
+      ADMIN_ORIGIN: http://localhost:4202
+      AUTH_MODE: development
+      PAYSTACK_MODE: sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: commerce-platform/pnpm-lock.yaml
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:wisp-boundary
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm test:integration
+      - run: pnpm build
+
+  browser:
+    runs-on: ubuntu-latest
+    needs: quality
+    defaults:
+      run:
+        working-directory: commerce-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: commerce-platform/pnpm-lock.yaml
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

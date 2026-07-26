@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "NISTER Driver",
+    "slug": "nister-driver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "nister-driver",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.nister.market.driver",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "NISTER uses your location while on shift to assign and track deliveries.",
+        "NSCameraUsageDescription": "NISTER uses the camera to record pickup and delivery proof."
+      }
+    },
+    "android": {
+      "package": "org.nister.market.driver",
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "CAMERA"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-location", { "locationWhenInUsePermission": "Allow NISTER to use your location while you are on shift." }],
+      ["expo-image-picker", { "cameraPermission": "Allow NISTER to record delivery proof." }]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

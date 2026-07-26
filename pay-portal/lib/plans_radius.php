@@ -13,6 +13,12 @@ function radius_plan_visible(array $p, bool $includeInactive): bool {
   return ($p['price_cents'] !== null || $p['rate_limit'] !== null || $p['quota_bytes'] !== null || $p['display_name'] !== null);
 }
 
+function radius_plan_is_active(?array $p): bool {
+  if (!$p) return false;
+  if (!array_key_exists('active', $p)) return true;
+  return (bool)$p['active'];
+}
+
 function radius_plan_sort(array &$plans): void {
   usort($plans, function($a, $b) {
     $ap = ($a['price_cents'] ?? PHP_INT_MAX);
@@ -192,4 +198,9 @@ function radius_find_plan(string $code, ?int $locationId=null, bool $strictLocat
     }
   }
   return null;
+}
+
+function radius_find_active_plan(string $code, ?int $locationId=null, bool $strictLocation=false): ?array {
+  $plan = radius_find_plan($code, $locationId, $strictLocation);
+  return radius_plan_is_active($plan) ? $plan : null;
 }

@@ -348,6 +348,11 @@ foreach ($rows as $row) {
 
     $plan = radius_find_plan($planCode, $locationId, true);
     $planSource = 'location';
+    if ($plan && !radius_plan_is_active($plan)) {
+      auto_renew_mark_attempt($msisdn, 'plan_inactive');
+      $summary['errors']++;
+      continue;
+    }
     if (!$plan) {
       // Hotfix: keep legacy renewals alive during location rollout.
       // If site catalog is missing, fall back to global plan definition
@@ -359,6 +364,11 @@ foreach ($rows as $row) {
     }
     if (!$plan) {
       auto_renew_mark_attempt($msisdn, 'plan_invalid');
+      $summary['errors']++;
+      continue;
+    }
+    if (!radius_plan_is_active($plan)) {
+      auto_renew_mark_attempt($msisdn, 'plan_inactive');
       $summary['errors']++;
       continue;
     }

@@ -1,0 +1,48 @@
+{
+  "name": "@nister/buyer-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "build": "expo export --platform all --output-dir dist",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "5.4.0",
+    "@nister/api-client": "workspace:*",
+    "@nister/contracts": "workspace:*",
+    "@react-native-async-storage/async-storage": "3.1.1",
+    "@tanstack/react-query": "5.101.3",
+    "expo": "~57.0.7",
+    "expo-constants": "~57.0.6",
+    "expo-linking": "~57.0.3",
+    "expo-router": "~57.0.7",
+    "expo-secure-store": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "lucide-react-native": "1.25.0",
+    "react": "19.2.3",
+    "react-hook-form": "7.82.0",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "5.8.0",
+    "react-native-screens": "4.26.2",
+    "react-native-svg": "15.15.5",
+    "react-native-web": "^0.21.2",
+    "zustand": "5.0.14",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.4",
+    "eslint": "^10.7.0",
+    "eslint-config-expo": "57.0.0",
+    "typescript": "~6.0.3",
+    "vitest": "4.1.10"
+  }
+}

@@ -248,7 +248,7 @@ Signup:
 - Sets:
   - Cleartext-Password
   - Expiration (long default for unpaid account)
-  - Simultaneous-Use = 3
+  - Simultaneous-Use = 1
   - initial address list/group to unpaid policy
 
 Login:
@@ -257,7 +257,7 @@ Login:
 - Login rate limiting exists per IP and per IP+user.
 
 Session cap / password sharing:
-- Simultaneous-Use is enforced as 3.
+- Simultaneous-Use is enforced as 1.
 - Both username variants are synced so 0/233 mismatch does not bypass limits.
 
 
@@ -381,11 +381,24 @@ Where plan data comes from:
 - Global catalog: RADIUS group attrs (radgroupreply/radgroupcheck)
 - Optional per-location override: location_plans
 
+Plan availability:
+- Active plans are returned to customers in /plans.php.
+- Inactive plans are retained for current users/history, but customer
+  purchase and auto-renew paths must reject them.
+- Retiring a plan code should not rewrite existing purchases. Migrate
+  auto_renew_settings to the replacement code so the next renewal uses the
+  current catalog.
+
 When a plan is applied:
 - Expiration written in radcheck.
 - Simultaneous-Use enforced.
-- Quota attrs written (Nister-Quota-Bytes + MikroTik hi/lo total limit attrs).
+- Positive quota attrs still enforce legacy capped data access.
+- Zero/no quota means unlimited-by-expiry only when the user also has a
+  current applied purchase row. Future Expiration alone must not qualify.
 - Plan metadata attrs written (plan code/name/duration/window-start).
+- Expiry defaults to the purchased plan duration from the purchase time.
+  NISTER_MAX_EXPIRY_CARRY_DAYS defaults to 0 so bad or accumulated future
+  expiries do not propagate into new purchases.
 - HS_LIMITED / HS_NOPAID removed.
 - HS_ACTIVE ensured.
 - Address list/rate limit set.
@@ -418,12 +431,16 @@ Existing user with expired plan:
 Existing user with exhausted data:
 - Marked exhausted from usage vs quota.
 - Enforcement moves to limited state and can disconnect.
+- Users with no positive quota qualify only if they have a current applied
+  purchase. Future Expiration alone must not move them to HS_ACTIVE.
 
 Existing user with no purchase:
 - Remains unpaid policy (HS_NOPAID).
 
 Password sharing:
-- Simultaneous-Use = 3 limits concurrent sessions.
+- Simultaneous-Use = 1 limits each account to one concurrent session.
+- The router sets return traffic for HS_ACTIVE clients to TTL 1 so ordinary
+  downstream NAT/personal-hotspot clients cannot forward it another hop.
 - Accounting tracks sessions in radacct (subject to accounting availability).
 
 If RADIUS is down:
@@ -846,7 +863,8 @@ Legacy/compat:
 - Set short expiry and verify transition post-expiry.
 
 7. Session-sharing limit:
-- Try more than 3 concurrent sessions for same user.
+- Verify a second concurrent login for the same user is rejected.
+- Verify a device behind a user's personal hotspot cannot reach the internet.
 
 8. Admin user operations:
 - reset password, force expire/exhaust, disconnect, assign location.

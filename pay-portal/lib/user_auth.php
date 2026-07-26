@@ -171,7 +171,7 @@ function user_sync_radius_auth_variants(string $msisdn, string $password): void 
 
       // Keep session cap mirrored across username variants.
       $simOp = ':=';
-      $simVal = '3';
+      $simVal = radius_simultaneous_use_limit();
       $stSim = $r->prepare(
         "SELECT value, COALESCE(NULLIF(op,''),':=') AS op
          FROM radcheck
@@ -189,7 +189,7 @@ function user_sync_radius_auth_variants(string $msisdn, string $password): void 
         $simOp = ':=';
       }
       if (!preg_match('/^\d+$/', $simVal) || (int)$simVal <= 0) {
-        $simVal = '3';
+        $simVal = radius_simultaneous_use_limit();
       }
       $upSim = $r->prepare(
         "INSERT INTO radcheck (username, attribute, op, value)

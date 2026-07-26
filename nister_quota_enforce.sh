@@ -529,6 +529,30 @@ get_promo_expiry_epoch(){
   echo "$epoch"
 }
 
+table_exists(){
+  local table="${1:-}"
+  [[ "$table" =~ ^[A-Za-z0-9_]+$ ]] || { echo 0; return 0; }
+  sql_one "SELECT COUNT(*)
+           FROM information_schema.TABLES
+           WHERE TABLE_SCHEMA=DATABASE()
+             AND TABLE_NAME='${table}';" || echo 0
+}
+
+get_current_purchase_expiry_epoch(){
+  local exists epoch
+  exists="$(table_exists purchases)"
+  [[ "$exists" =~ ^[0-9]+$ && "$exists" -gt 0 ]] || { echo 0; return 0; }
+  epoch="$(sql_one "SELECT COALESCE(MAX(UNIX_TIMESTAMP(expires_at)),0)
+                    FROM purchases
+                    WHERE status='applied'
+                      AND msisdn IN (${IN_USERS})
+                      AND (activated_at IS NULL OR activated_at <= UTC_TIMESTAMP())
+                      AND expires_at IS NOT NULL
+                      AND expires_at > UTC_TIMESTAMP();" || true)"
+  [[ "$epoch" =~ ^[0-9]+$ ]] || epoch=0
+  echo "$epoch"
+}
+
 get_expiry_str(){
   sql_one "SELECT value FROM radcheck WHERE username IN (${IN_USERS}) AND attribute='Expiration' ORDER BY STR_TO_DATE(value,'%d %b %Y %H:%i:%s') DESC LIMIT 1;" || true
 }
@@ -854,7 +878,7 @@ kick_sessions(){
 }
 is_limited_state(){
   sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname IN ('${HS_LIMITED}','${HS_NOPAID}') LIMIT 1;" | grep -q 1 && return 0 || true
-  sql_one "SELECT 1 FROM radreply WHERE username IN (${IN_USERS}) AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords') AND value='0' LIMIT 1;" | grep -q 1
+  sql_one "SELECT 1 FROM radreply WHERE username IN (${IN_USERS}) AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords') AND value='0' LIMIT 1;" | grep -q 1
 }
 clear_limited_state(){
   local vals="" u
@@ -866,7 +890,7 @@ clear_limited_state(){
   sql_exec "START TRANSACTION;
     DELETE FROM radreply
       WHERE username IN (${IN_USERS})
-        AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')
+        AND attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')
         AND value='0';
 
     DELETE FROM radusergroup
@@ -906,10 +930,19 @@ fi
 
 EXP_EPOCH="$(get_expiry_epoch)"
 PROMO_EXP_EPOCH="$(get_promo_expiry_epoch)"
+PURCHASE_EXP_EPOCH="$(get_current_purchase_expiry_epoch)"
 [[ "$EXP_EPOCH" =~ ^[0-9]+$ ]] || EXP_EPOCH=0
 [[ "$PROMO_EXP_EPOCH" =~ ^[0-9]+$ ]] || PROMO_EXP_EPOCH=0
+[[ "$PURCHASE_EXP_EPOCH" =~ ^[0-9]+$ ]] || PURCHASE_EXP_EPOCH=0
 if (( PROMO_EXP_EPOCH > EXP_EPOCH )); then
   EXP_EPOCH="$PROMO_EXP_EPOCH"
+fi
+if (( PURCHASE_EXP_EPOCH > EXP_EPOCH )); then
+  EXP_EPOCH="$PURCHASE_EXP_EPOCH"
+fi
+CURRENT_PURCHASE=0
+if (( PURCHASE_EXP_EPOCH > NOW_EPOCH )); then
+  CURRENT_PURCHASE=1
 fi
 EXPIRED=0
 if (( EXP_EPOCH > 0 )); then
@@ -934,9 +967,9 @@ EXHAUSTED=0
 if (( CAP_BYTES > 0 )); then
   (( USED >= CAP_BYTES )) && EXHAUSTED=1
 elif (( ZERO_CAP_EXHAUST_ACTIVE == 1 )); then
-  # Guardrail: when quota is zero and no positive cap exists, keep HS policy limited
-  # until a real quota/top-up lands. This prevents LIMIT/UNLIMIT flapping.
-  if sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}') LIMIT 1;" | grep -q 1; then
+  # Guardrail: no positive cap is valid for current expiry-only purchases.
+  # Legacy/future-expiry-only users still do not qualify for active data access.
+  if (( CURRENT_PURCHASE == 0 )) && sql_one "SELECT 1 FROM radusergroup WHERE username IN (${IN_USERS}) AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}') LIMIT 1;" | grep -q 1; then
     EXHAUSTED=1
   fi
 fi
@@ -1026,14 +1059,14 @@ if (( EXPIRED == 1 || EXHAUSTED == 1 )); then
   clear_hotspot_cookies
   kick_sessions
   if (( WAS_LIMITED == 0 )); then
-    log "LIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=$EXPIRED exhausted=$EXHAUSTED"
-    alert "LIMIT user=$USER plan=${PLAN_CODE:-na} expired=$EXPIRED exhausted=$EXHAUSTED used=$USED cap=$CAP_BYTES"
+    log "LIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS current_purchase=$CURRENT_PURCHASE purchase_exp=$PURCHASE_EXP_EPOCH expired=$EXPIRED exhausted=$EXHAUSTED"
+    alert "LIMIT user=$USER plan=${PLAN_CODE:-na} expired=$EXPIRED exhausted=$EXHAUSTED current_purchase=$CURRENT_PURCHASE used=$USED cap=$CAP_BYTES"
   fi
 else
   if is_limited_state; then
     clear_limited_state
     kick_sessions
-    log "UNLIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS"
+    log "UNLIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS current_purchase=$CURRENT_PURCHASE purchase_exp=$PURCHASE_EXP_EPOCH"
     SMS_BACK_ONLINE_TEXT="$(sms_setting SMS_BACK_ONLINE_TEXT)"
     if [[ -n "${SMS_BACK_ONLINE_TEXT:-}" ]]; then
       SMS_STAMP="$STATE_DIR/${USER}.sms_back_online"
@@ -1053,5 +1086,5 @@ else
   if (( EXP_EPOCH > 0 || CAP_BYTES > 0 )); then
     ensure_hs_active
   fi
-  log "OK user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS expired=0 exhausted=0"
+  log "OK user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS current_purchase=$CURRENT_PURCHASE purchase_exp=$PURCHASE_EXP_EPOCH expired=0 exhausted=0"
 fi

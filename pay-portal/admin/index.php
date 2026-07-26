@@ -1018,7 +1018,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="users">
     <div class="section-head">
       <h2>Promo runner</h2>
-      <div class="muted">Grant expiring wallet credit or bonus data to a targeted user audience.</div>
+      <div class="muted">Grant expiring wallet credit, bonus data, or temporary plan access to a targeted user audience.</div>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -1026,6 +1026,7 @@ $ADMIN_CSRF = admin_csrf_token();
         <select id="promo_kind">
           <option value="wallet">Wallet credit</option>
           <option value="data">Data bundle</option>
+          <option value="plan">Plan access</option>
         </select>
       </div>
       <div class="field">
@@ -1053,11 +1054,16 @@ $ADMIN_CSRF = admin_csrf_token();
         <input id="promo_data_gb" type="text" placeholder="1">
       </div>
       <div class="field">
+        <label for="promo_plan_code">Plan access plan</label>
+        <input id="promo_plan_code" type="text" list="promo_plan_codes" placeholder="Daily_Unlimited">
+        <datalist id="promo_plan_codes"></datalist>
+      </div>
+      <div class="field">
         <label for="promo_expires_at">Expiry date (YYYY-MM-DD HH:MM:SS)</label>
         <input id="promo_expires_at" type="text" placeholder="2026-04-30 23:59:59">
       </div>
       <div class="field">
-        <label for="promo_days">Expiry + days</label>
+        <label for="promo_days">Expiry + days (wallet/data only)</label>
         <input id="promo_days" type="text" placeholder="14">
       </div>
       <div class="field">
@@ -1068,7 +1074,7 @@ $ADMIN_CSRF = admin_csrf_token();
     <div class="tool-actions">
       <button class="btn approve" id="promo_run" type="button">Run promo</button>
     </div>
-    <div class="note" id="promo_status">Choose an audience, value, and expiry before running a promo.</div>
+    <div class="note" id="promo_status">Choose an audience, value, and expiry before running a wallet/data promo. Plan access uses the selected active plan duration and ignores the expiry fields.</div>
   </div>
   <div class="card" data-section="forensics">
     <div class="section-head">
@@ -2403,10 +2409,35 @@ function fillPlanForm(p){
   setPlanStatus(`Editing ${p.code}.`, 'success');
 }
 
+function populatePromoPlanOptions(plansOrGroups){
+  const dl = document.getElementById('promo_plan_codes');
+  if (!dl) return;
+  const byCode = {};
+  const addPlan = (p)=>{
+    if (!p || !p.code || p.active === false) return;
+    byCode[String(p.code)] = p;
+  };
+  if (Array.isArray(plansOrGroups)) {
+    plansOrGroups.forEach((item)=>{
+      if (Array.isArray(item?.plans)) item.plans.forEach(addPlan);
+      else addPlan(item);
+    });
+  }
+  const plans = Object.values(byCode).sort((a,b)=>String(a.code || '').localeCompare(String(b.code || '')));
+  dl.innerHTML = plans.map((p)=>{
+    const label = p.name || p.display_name || p.code || '';
+    const days = p.duration_days ? `${p.duration_days}d` : '';
+    const quota = (p.quota_bytes && Number(p.quota_bytes) > 0) ? fmtBytes(p.quota_bytes) : 'Unlimited';
+    const suffix = [label, days, quota].filter(Boolean).join(' · ');
+    return `<option value="${safe(p.code || '')}" label="${safe(suffix)}"></option>`;
+  }).join('');
+}
+
 function renderPlans(plans){
   const tb = document.querySelector('#plans_tbl tbody');
   if (!tb) return;
   adminPlansByCode = {};
+  populatePromoPlanOptions(plans || []);
   if (!Array.isArray(plans) || plans.length === 0){
     tb.innerHTML = '<tr><td colspan="9" class="muted">No plans configured for this site.</td></tr>';
     return;
@@ -2439,6 +2470,7 @@ function renderPlansBySite(groups){
   const tb = document.querySelector('#plans_tbl tbody');
   if (!tb) return 0;
   adminPlansByCode = {};
+  populatePromoPlanOptions(groups || []);
   if (!Array.isArray(groups) || groups.length === 0){
     tb.innerHTML = '<tr><td colspan="9" class="muted">No plans configured for any site.</td></tr>';
     return 0;
@@ -3143,6 +3175,22 @@ function setPromoStatus(msg, kind){
   if (kind === 'success') el.classList.add('success');
 }
 
+function updatePromoKindFields(){
+  const kind = toolValue('promo_kind') || 'wallet';
+  const setVisible = (id, visible)=>{
+    const el = document.getElementById(id);
+    if (!el) return;
+    const field = el.closest('.field');
+    if (field) field.style.display = visible ? '' : 'none';
+    el.disabled = !visible;
+  };
+  setVisible('promo_amount', kind === 'wallet');
+  setVisible('promo_data_gb', kind === 'data');
+  setVisible('promo_plan_code', kind === 'plan');
+  setVisible('promo_expires_at', kind !== 'plan');
+  setVisible('promo_days', kind !== 'plan');
+}
+
 async function runPromo(){
   const siteVal = currentSiteValue();
   const kind = toolValue('promo_kind') || 'wallet';
@@ -3151,6 +3199,7 @@ async function runPromo(){
   const recent_days = toolValue('promo_recent_days');
   const amount = toolValue('promo_amount');
   const data_gb = toolValue('promo_data_gb');
+  const plan_code = toolValue('promo_plan_code');
   const expires_at = toolValue('promo_expires_at');
   const days = toolValue('promo_days');
   const notes = toolValue('promo_notes') || 'Admin promo';
@@ -3163,7 +3212,7 @@ async function runPromo(){
     setPromoStatus('Provide recent days for recent audience.', 'error');
     return;
   }
-  if (!expires_at && !days){
+  if (kind !== 'plan' && !expires_at && !days){
     setPromoStatus('Provide expiry date or expiry days.', 'error');
     return;
   }
@@ -3172,26 +3221,35 @@ async function runPromo(){
       setPromoStatus('Wallet promo requires amount > 0.', 'error');
       return;
     }
-  } else {
+  } else if (kind === 'data') {
     const gb = Number((data_gb || '').replace(/[^\d.]/g, ''));
     if (!isFinite(gb) || gb <= 0) {
       setPromoStatus('Data promo requires data GB > 0.', 'error');
       return;
     }
+  } else if (kind === 'plan') {
+    if (!plan_code) {
+      setPromoStatus('Plan access promo requires an active plan code.', 'error');
+      return;
+    }
+  } else {
+    setPromoStatus('Unknown promo type.', 'error');
+    return;
   }
 
   const confirmText = `Run ${kind} promo for scope "${scope}" on ${currentSiteName()} now?`;
   if (!confirm(confirmText)) return;
 
   setPromoStatus('Running promo...');
-  const body = { kind, scope, group, recent_days, amount, data_gb, expires_at, days, notes, location_id: siteVal };
+  const body = { kind, scope, group, recent_days, amount, data_gb, plan_code, expires_at, days, notes, location_id: siteVal };
   const j = await api('promo_run', body);
   if (!j.ok){
     setPromoStatus(j.error || 'Promo run failed.', 'error');
     return;
   }
   await loadStats();
-  const msg = `Promo done for ${currentSiteName()}. Targets: ${j.total_targets || 0}, created: ${j.created || 0}, failed: ${j.failed || 0}.`;
+  const extra = j.plan_code ? ` Plan: ${j.plan_code}.` : '';
+  const msg = `Promo done for ${currentSiteName()}. Targets: ${j.total_targets || 0}, created: ${j.created || 0}, failed: ${j.failed || 0}.${extra}`;
   setPromoStatus(msg, 'success');
 }
 
@@ -3675,6 +3733,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   if (purgeBtn) purgeBtn.addEventListener('click', purgeUser);
   const promoRunBtn = document.getElementById('promo_run');
   if (promoRunBtn) promoRunBtn.addEventListener('click', runPromo);
+  const promoKind = document.getElementById('promo_kind');
+  if (promoKind) promoKind.addEventListener('change', updatePromoKindFields);
+  updatePromoKindFields();
 
   const stateSearch = document.getElementById('state_search');
   if (stateSearch) stateSearch.addEventListener('input', loadUserStates);

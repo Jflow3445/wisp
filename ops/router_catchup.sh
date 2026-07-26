@@ -172,11 +172,19 @@ else
   critical_failed=1
 fi
 
-hotspot_user_profile_cmd=':do { /ip hotspot user profile set [find where name="active"] add-mac-cookie=yes mac-cookie-timeout=4w2d } on-error={ :log warning "nister: active hotspot mac-cookie refresh failed" }; :foreach prof in={"default";"limited";"nopaid"} do={ :do { /ip hotspot user profile set [find where name=$prof] add-mac-cookie=yes mac-cookie-timeout=0s } on-error={ :log warning ("nister: blocked hotspot mac-cookie refresh failed profile=" . $prof) } }'
+hotspot_user_profile_cmd=':local changed 0; :foreach prof in={"active";"default";"limited";"nopaid"} do={ :local ids [/ip hotspot user profile find where name=$prof]; :if ([:len $ids] = 0) do={ :log warning ("nister: hotspot user profile missing profile=" . $prof) } else={ :if ($prof = "active") do={ /ip hotspot user profile set $ids shared-users=1 add-mac-cookie=yes mac-cookie-timeout=4w2d } else={ /ip hotspot user profile set $ids shared-users=1 add-mac-cookie=yes mac-cookie-timeout=0s }; :set changed ($changed + 1) } }; :if ($changed < 4) do={ :error "nister: one or more hotspot user profiles missing" }'
 if ros "$hotspot_user_profile_cmd" >/dev/null 2>&1; then
   log "status=ok action=hotspot_user_profiles_refreshed"
 else
   log "status=warn action=hotspot_user_profiles_refresh_failed"
+  critical_failed=1
+fi
+
+anti_share_cmd=':local ids [/ip firewall mangle find where comment="NISTER ANTI-SHARE TTL1"]; :if ([:len $ids] = 0) do={ /ip firewall mangle add chain=postrouting action=change-ttl new-ttl=set:1 passthrough=no dst-address-list=HS_ACTIVE out-interface=bridge comment="NISTER ANTI-SHARE TTL1" } else={ :local keep [:pick $ids 0]; /ip firewall mangle set $keep chain=postrouting action=change-ttl new-ttl=set:1 passthrough=no dst-address-list=HS_ACTIVE out-interface=bridge disabled=no; :foreach id in=$ids do={ :if ($id != $keep) do={ /ip firewall mangle remove $id } } }'
+if ros "$anti_share_cmd" >/dev/null 2>&1; then
+  log "status=ok action=anti_share_refreshed"
+else
+  log "status=warn action=anti_share_refresh_failed"
   critical_failed=1
 fi
 
