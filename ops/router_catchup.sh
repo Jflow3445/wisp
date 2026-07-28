@@ -172,7 +172,7 @@ else
   critical_failed=1
 fi
 
-hotspot_user_profile_cmd=':local changed 0; :foreach prof in={"active";"default";"limited";"nopaid"} do={ :local ids [/ip hotspot user profile find where name=$prof]; :if ([:len $ids] = 0) do={ :log warning ("nister: hotspot user profile missing profile=" . $prof) } else={ :if ($prof = "active") do={ /ip hotspot user profile set $ids shared-users=1 add-mac-cookie=yes mac-cookie-timeout=4w2d } else={ /ip hotspot user profile set $ids shared-users=1 add-mac-cookie=yes mac-cookie-timeout=0s }; :set changed ($changed + 1) } }; :if ($changed < 4) do={ :error "nister: one or more hotspot user profiles missing" }'
+hotspot_user_profile_cmd=':local changed 0; :foreach prof in={"active";"default";"limited";"nopaid"} do={ :local ids [/ip hotspot user profile find where name=$prof]; :if ([:len $ids] = 0) do={ :log warning ("nister: hotspot user profile missing profile=" . $prof) } else={ :if ($prof = "active") do={ /ip hotspot user profile set $ids shared-users=2 add-mac-cookie=yes mac-cookie-timeout=4w2d } else={ /ip hotspot user profile set $ids shared-users=2 add-mac-cookie=yes mac-cookie-timeout=0s }; :set changed ($changed + 1) } }; :if ($changed < 4) do={ :error "nister: one or more hotspot user profiles missing" }'
 if ros "$hotspot_user_profile_cmd" >/dev/null 2>&1; then
   log "status=ok action=hotspot_user_profiles_refreshed"
 else

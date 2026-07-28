@@ -40,7 +40,7 @@ function radius_set_check(PDO $r, string $user, string $attr, string $op, string
 }
 
 function radius_simultaneous_use_limit(): string {
-  return '1';
+  return '2';
 }
 
 
@@ -293,6 +293,8 @@ function radius_apply_plan__old(string $msisdn, array $plan, DateTimeImmutable $
  * - Fully counts sessions entirely inside the window
  * - Prorates overlap sessions by duration
  * - Handles open sessions and 32-bit gigaword rollover
+ * - Dedupes duplicate accounting rows for the same RouterOS session/MAC/IP,
+ *   so repeated NAS records do not inflate account-level usage
  */
 function nister_sum_used_bytes_fair(PDO $r, array $users, DateTimeImmutable $startAt, ?DateTimeImmutable $endAt=null): int {
     if (empty($users)) return 0;
@@ -301,17 +303,30 @@ function nister_sum_used_bytes_fair(PDO $r, array $users, DateTimeImmutable $sta
     if ($windowEnd <= $startAt) return 0;
 
     $ph = implode(",", array_fill(0, count($users), "?"));
-    $sql = "SELECT acctstarttime, acctstoptime, acctupdatetime,
-                   COALESCE(acctinputoctets,0) AS in_oct,
-                   COALESCE(acctoutputoctets,0) AS out_oct,
-                   COALESCE(acctinputgigawords,0) AS in_gw,
-                   COALESCE(acctoutputgigawords,0) AS out_gw
-            FROM radacct
-            WHERE username IN ($ph)
-              AND acctstarttime IS NOT NULL
-              AND acctstarttime < ?
-              AND COALESCE(NULLIF(acctstoptime,'0000-00-00 00:00:00'), acctupdatetime, ?) > ?";
-    $params = $users;
+    $sql = "SELECT
+                   MIN(q.acctstarttime) AS sess_start,
+                   MAX(q.sess_end) AS sess_end,
+                   MAX(q.sess_bytes) AS sess_bytes
+            FROM (
+              SELECT
+                     acctstarttime,
+                     COALESCE(NULLIF(acctstoptime,'0000-00-00 00:00:00'), acctupdatetime, ?) AS sess_end,
+                     (
+                       COALESCE(acctinputoctets,0)+COALESCE(acctoutputoctets,0)
+                       + 4294967296*(COALESCE(acctinputgigawords,0)+COALESCE(acctoutputgigawords,0))
+                     ) AS sess_bytes,
+                     COALESCE(NULLIF(acctsessionid,''), CONCAT('row:', radacctid)) AS session_key,
+                     COALESCE(NULLIF(callingstationid,''), CONCAT('row:', radacctid)) AS mac_key,
+                     COALESCE(NULLIF(framedipaddress,''), CONCAT('row:', radacctid)) AS ip_key
+              FROM radacct
+              WHERE username IN ($ph)
+                AND acctstarttime IS NOT NULL
+                AND acctstarttime < ?
+                AND COALESCE(NULLIF(acctstoptime,'0000-00-00 00:00:00'), acctupdatetime, ?) > ?
+            ) q
+            GROUP BY q.session_key, q.mac_key, q.ip_key";
+    $params = [$windowEnd->format('Y-m-d H:i:s')];
+    $params = array_merge($params, $users);
     $params[] = $windowEnd->format('Y-m-d H:i:s');
     $params[] = $windowEnd->format('Y-m-d H:i:s');
     $params[] = $startAt->format('Y-m-d H:i:s');
@@ -320,7 +335,7 @@ function nister_sum_used_bytes_fair(PDO $r, array $users, DateTimeImmutable $sta
 
     $total = 0.0;
     while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
-        $startRaw = trim((string)($row['acctstarttime'] ?? ''));
+        $startRaw = trim((string)($row['sess_start'] ?? ''));
         if ($startRaw === '') continue;
         try {
             $sessStart = new DateTimeImmutable($startRaw, $tz);
@@ -328,14 +343,10 @@ function nister_sum_used_bytes_fair(PDO $r, array $users, DateTimeImmutable $sta
             continue;
         }
 
-        $stopRaw = trim((string)($row['acctstoptime'] ?? ''));
-        $updateRaw = trim((string)($row['acctupdatetime'] ?? ''));
+        $stopRaw = trim((string)($row['sess_end'] ?? ''));
         $sessEnd = null;
         if ($stopRaw !== '' && $stopRaw !== '0000-00-00 00:00:00') {
             try { $sessEnd = new DateTimeImmutable($stopRaw, $tz); } catch (Throwable $e) { $sessEnd = null; }
-        }
-        if (!($sessEnd instanceof DateTimeImmutable) && $updateRaw !== '') {
-            try { $sessEnd = new DateTimeImmutable($updateRaw, $tz); } catch (Throwable $e) { $sessEnd = null; }
         }
         if (!($sessEnd instanceof DateTimeImmutable)) {
             $sessEnd = $windowEnd;
@@ -350,10 +361,7 @@ function nister_sum_used_bytes_fair(PDO $r, array $users, DateTimeImmutable $sta
         $overlap = $winEnd->getTimestamp() - $winStart->getTimestamp();
         if ($dur <= 0 || $overlap <= 0) continue;
 
-        $bytes = (float)(
-            (int)($row['in_oct'] ?? 0) + (int)($row['out_oct'] ?? 0)
-            + 4294967296 * ((int)($row['in_gw'] ?? 0) + (int)($row['out_gw'] ?? 0))
-        );
+        $bytes = (float)($row['sess_bytes'] ?? 0);
         if ($bytes <= 0) continue;
 
         if ($sessStart >= $startAt && $sessEnd <= $windowEnd) {

@@ -40,7 +40,7 @@ shutting-down = Hotspot service is temporarily unavailable. Please try again sho
 # If user profile has limit of shared-users, then this error will be shown
 # after reaching this limit
 
-user-session-limit = This account is already active on another device. Log out there and try again.
+user-session-limit = This account is already active on 2 devices. Log out on one device and try again.
 
 # license-session-limit
 # Depending on licence number of active hotspot clients is limited to

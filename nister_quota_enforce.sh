@@ -620,6 +620,8 @@ sql_escape(){
 calc_used_bytes_fair(){
   local ws="$1" ws_esc
   ws_esc="$(sql_escape "$ws")"
+  # Count usage at account level across all username variants, but dedupe
+  # duplicate accounting rows for the same RouterOS session/MAC/IP.
   sql_one "
     SELECT COALESCE(SUM(
       CASE
@@ -642,17 +644,27 @@ calc_used_bytes_fair(){
     ),0)
     FROM (
       SELECT
-        ra.acctstarttime AS sess_start,
-        COALESCE(NULLIF(ra.acctstoptime,'0000-00-00 00:00:00'), ra.acctupdatetime, UTC_TIMESTAMP()) AS sess_end,
-        (
-          COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0)
-          + 4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
-        ) AS sess_bytes
-      FROM radacct ra
-      WHERE ra.username IN (${IN_USERS})
-        AND ra.acctstarttime IS NOT NULL
-        AND ra.acctstarttime < UTC_TIMESTAMP()
-        AND COALESCE(NULLIF(ra.acctstoptime,'0000-00-00 00:00:00'), ra.acctupdatetime, UTC_TIMESTAMP()) > '${ws_esc}'
+        MIN(s.acctstarttime) AS sess_start,
+        MAX(s.sess_end) AS sess_end,
+        MAX(s.sess_bytes) AS sess_bytes
+      FROM (
+        SELECT
+          ra.acctstarttime,
+          COALESCE(NULLIF(ra.acctstoptime,'0000-00-00 00:00:00'), ra.acctupdatetime, UTC_TIMESTAMP()) AS sess_end,
+          (
+            COALESCE(ra.acctinputoctets,0)+COALESCE(ra.acctoutputoctets,0)
+            + 4294967296*(COALESCE(ra.acctinputgigawords,0)+COALESCE(ra.acctoutputgigawords,0))
+          ) AS sess_bytes,
+          COALESCE(NULLIF(ra.acctsessionid,''), CONCAT('row:', ra.radacctid)) AS session_key,
+          COALESCE(NULLIF(ra.callingstationid,''), CONCAT('row:', ra.radacctid)) AS mac_key,
+          COALESCE(NULLIF(ra.framedipaddress,''), CONCAT('row:', ra.radacctid)) AS ip_key
+        FROM radacct ra
+        WHERE ra.username IN (${IN_USERS})
+          AND ra.acctstarttime IS NOT NULL
+          AND ra.acctstarttime < UTC_TIMESTAMP()
+          AND COALESCE(NULLIF(ra.acctstoptime,'0000-00-00 00:00:00'), ra.acctupdatetime, UTC_TIMESTAMP()) > '${ws_esc}'
+      ) s
+      GROUP BY s.session_key, s.mac_key, s.ip_key
     ) q;
   " || echo 0
 }

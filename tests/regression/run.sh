@@ -303,7 +303,7 @@ assert_contains "admin_api_plan_promo_uses_purchase_entitlement" "$admin_api_con
 assert_contains "admin_api_plan_promo_does_not_trust_radius_expiry" "$admin_api_content" 'SELECT MAX(expires_at) FROM purchases'
 assert_contains "admin_api_plan_promo_creates_zero_cost_purchase" "$admin_api_content" "\$add('price_cents', 0)"
 assert_contains "admin_api_plan_promo_clears_legacy_caps" "$admin_api_content" "attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')"
-assert_contains "admin_api_plan_promo_keeps_one_device_limit" "$admin_api_content" "radius_set_check(\$r, \$u, 'Simultaneous-Use', ':=', radius_simultaneous_use_limit())"
+assert_contains "admin_api_plan_promo_keeps_canonical_device_limit" "$admin_api_content" "radius_set_check(\$r, \$u, 'Simultaneous-Use', ':=', radius_simultaneous_use_limit())"
 assert_contains "admin_api_promo_targets_remain_strings" "$admin_api_content" "array_map('strval', array_keys(\$out))"
 assert_contains "admin_api_plan_promo_casts_target_msisdn" "$admin_api_content" "\$msisdn = (string)\$msisdn;"
 
@@ -385,14 +385,20 @@ require getcwd() . '/pay-portal/lib/radius.php';
 echo radius_simultaneous_use_limit();
 PHP
 )"
-assert_eq "radius_session_limit_is_one" "$session_limit_value" "1"
+assert_eq "radius_session_limit_is_two" "$session_limit_value" "2"
 
 signup_content="$(cat api/hotspot/signup.php)"
-assert_contains "signup_session_limit_is_one" "$signup_content" '$SIMULTANEOUS_USE = 1;'
+assert_contains "signup_session_limit_is_two" "$signup_content" '$SIMULTANEOUS_USE = 2;'
+assert_not_contains "signup_session_limit_never_one" "$signup_content" '$SIMULTANEOUS_USE = 1;'
 assert_not_contains "signup_session_limit_never_three" "$signup_content" '$SIMULTANEOUS_USE = 3;'
+
+hotspot_errors_content="$(cat hotspot/errors.txt)"
+assert_contains "hotspot_user_session_limit_mentions_two_devices" "$hotspot_errors_content" 'user-session-limit = This account is already active on 2 devices. Log out on one device and try again.'
+assert_not_contains "hotspot_user_session_limit_no_one_device_copy" "$hotspot_errors_content" 'This account is already active on another device. Log out there and try again.'
 
 user_auth_content="$(cat pay-portal/lib/user_auth.php)"
 assert_contains "login_sync_uses_canonical_session_limit" "$user_auth_content" '$simVal = radius_simultaneous_use_limit();'
+assert_not_contains "login_sync_never_preserves_stale_session_limit" "$user_auth_content" "WHERE username IN (\$ph) AND attribute='Simultaneous-Use'"
 assert_not_contains "login_sync_never_falls_back_to_three" "$user_auth_content" '$simVal = '"'"'3'"'"';'
 
 router_catchup_content="$(cat ops/router_catchup.sh)"
@@ -403,10 +409,11 @@ assert_contains "router_catchup_winbox_firewall_guardrail" "$router_catchup_cont
 assert_contains "router_catchup_management_refresh_logged" "$router_catchup_content" 'action=management_refreshed'
 assert_contains "router_catchup_enables_mac_cookie_login" "$router_catchup_content" 'login-by=mac-cookie,http-chap,https'
 assert_contains "router_catchup_logs_hotspot_login_refresh" "$router_catchup_content" 'action=hotspot_login_refreshed'
-assert_contains "router_catchup_refreshes_active_cookie_profile" "$router_catchup_content" ':if ($prof = "active") do={ /ip hotspot user profile set $ids shared-users=1 add-mac-cookie=yes mac-cookie-timeout=4w2d }'
+assert_contains "router_catchup_refreshes_active_cookie_profile" "$router_catchup_content" ':if ($prof = "active") do={ /ip hotspot user profile set $ids shared-users=2 add-mac-cookie=yes mac-cookie-timeout=4w2d }'
 assert_contains "router_catchup_zeroes_blocked_cookie_profiles" "$router_catchup_content" '"default";"limited";"nopaid"'
 assert_contains "router_catchup_logs_user_profile_refresh" "$router_catchup_content" 'action=hotspot_user_profiles_refreshed'
-assert_contains "router_catchup_enforces_one_shared_user" "$router_catchup_content" 'shared-users=1'
+assert_contains "router_catchup_enforces_two_shared_users" "$router_catchup_content" 'shared-users=2'
+assert_not_contains "router_catchup_no_longer_enforces_one_shared_user" "$router_catchup_content" 'shared-users=1'
 assert_not_contains "router_catchup_never_allows_three_shared_users" "$router_catchup_content" 'shared-users=3'
 assert_contains "router_catchup_restores_anti_share_ttl" "$router_catchup_content" 'chain=postrouting action=change-ttl new-ttl=set:1 passthrough=no dst-address-list=HS_ACTIVE out-interface=bridge'
 assert_contains "router_catchup_logs_anti_share_refresh" "$router_catchup_content" 'action=anti_share_refreshed'
@@ -464,6 +471,8 @@ assert_contains "quota_enforce_purchase_extends_expiry_source" "$quota_enforce_c
 assert_contains "quota_enforce_zero_cap_allows_current_purchase" "$quota_enforce_content" 'CURRENT_PURCHASE == 0'
 assert_contains "quota_enforce_purchase_requires_applied_window" "$quota_enforce_content" "status='applied'"
 assert_contains "quota_enforce_purchase_requires_unexpired_window" "$quota_enforce_content" 'AND expires_at > UTC_TIMESTAMP()'
+assert_contains "quota_enforce_dedupes_duplicate_acct_sessions" "$quota_enforce_content" 'GROUP BY s.session_key, s.mac_key, s.ip_key'
+assert_contains "quota_enforce_counts_largest_duplicate_session_counter" "$quota_enforce_content" 'MAX(s.sess_bytes) AS sess_bytes'
 
 radius_content="$(cat pay-portal/lib/radius.php)"
 assert_not_contains "radius_disconnect_no_suffix_like" "$radius_content" 'username LIKE CONCAT'
@@ -480,5 +489,7 @@ assert_contains "radius_purchase_requires_activation_window" "$radius_content" '
 assert_contains "radius_purchase_requires_expiry_window" "$radius_content" 'AND expires_at > ?'
 assert_not_contains "radius_no_future_expiry_active_fallback" "$radius_content" "\$hsGroup === 'HS_ACTIVE' && \$expiry instanceof DateTimeImmutable && \$expiry > \$now"
 assert_not_contains "radius_never_marks_zero_quota_exhausted" "$radius_content" 'if ($quotaBytes <= 0) $exhaustedFlag = 1;'
+assert_contains "radius_usage_dedupes_duplicate_acct_sessions" "$radius_content" 'GROUP BY q.session_key, q.mac_key, q.ip_key'
+assert_contains "radius_usage_counts_largest_duplicate_session_counter" "$radius_content" 'MAX(q.sess_bytes) AS sess_bytes'
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

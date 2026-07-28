@@ -169,28 +169,9 @@ function user_sync_radius_auth_variants(string $msisdn, string $password): void 
         }
       }
 
-      // Keep session cap mirrored across username variants.
+      // Keep session cap canonical across username variants.
       $simOp = ':=';
       $simVal = radius_simultaneous_use_limit();
-      $stSim = $r->prepare(
-        "SELECT value, COALESCE(NULLIF(op,''),':=') AS op
-         FROM radcheck
-         WHERE username IN ($ph) AND attribute='Simultaneous-Use'
-         ORDER BY id DESC
-         LIMIT 1"
-      );
-      $stSim->execute($targets);
-      $sim = $stSim->fetch(PDO::FETCH_ASSOC) ?: null;
-      if ($sim && (string)($sim['value'] ?? '') !== '') {
-        $simVal = (string)$sim['value'];
-        $simOp = (string)($sim['op'] ?? ':=');
-      }
-      if (!in_array($simOp, [':=','=','==','=~','!~','!=','<','<=','>','>='], true)) {
-        $simOp = ':=';
-      }
-      if (!preg_match('/^\d+$/', $simVal) || (int)$simVal <= 0) {
-        $simVal = radius_simultaneous_use_limit();
-      }
       $upSim = $r->prepare(
         "INSERT INTO radcheck (username, attribute, op, value)
          VALUES (?, 'Simultaneous-Use', ?, ?)

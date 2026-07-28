@@ -75,7 +75,7 @@ $GROUP_ON_CREATE = 'HS_NOPAID';
 $ADDR_LIST       = 'HS_NOPAID';
 $ENFORCE_UNIQUE  = true;
 $DEFAULT_EXP_DAYS = 3650; // keep unpaid accounts from auto-expiring
-$SIMULTANEOUS_USE = 1;
+$SIMULTANEOUS_USE = 2;
 // --------------
 
 function username_variants(string $u): array {
