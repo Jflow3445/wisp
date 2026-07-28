@@ -1,0 +1,11 @@
+[Unit]
+Description=Run NISTER account-level hotspot queue sync frequently
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=20s
+AccuracySec=5s
+Unit=nister-account-queue-sync.service
+
+[Install]
+WantedBy=timers.target

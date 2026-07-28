@@ -1,0 +1,9 @@
+[Unit]
+Description=NISTER account-level hotspot queue sync
+Wants=network-online.target mariadb.service
+After=network-online.target mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nister_account_queue_sync.sh
+TimeoutStartSec=25s

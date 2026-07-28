@@ -474,6 +474,19 @@ assert_contains "quota_enforce_purchase_requires_unexpired_window" "$quota_enfor
 assert_contains "quota_enforce_dedupes_duplicate_acct_sessions" "$quota_enforce_content" 'GROUP BY s.session_key, s.mac_key, s.ip_key'
 assert_contains "quota_enforce_counts_largest_duplicate_session_counter" "$quota_enforce_content" 'MAX(s.sess_bytes) AS sess_bytes'
 
+account_queue_content="$(cat nister_account_queue_sync.sh)"
+assert_contains "account_queue_sync_reads_hotspot_active" "$account_queue_content" '/ip hotspot active find'
+assert_contains "account_queue_sync_uses_account_shaper_comment" "$account_queue_content" 'NISTER ACCOUNT SHAPER'
+assert_contains "account_queue_sync_uses_plan_rate" "$account_queue_content" "Mikrotik-Rate-Limit"
+assert_contains "account_queue_sync_groups_targets_per_account" "$account_queue_content" 'printf '\''%s\t%s\t%s\n'\'' "$user" "$targets" "$max_limit"'
+assert_contains "account_queue_sync_sets_shared_simple_queue_limit" "$account_queue_content" 'max-limit=%s limit-at=0/0'
+assert_contains "account_queue_sync_moves_queues_before_dynamic_hotspot_queues" "$account_queue_content" '/queue simple move $q 0'
+assert_contains "account_queue_sync_suppresses_known_host_noise" "$account_queue_content" '-o LogLevel=ERROR'
+account_queue_timer_content="$(cat systemd/nister-account-queue-sync.timer)"
+assert_contains "account_queue_timer_runs_frequently" "$account_queue_timer_content" 'OnUnitActiveSec=20s'
+account_queue_service_content="$(cat systemd/nister-account-queue-sync.service)"
+assert_contains "account_queue_service_has_timeout" "$account_queue_service_content" 'TimeoutStartSec=25s'
+
 radius_content="$(cat pay-portal/lib/radius.php)"
 assert_not_contains "radius_disconnect_no_suffix_like" "$radius_content" 'username LIKE CONCAT'
 assert_not_contains "radius_force_kick_no_blank_user" "$radius_content" "\$tryUsers[] = '';"
