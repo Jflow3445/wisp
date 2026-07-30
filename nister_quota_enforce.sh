@@ -28,15 +28,147 @@ alert(){
   fi
 }
 
+state_user_key(){
+  local raw="${1:-}" d key
+  d="${raw//[^0-9]/}"
+  if [[ "$d" =~ ^233[0-9]{9}$ ]]; then
+    key="0${d:3}"
+  elif [[ "$d" =~ ^0[0-9]{9}$ ]]; then
+    key="$d"
+  elif [[ -n "$d" ]]; then
+    key="$d"
+  else
+    key="$raw"
+  fi
+  key="${key//[^A-Za-z0-9_.:-]/_}"
+  echo "$key"
+}
+
+state_make_shared(){
+  local path="$1"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown freerad:freerad "$path" 2>/dev/null || true
+  fi
+  chmod 660 "$path" 2>/dev/null || true
+}
+
+state_write_shared(){
+  local path="$1" fmt="$2"
+  shift 2
+  if ! ( umask 007; printf "$fmt" "$@" >"$path" ); then
+    log "WARN user=${USER:-all} state_write_failed path=$path"
+    return 1
+  fi
+  state_make_shared "$path"
+}
+
+state_stamp_path(){
+  local raw="$1" suffix="$2" key
+  key="$(state_user_key "$raw")"
+  suffix="${suffix//[^A-Za-z0-9_.:-]/_}"
+  echo "$STATE_DIR/${key}.${suffix}"
+}
+
+state_stamp_last_epoch(){
+  local stamp="$1" last=""
+  if [[ -r "$stamp" ]]; then
+    last="$(head -n1 "$stamp" 2>/dev/null || true)"
+  fi
+  if [[ ! "$last" =~ ^[0-9]+$ && -e "$stamp" ]]; then
+    last="$(stat -c '%Y' "$stamp" 2>/dev/null || echo 0)"
+  fi
+  [[ "$last" =~ ^[0-9]+$ ]] || last=0
+  echo "$last"
+}
+
+state_stamp_reserve_seconds(){
+  local stamp="$1" now="$2" seconds="$3" lock fd last
+  [[ "$seconds" =~ ^[0-9]+$ ]] || seconds=1
+  (( seconds < 1 )) && seconds=1
+  lock="$STATE_DIR/.sms_state.lock"
+  if ! exec {fd}>>"$lock"; then
+    log "WARN user=${USER:-all} state_lock_open_failed path=$lock"
+    return 1
+  fi
+  state_make_shared "$lock"
+  if ! flock -w 2 "$fd"; then
+    exec {fd}>&-
+    log "WARN user=${USER:-all} state_lock_busy path=$lock"
+    return 1
+  fi
+  last="$(state_stamp_last_epoch "$stamp")"
+  if (( now - last < seconds )); then
+    flock -u "$fd" 2>/dev/null || true
+    exec {fd}>&-
+    return 1
+  fi
+  if ! state_write_shared "$stamp" '%s\n' "$now"; then
+    flock -u "$fd" 2>/dev/null || true
+    exec {fd}>&-
+    return 1
+  fi
+  flock -u "$fd" 2>/dev/null || true
+  exec {fd}>&-
+  return 0
+}
+
+sms_daily_reserve(){
+  local to="$1" now="$2" max="${SMS_DAILY_MAX_PER_USER:-4}" day stamp lock fd count
+  [[ "$max" =~ ^[0-9]+$ ]] || max=4
+  (( max < 1 )) && max=1
+  (( max > 20 )) && max=20
+  day="$(date -u -d "@$now" '+%Y%m%d' 2>/dev/null || date -u '+%Y%m%d')"
+  stamp="$(state_stamp_path "$to" "sms_daily_${day}")"
+  lock="$STATE_DIR/.sms_state.lock"
+  if ! exec {fd}>>"$lock"; then
+    log "WARN user=${USER:-all} sms_daily_lock_open_failed path=$lock"
+    return 1
+  fi
+  state_make_shared "$lock"
+  if ! flock -w 2 "$fd"; then
+    exec {fd}>&-
+    log "WARN user=${USER:-all} sms_daily_lock_busy path=$lock"
+    return 1
+  fi
+  count=0
+  if [[ -r "$stamp" ]]; then
+    count="$(head -n1 "$stamp" 2>/dev/null || echo 0)"
+  fi
+  [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  if (( count >= max )); then
+    flock -u "$fd" 2>/dev/null || true
+    exec {fd}>&-
+    log "WARN user=${USER:-all} sms_daily_cap_skip to=$(state_user_key "$to") count=$count max=$max"
+    return 1
+  fi
+  if ! state_write_shared "$stamp" '%s\n' "$(( count + 1 ))"; then
+    flock -u "$fd" 2>/dev/null || true
+    exec {fd}>&-
+    return 1
+  fi
+  flock -u "$fd" 2>/dev/null || true
+  exec {fd}>&-
+  return 0
+}
+
+sms_reserve(){
+  local stamp="$1" now="$2" debounce_hours="$3" to="$4" seconds
+  [[ "$debounce_hours" =~ ^[0-9]+$ ]] || debounce_hours=24
+  (( debounce_hours < 1 )) && debounce_hours=24
+  seconds=$(( debounce_hours * 3600 ))
+  state_stamp_reserve_seconds "$stamp" "$now" "$seconds" || return 1
+  sms_daily_reserve "$to" "$now" || return 1
+}
+
 # debounce per user (unless forced/limit)
 NOW_EPOCH="$(date +%s)"
 if [[ -n "${USER:-}" ]]; then
-  STAMP="$STATE_DIR/${USER}.stamp"
-  if [[ -f "$STAMP" && "$MODE" != "--force" && "$MODE" != "--limit" ]]; then
-    LAST="$(cat "$STAMP" 2>/dev/null || echo 0)"
-    (( NOW_EPOCH - LAST < 30 )) && exit 0
+  STAMP="$(state_stamp_path "$USER" "stamp")"
+  if [[ "$MODE" != "--force" && "$MODE" != "--limit" ]]; then
+    state_stamp_reserve_seconds "$STAMP" "$NOW_EPOCH" 30 || exit 0
+  else
+    state_write_shared "$STAMP" '%s\n' "$NOW_EPOCH" || true
   fi
-  echo "$NOW_EPOCH" >"$STAMP"
 fi
 
 need(){ command -v "$1" >/dev/null 2>&1 || { log "ERR user=$USER missing_dep=$1"; exit 0; }; }
@@ -190,9 +322,9 @@ sms_send(){
 sms_should_send(){
   local stamp="$1" now="$2" debounce="$3"
   [[ -z "$debounce" ]] && debounce=24
-  [[ -f "$stamp" ]] || return 0
-  local last; last="$(cat "$stamp" 2>/dev/null || echo 0)"
-  [[ "$last" =~ ^[0-9]+$ ]] || last=0
+  [[ "$debounce" =~ ^[0-9]+$ ]] || debounce=24
+  (( debounce < 1 )) && debounce=24
+  local last; last="$(state_stamp_last_epoch "$stamp")"
   (( now - last >= debounce*3600 )) && return 0
   return 1
 }
@@ -333,12 +465,11 @@ if [[ -z "${USER:-}" ]]; then
       [[ -z "$TO" ]] && continue
       [[ -n "${_seen_inactive[$TO]:-}" ]] && continue
       _seen_inactive["$TO"]=1
-      STAMP="$STATE_DIR/${TO}.sms_inactive"
-      if sms_should_send "$STAMP" "$NOW_EPOCH" "$INACTIVE_DEBOUNCE_HOURS"; then
+      STAMP="$(state_stamp_path "$TO" "sms_inactive")"
+      if sms_reserve "$STAMP" "$NOW_EPOCH" "$INACTIVE_DEBOUNCE_HOURS" "$TO"; then
         MSG="$(sms_template "$SMS_INACTIVE_TEXT" NAME "" MSISDN "$TO")"
         if [[ -n "$MSG" ]]; then
           sms_send "$TO" "$MSG"
-          echo "$NOW_EPOCH" >"$STAMP"
           log "SMS_INACTIVE user=$TO cooldown_hours=$INACTIVE_DEBOUNCE_HOURS"
         fi
       fi
@@ -688,7 +819,7 @@ monotonic_used(){
       raw="$saved_peak"
     fi
   fi
-  printf '%s\t%s\n' "$key" "$raw" >"$file"
+  state_write_shared "$file" '%s\t%s\n' "$key" "$raw" || true
   echo "$raw"
 }
 
@@ -1000,6 +1131,10 @@ if (( EXPIRED == 0 && EXHAUSTED == 0 )); then
   SMS_QUOTA_WARN_MB="$(sms_setting SMS_QUOTA_WARN_MB)"; [[ -z "${SMS_QUOTA_WARN_MB:-}" ]] && SMS_QUOTA_WARN_MB=200
   SMS_EXPIRY_WARN_HOURS="$(sms_setting SMS_EXPIRY_WARN_HOURS)"; [[ -z "${SMS_EXPIRY_WARN_HOURS:-}" ]] && SMS_EXPIRY_WARN_HOURS=24
   SMS_RENEW_REMINDER_HOURS="$(sms_setting SMS_RENEW_REMINDER_HOURS)"; [[ -z "${SMS_RENEW_REMINDER_HOURS:-}" ]] && SMS_RENEW_REMINDER_HOURS=24
+  SMS_DAILY_MAX_PER_USER="$(sms_setting SMS_DAILY_MAX_PER_USER)"; [[ -z "${SMS_DAILY_MAX_PER_USER:-}" ]] && SMS_DAILY_MAX_PER_USER=4
+  [[ "${SMS_DAILY_MAX_PER_USER:-}" =~ ^[0-9]+$ ]] || SMS_DAILY_MAX_PER_USER=4
+  (( SMS_DAILY_MAX_PER_USER < 1 )) && SMS_DAILY_MAX_PER_USER=1
+  (( SMS_DAILY_MAX_PER_USER > 20 )) && SMS_DAILY_MAX_PER_USER=20
 
   if (( CAP_BYTES > 0 )); then
     REMAIN_BYTES=$(( CAP_BYTES - USED )); (( REMAIN_BYTES < 0 )) && REMAIN_BYTES=0
@@ -1008,15 +1143,14 @@ if (( EXPIRED == 0 && EXHAUSTED == 0 )); then
     if (( REMAIN_PCT <= SMS_QUOTA_WARN_PCT || REMAIN_MB <= SMS_QUOTA_WARN_MB )); then
       SMS_QUOTA_WARN_TEXT="$(sms_setting SMS_QUOTA_WARN_TEXT)"
       if [[ -n "${SMS_QUOTA_WARN_TEXT:-}" ]]; then
-        SMS_STAMP="$STATE_DIR/${USER}.sms_quota_warn"
-        if sms_should_send "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS"; then
-          MSG="$(sms_template "$SMS_QUOTA_WARN_TEXT" \
-            NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
-            REMAIN_MB "$REMAIN_MB" REMAIN_PCT "$REMAIN_PCT" LOGIN_URL "$SMS_LOGIN_URL")"
-          TO="$(msisdn_local "$USER")"
-          if [[ -n "$TO" && -n "$MSG" ]]; then
+        SMS_STAMP="$(state_stamp_path "$USER" "sms_quota_warn")"
+        MSG="$(sms_template "$SMS_QUOTA_WARN_TEXT" \
+          NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
+          REMAIN_MB "$REMAIN_MB" REMAIN_PCT "$REMAIN_PCT" LOGIN_URL "$SMS_LOGIN_URL")"
+        TO="$(msisdn_local "$USER")"
+        if [[ -n "$TO" && -n "$MSG" ]]; then
+          if sms_reserve "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS" "$TO"; then
             sms_send "$TO" "$MSG"
-            echo "$NOW_EPOCH" >"$SMS_STAMP"
             log "SMS_QUOTA_WARN user=$USER remain_mb=$REMAIN_MB remain_pct=$REMAIN_PCT"
           fi
         fi
@@ -1030,15 +1164,14 @@ if (( EXPIRED == 0 && EXHAUSTED == 0 )); then
       SMS_EXPIRY_WARN_TEXT="$(sms_setting SMS_EXPIRY_WARN_TEXT)"
       if [[ -n "${SMS_EXPIRY_WARN_TEXT:-}" ]]; then
         EXP_STR="$(get_expiry_str)"
-        SMS_STAMP="$STATE_DIR/${USER}.sms_expiry_warn"
-        if sms_should_send "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS"; then
-          MSG="$(sms_template "$SMS_EXPIRY_WARN_TEXT" \
-            NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
-            EXPIRES_AT "${EXP_STR:-}" LOGIN_URL "$SMS_LOGIN_URL")"
-          TO="$(msisdn_local "$USER")"
-          if [[ -n "$TO" && -n "$MSG" ]]; then
+        SMS_STAMP="$(state_stamp_path "$USER" "sms_expiry_warn")"
+        MSG="$(sms_template "$SMS_EXPIRY_WARN_TEXT" \
+          NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
+          EXPIRES_AT "${EXP_STR:-}" LOGIN_URL "$SMS_LOGIN_URL")"
+        TO="$(msisdn_local "$USER")"
+        if [[ -n "$TO" && -n "$MSG" ]]; then
+          if sms_reserve "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS" "$TO"; then
             sms_send "$TO" "$MSG"
-            echo "$NOW_EPOCH" >"$SMS_STAMP"
             log "SMS_EXPIRY_WARN user=$USER expires_at=${EXP_STR:-}"
           fi
         fi
@@ -1048,15 +1181,14 @@ if (( EXPIRED == 0 && EXHAUSTED == 0 )); then
       SMS_RENEW_REMINDER_TEXT="$(sms_setting SMS_RENEW_REMINDER_TEXT)"
       if [[ -n "${SMS_RENEW_REMINDER_TEXT:-}" ]]; then
         EXP_STR="$(get_expiry_str)"
-        SMS_STAMP="$STATE_DIR/${USER}.sms_renew_reminder"
-        if sms_should_send "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS"; then
-          MSG="$(sms_template "$SMS_RENEW_REMINDER_TEXT" \
-            NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
-            EXPIRES_AT "${EXP_STR:-}" LOGIN_URL "$SMS_LOGIN_URL")"
-          TO="$(msisdn_local "$USER")"
-          if [[ -n "$TO" && -n "$MSG" ]]; then
+        SMS_STAMP="$(state_stamp_path "$USER" "sms_renew_reminder")"
+        MSG="$(sms_template "$SMS_RENEW_REMINDER_TEXT" \
+          NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
+          EXPIRES_AT "${EXP_STR:-}" LOGIN_URL "$SMS_LOGIN_URL")"
+        TO="$(msisdn_local "$USER")"
+        if [[ -n "$TO" && -n "$MSG" ]]; then
+          if sms_reserve "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS" "$TO"; then
             sms_send "$TO" "$MSG"
-            echo "$NOW_EPOCH" >"$SMS_STAMP"
             log "SMS_RENEW_REMINDER user=$USER expires_at=${EXP_STR:-}"
           fi
         fi
@@ -1068,11 +1200,13 @@ fi
 if (( EXPIRED == 1 || EXHAUSTED == 1 )); then
   set_cap_zero
   set_hs_limited
-  clear_hotspot_cookies
-  kick_sessions
   if (( WAS_LIMITED == 0 )); then
+    clear_hotspot_cookies
+    kick_sessions
     log "LIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS current_purchase=$CURRENT_PURCHASE purchase_exp=$PURCHASE_EXP_EPOCH expired=$EXPIRED exhausted=$EXHAUSTED"
     alert "LIMIT user=$USER plan=${PLAN_CODE:-na} expired=$EXPIRED exhausted=$EXHAUSTED current_purchase=$CURRENT_PURCHASE used=$USED cap=$CAP_BYTES"
+  else
+    log "LIMIT_SKIP user=$USER reason=already_limited expired=$EXPIRED exhausted=$EXHAUSTED"
   fi
 else
   if is_limited_state; then
@@ -1081,15 +1215,14 @@ else
     log "UNLIMIT user=$USER users=${USERS[*]} plan=${PLAN_CODE:-na} used=$USED raw_used=$RAW_USED cap=$CAP_BYTES cap_src=$CAP_SRC days=$DAYS current_purchase=$CURRENT_PURCHASE purchase_exp=$PURCHASE_EXP_EPOCH"
     SMS_BACK_ONLINE_TEXT="$(sms_setting SMS_BACK_ONLINE_TEXT)"
     if [[ -n "${SMS_BACK_ONLINE_TEXT:-}" ]]; then
-      SMS_STAMP="$STATE_DIR/${USER}.sms_back_online"
-      if sms_should_send "$SMS_STAMP" "$NOW_EPOCH" "${SMS_DEBOUNCE_HOURS:-24}"; then
-        MSG="$(sms_template "$SMS_BACK_ONLINE_TEXT" \
-          NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
-          EXPIRES_AT "$(get_expiry_str)")"
-        TO="$(msisdn_local "$USER")"
-        if [[ -n "$TO" && -n "$MSG" ]]; then
+      SMS_STAMP="$(state_stamp_path "$USER" "sms_back_online")"
+      MSG="$(sms_template "$SMS_BACK_ONLINE_TEXT" \
+        NAME "" MSISDN "$(msisdn_local "$USER")" PLAN "${PLAN_CODE:-}" \
+        EXPIRES_AT "$(get_expiry_str)")"
+      TO="$(msisdn_local "$USER")"
+      if [[ -n "$TO" && -n "$MSG" ]]; then
+        if sms_reserve "$SMS_STAMP" "$NOW_EPOCH" "${SMS_DEBOUNCE_HOURS:-24}" "$TO"; then
           sms_send "$TO" "$MSG"
-          echo "$NOW_EPOCH" >"$SMS_STAMP"
           log "SMS_BACK_ONLINE user=$USER"
         fi
       fi

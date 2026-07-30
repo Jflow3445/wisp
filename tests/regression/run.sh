@@ -473,6 +473,14 @@ assert_contains "quota_enforce_purchase_requires_applied_window" "$quota_enforce
 assert_contains "quota_enforce_purchase_requires_unexpired_window" "$quota_enforce_content" 'AND expires_at > UTC_TIMESTAMP()'
 assert_contains "quota_enforce_dedupes_duplicate_acct_sessions" "$quota_enforce_content" 'GROUP BY s.session_key, s.mac_key, s.ip_key'
 assert_contains "quota_enforce_counts_largest_duplicate_session_counter" "$quota_enforce_content" 'MAX(s.sess_bytes) AS sess_bytes'
+assert_contains "quota_enforce_sms_stamps_are_canonical" "$quota_enforce_content" 'SMS_STAMP="$(state_stamp_path "$USER" "sms_expiry_warn")"'
+assert_contains "quota_enforce_sms_reserves_before_send" "$quota_enforce_content" 'if sms_reserve "$SMS_STAMP" "$NOW_EPOCH" "$SMS_DEBOUNCE_HOURS" "$TO"; then'
+assert_contains "quota_enforce_state_files_shared_with_freerad" "$quota_enforce_content" 'chown freerad:freerad "$path"'
+assert_contains "quota_enforce_sms_has_daily_cap" "$quota_enforce_content" 'SMS_DAILY_MAX_PER_USER'
+assert_contains "quota_enforce_usage_peak_uses_shared_writer" "$quota_enforce_content" "state_write_shared \"\$file\" '%s\\t%s\\n'"
+assert_contains "quota_enforce_already_limited_skips_repeat_kick" "$quota_enforce_content" 'LIMIT_SKIP user=$USER reason=already_limited'
+assert_not_contains "quota_enforce_no_raw_user_sms_stamp" "$quota_enforce_content" 'SMS_STAMP="$STATE_DIR/${USER}.sms_expiry_warn"'
+assert_not_contains "quota_enforce_no_sms_send_before_stamp_write" "$quota_enforce_content" 'echo "$NOW_EPOCH" >"$SMS_STAMP"'
 
 account_queue_content="$(cat nister_account_queue_sync.sh)"
 assert_contains "account_queue_sync_reads_hotspot_active" "$account_queue_content" '/ip hotspot active find'
