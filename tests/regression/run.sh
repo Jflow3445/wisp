@@ -487,6 +487,20 @@ assert_contains "account_queue_timer_runs_frequently" "$account_queue_timer_cont
 account_queue_service_content="$(cat systemd/nister-account-queue-sync.service)"
 assert_contains "account_queue_service_has_timeout" "$account_queue_service_content" 'TimeoutStartSec=25s'
 
+radacct_cleanup_content="$(cat nister_radacct_cleanup.sh)"
+assert_contains "radacct_cleanup_uses_ten_minute_default" "$radacct_cleanup_content" 'STALE_MINUTES="${STALE_MINUTES:-10}"'
+assert_contains "radacct_cleanup_dedupes_cross_nas_sessions" "$radacct_cleanup_content" 'GROUP BY username, acctsessionid, callingstationid, framedipaddress'
+assert_contains "radacct_cleanup_does_not_group_duplicate_key_by_nas" "$radacct_cleanup_content" 'NAS-IP is intentionally not part of this key'
+radacct_cleanup_timer_content="$(cat systemd/nister-radacct-cleanup.timer)"
+assert_contains "radacct_cleanup_timer_runs_every_five_minutes" "$radacct_cleanup_timer_content" 'OnUnitActiveSec=5m'
+radacct_cleanup_service_content="$(cat systemd/nister-radacct-cleanup.service)"
+assert_contains "radacct_cleanup_service_uses_ten_minute_stale_window" "$radacct_cleanup_service_content" 'Environment=STALE_MINUTES=10'
+
+sim_use_patch_content="$(cat ops/freeradius_simultaneous_use_dedupe.sh)"
+assert_contains "freeradius_sim_use_count_dedupes_logical_sessions" "$sim_use_patch_content" 'GROUP BY COALESCE(NULLIF(acctsessionid'
+assert_contains "freeradius_sim_use_ignores_stale_open_rows" "$sim_use_patch_content" 'DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE)'
+assert_contains "freeradius_sim_use_counts_zero_datetime_as_open" "$sim_use_patch_content" "acctstoptime = '0000-00-00 00:00:00'"
+
 radius_content="$(cat pay-portal/lib/radius.php)"
 assert_not_contains "radius_disconnect_no_suffix_like" "$radius_content" 'username LIKE CONCAT'
 assert_not_contains "radius_force_kick_no_blank_user" "$radius_content" "\$tryUsers[] = '';"

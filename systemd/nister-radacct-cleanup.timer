@@ -2,11 +2,10 @@
 Description=Run Nister radacct cleanup periodically
 
 [Timer]
-OnBootSec=10m
-OnUnitActiveSec=30m
+OnBootSec=2m
+OnUnitActiveSec=5m
 Persistent=true
 Unit=nister-radacct-cleanup.service
 
 [Install]
 WantedBy=timers.target
-

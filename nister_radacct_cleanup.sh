@@ -6,9 +6,10 @@ umask 077
 # Accounting-Stop/Interim updates but didn't (e.g., due to acct_unique mismatch).
 #
 # Safe defaults:
-# - Only closes sessions that have not updated in 24 hours.
-# - For duplicates (same NAS + Acct-Session-Id open multiple times), closes all
-#   but the most recently updated row.
+# - Only closes sessions that have not updated within STALE_MINUTES.
+# - For duplicates (same username + Acct-Session-Id + client MAC/IP open
+#   multiple times, even through different NAS addresses), closes all but the
+#   most recently updated row.
 
 TAG="nister-radacct-cleanup"
 log(){
@@ -17,8 +18,8 @@ log(){
   logger -t "$TAG" -- "$msg" || true
 }
 
-STALE_MINUTES="${STALE_MINUTES:-1440}"   # 24h
-[[ "$STALE_MINUTES" =~ ^[0-9]+$ ]] || STALE_MINUTES=1440
+STALE_MINUTES="${STALE_MINUTES:-10}"   # Router interim updates are every 3m.
+[[ "$STALE_MINUTES" =~ ^[0-9]+$ ]] || STALE_MINUTES=10
 
 DRY_RUN="${DRY_RUN:-0}"
 [[ "$DRY_RUN" =~ ^[01]$ ]] || DRY_RUN=0
@@ -66,7 +67,7 @@ mysql_run(){
 }
 
 open_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00');" 2>/dev/null || echo 0)"
-dups_before="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY nasipaddress,acctsessionid HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
+dups_before="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY username,acctsessionid,callingstationid,framedipaddress HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
 stale_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);" 2>/dev/null || echo 0)"
 invalid_stop_before="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NOT NULL AND acctstoptime<>'0000-00-00 00:00:00' AND acctstarttime IS NOT NULL AND acctstoptime < acctstarttime;" 2>/dev/null || echo 0)"
 
@@ -89,12 +90,16 @@ SELECT ROW_COUNT();
 " 2>/dev/null | tail -n1 || echo 0)"
   [[ "$invalid_closed" =~ ^[0-9]+$ ]] || invalid_closed=0
 
-  # Close older duplicates (keep the most recently updated row per (NAS, Acct-Session-Id)).
+  # Close older duplicates. RouterOS can report the same client session through
+  # different NAS identities, so NAS-IP is intentionally not part of this key.
+  # Keep the most recently updated row per user/session/client MAC/client IP.
   dup_closed="$(mysql_run <<SQL
 UPDATE radacct ra
 JOIN (
-  SELECT nasipaddress,
+  SELECT username,
          acctsessionid,
+         callingstationid,
+         framedipaddress,
          CAST(SUBSTRING_INDEX(
            GROUP_CONCAT(radacctid ORDER BY COALESCE(acctupdatetime, acctstarttime) DESC, radacctid DESC),
            ',', 1
@@ -103,11 +108,13 @@ JOIN (
   WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00')
     AND acctsessionid IS NOT NULL
     AND acctsessionid <> ''
-  GROUP BY nasipaddress, acctsessionid
+  GROUP BY username, acctsessionid, callingstationid, framedipaddress
   HAVING COUNT(*) > 1
 ) d
-  ON ra.nasipaddress = d.nasipaddress
+  ON ra.username = d.username
  AND ra.acctsessionid = d.acctsessionid
+ AND COALESCE(ra.callingstationid, '') = COALESCE(d.callingstationid, '')
+ AND COALESCE(ra.framedipaddress, '') = COALESCE(d.framedipaddress, '')
 SET ra.acctstoptime = COALESCE(ra.acctupdatetime, UTC_TIMESTAMP()),
     ra.acctsessiontime = GREATEST(0, TIMESTAMPDIFF(SECOND, ra.acctstarttime, COALESCE(ra.acctupdatetime, UTC_TIMESTAMP()))),
     ra.acctterminatecause = 'Cleanup-Duplicate'
@@ -131,7 +138,7 @@ SELECT ROW_COUNT();
 " 2>/dev/null | tail -n1 || echo 0)"
 
   open_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00');" 2>/dev/null || echo 0)"
-  dups_after="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY nasipaddress,acctsessionid HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
+  dups_after="$(mysql_run -e "SELECT COUNT(*) FROM (SELECT 1 FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND acctsessionid IS NOT NULL AND acctsessionid<>'' GROUP BY username,acctsessionid,callingstationid,framedipaddress HAVING COUNT(*)>1) t;" 2>/dev/null || echo 0)"
   stale_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND COALESCE(acctupdatetime,acctstarttime) < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${STALE_MINUTES} MINUTE);" 2>/dev/null || echo 0)"
   invalid_stop_after="$(mysql_run -e "SELECT COUNT(*) FROM radacct WHERE acctstoptime IS NOT NULL AND acctstoptime<>'0000-00-00 00:00:00' AND acctstarttime IS NOT NULL AND acctstoptime < acctstarttime;" 2>/dev/null || echo 0)"
 
