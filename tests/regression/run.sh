@@ -497,15 +497,18 @@ assert_contains "account_queue_service_has_timeout" "$account_queue_service_cont
 
 radacct_cleanup_content="$(cat nister_radacct_cleanup.sh)"
 assert_contains "radacct_cleanup_uses_ten_minute_default" "$radacct_cleanup_content" 'STALE_MINUTES="${STALE_MINUTES:-10}"'
-assert_contains "radacct_cleanup_dedupes_cross_nas_sessions" "$radacct_cleanup_content" 'GROUP BY username, acctsessionid, callingstationid, framedipaddress'
-assert_contains "radacct_cleanup_does_not_group_duplicate_key_by_nas" "$radacct_cleanup_content" 'NAS-IP is intentionally not part of this key'
+assert_contains "radacct_cleanup_dedupes_by_canonical_account_device" "$radacct_cleanup_content" 'GROUP BY account_key, device_key'
+assert_contains "radacct_cleanup_dedupes_username_variants" "$radacct_cleanup_content" "WHEN username REGEXP '^233[0-9]{9}$' THEN CONCAT('0', SUBSTRING(username,4))"
+assert_contains "radacct_cleanup_dedupes_reconnect_session_ids" "$radacct_cleanup_content" 'session IDs, username variants, or NAS identities'
+assert_contains "radacct_cleanup_does_not_group_duplicate_key_by_nas" "$radacct_cleanup_content" 'NAS-IP are intentionally not part of the primary device key'
 radacct_cleanup_timer_content="$(cat systemd/nister-radacct-cleanup.timer)"
 assert_contains "radacct_cleanup_timer_runs_every_five_minutes" "$radacct_cleanup_timer_content" 'OnUnitActiveSec=5m'
 radacct_cleanup_service_content="$(cat systemd/nister-radacct-cleanup.service)"
 assert_contains "radacct_cleanup_service_uses_ten_minute_stale_window" "$radacct_cleanup_service_content" 'Environment=STALE_MINUTES=10'
 
 sim_use_patch_content="$(cat ops/freeradius_simultaneous_use_dedupe.sh)"
-assert_contains "freeradius_sim_use_count_dedupes_logical_sessions" "$sim_use_patch_content" 'GROUP BY COALESCE(NULLIF(acctsessionid'
+assert_contains "freeradius_sim_use_count_dedupes_devices" "$sim_use_patch_content" "WHEN callingstationid IS NOT NULL AND callingstationid <> '' THEN CONCAT('mac:', callingstationid)"
+assert_contains "freeradius_sim_use_counts_username_variants" "$sim_use_patch_content" "username = CONCAT('233', SUBSTRING('%{SQL-User-Name}', 2))"
 assert_contains "freeradius_sim_use_ignores_stale_open_rows" "$sim_use_patch_content" 'DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE)'
 assert_contains "freeradius_sim_use_counts_zero_datetime_as_open" "$sim_use_patch_content" "acctstoptime = '0000-00-00 00:00:00'"
 

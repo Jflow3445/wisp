@@ -29,12 +29,19 @@ replacement = r'''simul_count_query = "\
 	FROM ( \
 		SELECT 1 \
 		FROM ${acct_table1} \
-		WHERE username = '%{SQL-User-Name}' \
+		WHERE ( \
+			username = '%{SQL-User-Name}' \
+			OR ('%{SQL-User-Name}' REGEXP '^0[0-9]{9}$' AND username = CONCAT('233', SUBSTRING('%{SQL-User-Name}', 2))) \
+			OR ('%{SQL-User-Name}' REGEXP '^233[0-9]{9}$' AND username = CONCAT('0', SUBSTRING('%{SQL-User-Name}', 4))) \
+		) \
 		AND (acctstoptime IS NULL OR acctstoptime = '0000-00-00 00:00:00') \
 		AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE) \
-		GROUP BY COALESCE(NULLIF(acctsessionid,''), CONCAT('row:', radacctid)), \
-		         COALESCE(NULLIF(callingstationid,''), CONCAT('row:', radacctid)), \
-		         COALESCE(NULLIF(framedipaddress,''), CONCAT('row:', radacctid)) \
+		GROUP BY CASE \
+			WHEN callingstationid IS NOT NULL AND callingstationid <> '' THEN CONCAT('mac:', callingstationid) \
+			WHEN framedipaddress IS NOT NULL AND framedipaddress <> '' THEN CONCAT('ip:', framedipaddress) \
+			WHEN acctsessionid IS NOT NULL AND acctsessionid <> '' THEN CONCAT('sid:', acctsessionid) \
+			ELSE CONCAT('row:', radacctid) \
+		END \
 	) s"
 
 simul_verify_query = "\
@@ -42,7 +49,11 @@ simul_verify_query = "\
 		radacctid, acctsessionid, username, nasipaddress, nasportid, framedipaddress, \
 		callingstationid, framedprotocol \
 	FROM ${acct_table1} \
-	WHERE username = '%{SQL-User-Name}' \
+	WHERE ( \
+		username = '%{SQL-User-Name}' \
+		OR ('%{SQL-User-Name}' REGEXP '^0[0-9]{9}$' AND username = CONCAT('233', SUBSTRING('%{SQL-User-Name}', 2))) \
+		OR ('%{SQL-User-Name}' REGEXP '^233[0-9]{9}$' AND username = CONCAT('0', SUBSTRING('%{SQL-User-Name}', 4))) \
+	) \
 	AND (acctstoptime IS NULL OR acctstoptime = '0000-00-00 00:00:00') \
 	AND COALESCE(acctupdatetime, acctstarttime) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE)"
 
