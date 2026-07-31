@@ -778,8 +778,11 @@ function promo_apply_plan_access(PDO $pdo, PDO $r, string $msisdn, array $plan, 
         radius_set_reply($r, $u, 'Nister-Plan-Name', ':=', $planName);
         radius_set_reply($r, $u, 'Nister-Duration-Days', ':=', (string)$days);
         radius_set_reply($r, $u, 'Nister-Window-Start', ':=', $purchaseAt->format('Y-m-d H:i:s'));
+        // Do not return per-user Mikrotik-Rate-Limit during hotspot auth.
+        // The account queue sync derives speed from plan metadata and applies
+        // one shared queue per account, so promo plan access follows the same
+        // two-device shared-speed behavior as normal purchases.
         $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute='Mikrotik-Rate-Limit'")->execute([':u'=>$u]);
-        if ($rateLimit !== '') radius_set_reply($r, $u, 'Mikrotik-Rate-Limit', ':=', $rateLimit);
       }
 
       $r->prepare("DELETE FROM radusergroup WHERE username=:u AND groupname IN ('HS_LIMITED','HS_NOPAID','nopaid','HS_ACTIVE')")->execute([':u'=>$u]);

@@ -276,9 +276,11 @@ function radius_apply_plan__old(string $msisdn, array $plan, DateTimeImmutable $
         if (!empty($plan['address_list'])) {
             radius_set_reply($r, $__u, 'Mikrotik-Address-List', ':=', (string)$plan['address_list']);
         }
-        if (!empty($plan['rate_limit'])) {
-            radius_set_reply($r, $__u, 'Mikrotik-Rate-Limit',   ':=', (string)$plan['rate_limit']);
-        }
+        // Do not return per-user Mikrotik-Rate-Limit during hotspot auth.
+        // The account queue sync derives speed from plan metadata and applies
+        // one shared queue per account, so two devices share the plan speed.
+        $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute='Mikrotik-Rate-Limit'")
+          ->execute([':u'=>$__u]);
     }
 }
 
@@ -486,6 +488,94 @@ function nister_effective_total_quota(PDO $r, array $users, ?string $group, ?Dat
   return ($total >= 0) ? $total : 0;
 }
 
+function nister_effective_rate_limit(PDO $r, array $users, ?string $group): string {
+  $users = array_values(array_unique(array_filter($users, static fn($u) => (string)$u !== '')));
+  $group = trim((string)$group);
+
+  if ($group !== '' && nister_radius_table_exists($r, 'location_plans')) {
+    if ($users && nister_radius_table_exists($r, 'user_location_profiles')) {
+      $ph = implode(",", array_fill(0, count($users), "?"));
+      try {
+        $st = $r->prepare("
+          SELECT lp.rate_limit
+          FROM location_plans lp
+          JOIN user_location_profiles ulp
+            ON ulp.location_id = lp.location_id
+          WHERE ulp.msisdn IN ($ph)
+            AND lp.plan_code = ?
+            AND lp.rate_limit IS NOT NULL
+            AND lp.rate_limit <> ''
+          ORDER BY lp.active DESC, COALESCE(lp.updated_at, lp.created_at) DESC, lp.id DESC
+          LIMIT 1
+        ");
+        $params = $users;
+        $params[] = $group;
+        $st->execute($params);
+        $v = trim((string)($st->fetchColumn() ?: ''));
+        if ($v !== '') return $v;
+      } catch (Throwable $e) {
+        // Fall through to global plan metadata.
+      }
+    }
+
+    try {
+      $st = $r->prepare("
+        SELECT rate_limit
+        FROM location_plans
+        WHERE plan_code = ?
+          AND rate_limit IS NOT NULL
+          AND rate_limit <> ''
+        ORDER BY active DESC, COALESCE(updated_at, created_at) DESC, id DESC
+        LIMIT 1
+      ");
+      $st->execute([$group]);
+      $v = trim((string)($st->fetchColumn() ?: ''));
+      if ($v !== '') return $v;
+    } catch (Throwable $e) {
+      // Fall through to legacy global RADIUS plan metadata.
+    }
+  }
+
+  if ($group !== '') {
+    foreach (['radgroupreply','radgroupcheck'] as $tbl) {
+      try {
+        $st = $r->prepare("SELECT `value`
+                           FROM {$tbl}
+                           WHERE groupname=?
+                             AND attribute='Mikrotik-Rate-Limit'
+                             AND `value` <> ''
+                           ORDER BY id DESC
+                           LIMIT 1");
+        $st->execute([$group]);
+        $v = trim((string)($st->fetchColumn() ?: ''));
+        if ($v !== '') return $v;
+      } catch (Throwable $e) {
+        // Ignore and continue to next source.
+      }
+    }
+  }
+
+  if ($users) {
+    $ph = implode(",", array_fill(0, count($users), "?"));
+    try {
+      $st = $r->prepare("SELECT `value`
+                         FROM radreply
+                         WHERE username IN ($ph)
+                           AND attribute='Mikrotik-Rate-Limit'
+                           AND `value` <> ''
+                         ORDER BY id DESC
+                         LIMIT 1");
+      $st->execute($users);
+      $v = trim((string)($st->fetchColumn() ?: ''));
+      if ($v !== '') return $v;
+    } catch (Throwable $e) {
+      // Legacy fallback is non-critical.
+    }
+  }
+
+  return '';
+}
+
 function nister_max_expiry_carry_days(): int {
   $raw = getenv('NISTER_MAX_EXPIRY_CARRY_DAYS');
   if ($raw === false || trim((string)$raw) === '') return 0;
@@ -653,9 +743,11 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purch
           if ($addrList !== '') {
               radius_set_reply($r, $u, 'Mikrotik-Address-List', ':=', $addrList);
           }
-          if ($rateLimit !== '') {
-              radius_set_reply($r, $u, 'Mikrotik-Rate-Limit', ':=', $rateLimit);
-          }
+          // Avoid per-user Mikrotik-Rate-Limit replies. RouterOS turns those
+          // into per-session dynamic queues and can block valid second-device
+          // logins. The shared account shaper reads the rate from plan metadata.
+          $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute='Mikrotik-Rate-Limit'")
+            ->execute([':u'=>$u]);
       }
       if ($started && $r->inTransaction()) $r->commit();
     } catch (Throwable $e) {
@@ -702,11 +794,8 @@ function radius_user_state_exact(string $msisdn, ?PDO $r=null): ?array {
   $st->execute($targets);
   $windowStart = trim((string)($st->fetchColumn() ?: ''));
 
-  $st = $r->prepare("SELECT value FROM radreply WHERE attribute='Mikrotik-Rate-Limit' AND username IN ($ph) ORDER BY id DESC LIMIT 1");
-  $st->execute($targets);
-  $rateLimit = trim((string)($st->fetchColumn() ?: ''));
-
   $planGroup = radius_plan_code_from_reply($r, $targets) ?: radius_pick_plan_group($r, $targets);
+  $rateLimit = nister_effective_rate_limit($r, $targets, $planGroup);
   $durDays = nister_duration_days($r, $targets, $planGroup, 30);
   if ($durDays <= 0) $durDays = 30;
   $quotaBytes = nister_effective_total_quota($r, $targets, $planGroup);
@@ -911,11 +1000,16 @@ function radius_get_active_plan(string $msisdn): ?array {
     $lv = strtolower(trim((string)$attrs['Nister-Active']));
     $active = !in_array($lv, ['0','false','no','off'], true);
   }
+  $rateLimit = trim((string)($attrs['Mikrotik-Rate-Limit'] ?? ''));
+  if ($rateLimit === '') {
+    $rateLimit = nister_effective_rate_limit($r, $targets, $g);
+  }
+
   return [
     'plan_code'     => $g,
     'name'          => $name,
     'display_name'  => $displayName,
-    'rate_limit'    => $attrs['Mikrotik-Rate-Limit'] ?? null,
+    'rate_limit'    => $rateLimit !== '' ? $rateLimit : null,
     'address_list'  => $attrs['Mikrotik-Address-List'] ?? 'HS_ACTIVE',
     'price_cents'   => isset($attrs['Nister-Price-Cents']) ? (int)$attrs['Nister-Price-Cents'] : null,
     'duration_days' => isset($attrs['Nister-Duration-Days']) ? (int)$attrs['Nister-Duration-Days'] : null,

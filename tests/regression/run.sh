@@ -304,6 +304,7 @@ assert_contains "admin_api_plan_promo_does_not_trust_radius_expiry" "$admin_api_
 assert_contains "admin_api_plan_promo_creates_zero_cost_purchase" "$admin_api_content" "\$add('price_cents', 0)"
 assert_contains "admin_api_plan_promo_clears_legacy_caps" "$admin_api_content" "attribute IN ('Nister-Quota-Bytes','Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords')"
 assert_contains "admin_api_plan_promo_keeps_canonical_device_limit" "$admin_api_content" "radius_set_check(\$r, \$u, 'Simultaneous-Use', ':=', radius_simultaneous_use_limit())"
+assert_not_contains "admin_api_plan_promo_never_sets_per_user_rate_reply" "$admin_api_content" "radius_set_reply(\$r, \$u, 'Mikrotik-Rate-Limit', ':=', \$rateLimit)"
 assert_contains "admin_api_promo_targets_remain_strings" "$admin_api_content" "array_map('strval', array_keys(\$out))"
 assert_contains "admin_api_plan_promo_casts_target_msisdn" "$admin_api_content" "\$msisdn = (string)\$msisdn;"
 
@@ -486,6 +487,12 @@ account_queue_content="$(cat nister_account_queue_sync.sh)"
 assert_contains "account_queue_sync_reads_hotspot_active" "$account_queue_content" '/ip hotspot active find'
 assert_contains "account_queue_sync_uses_account_shaper_comment" "$account_queue_content" 'NISTER ACCOUNT SHAPER'
 assert_contains "account_queue_sync_uses_plan_rate" "$account_queue_content" "Mikrotik-Rate-Limit"
+assert_contains "account_queue_sync_repairs_radius_port_limit_two" "$account_queue_content" "'Port-Limit' AS attribute, ':=' AS op, '2' AS value"
+assert_contains "account_queue_sync_maps_hs_active_to_active_profile" "$account_queue_content" "UNION ALL SELECT 'HS_ACTIVE', 'Mikrotik-Group', ':=', 'active'"
+assert_contains "account_queue_sync_maps_hs_limited_to_limited_profile" "$account_queue_content" "UNION ALL SELECT 'HS_LIMITED', 'Mikrotik-Group', ':=', 'limited'"
+assert_contains "account_queue_sync_maps_hs_nopaid_to_nopaid_profile" "$account_queue_content" "UNION ALL SELECT 'HS_NOPAID', 'Mikrotik-Group', ':=', 'nopaid'"
+assert_contains "account_queue_sync_reads_location_plan_rate" "$account_queue_content" 'JOIN location_plans lp'
+assert_contains "account_queue_sync_prefers_site_plan_rate" "$account_queue_content" 'JOIN user_location_profiles ulp'
 assert_contains "account_queue_sync_groups_targets_per_account" "$account_queue_content" 'printf '\''%s\t%s\t%s\n'\'' "$user" "$targets" "$max_limit"'
 assert_contains "account_queue_sync_sets_shared_simple_queue_limit" "$account_queue_content" 'max-limit=%s limit-at=0/0'
 assert_contains "account_queue_sync_moves_queues_before_dynamic_hotspot_queues" "$account_queue_content" '/queue simple move $q 0'
@@ -518,6 +525,11 @@ assert_not_contains "radius_force_kick_no_blank_user" "$radius_content" "\$tryUs
 assert_contains "radius_force_kick_requires_fresh_session" "$radius_content" "'error'=>'no_fresh_session'"
 assert_contains "topup_uses_canonical_session_limit" "$radius_content" "radius_set_check(\$r, \$u, 'Simultaneous-Use', ':=', radius_simultaneous_use_limit())"
 assert_not_contains "topup_never_resets_session_limit_to_three" "$radius_content" "radius_set_check(\$r, \$u, 'Simultaneous-Use', ':=', '3')"
+assert_contains "radius_reads_effective_rate_from_plan_metadata" "$radius_content" 'function nister_effective_rate_limit(PDO $r, array $users, ?string $group): string'
+assert_contains "radius_rate_lookup_uses_location_plans" "$radius_content" 'FROM location_plans'
+assert_contains "radius_apply_plan_deletes_per_user_rate_reply" "$radius_content" "DELETE FROM radreply WHERE username=:u AND attribute='Mikrotik-Rate-Limit'"
+assert_not_contains "radius_apply_plan_never_sets_per_user_rate_reply" "$radius_content" "radius_set_reply(\$r, \$u, 'Mikrotik-Rate-Limit', ':=', \$rateLimit)"
+assert_not_contains "radius_old_apply_plan_never_sets_per_user_rate_reply" "$radius_content" "radius_set_reply(\$r, \$__u, 'Mikrotik-Rate-Limit'"
 assert_contains "radius_caps_expiry_carryover" "$radius_content" 'function nister_expiry_base_start(DateTimeImmutable $now, ?DateTimeImmutable $currentExpiry): DateTimeImmutable'
 assert_contains "radius_expiry_carryover_default_zero_days" "$radius_content" 'return 0;'
 assert_contains "radius_apply_plan_uses_capped_expiry_anchor" "$radius_content" '$baseStart = nister_expiry_base_start($now, $currExp);'

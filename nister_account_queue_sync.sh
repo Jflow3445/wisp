@@ -106,6 +106,62 @@ if ! mysql --defaults-extra-file="$SQL_CNF" -N -B -e "SELECT 1" >/dev/null 2>&1;
   exit 0
 fi
 
+ensure_hotspot_policy_replies(){
+  mysql --defaults-extra-file="$SQL_CNF" >/dev/null <<'SQL'
+DELETE r
+FROM radgroupreply r
+JOIN radgroupreply k
+  ON k.groupname = r.groupname
+ AND k.attribute = r.attribute
+ AND k.id < r.id
+WHERE r.groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')
+  AND r.attribute IN ('Port-Limit','Mikrotik-Group','Mikrotik-Address-List');
+
+UPDATE radgroupreply r
+JOIN (
+  SELECT 'HS_ACTIVE' AS groupname, 'Port-Limit' AS attribute, ':=' AS op, '2' AS value
+  UNION ALL SELECT 'HS_LIMITED', 'Port-Limit', ':=', '2'
+  UNION ALL SELECT 'HS_NOPAID', 'Port-Limit', ':=', '2'
+  UNION ALL SELECT 'HS_ACTIVE', 'Mikrotik-Group', ':=', 'active'
+  UNION ALL SELECT 'HS_LIMITED', 'Mikrotik-Group', ':=', 'limited'
+  UNION ALL SELECT 'HS_NOPAID', 'Mikrotik-Group', ':=', 'nopaid'
+  UNION ALL SELECT 'HS_ACTIVE', 'Mikrotik-Address-List', ':=', 'HS_ACTIVE'
+  UNION ALL SELECT 'HS_LIMITED', 'Mikrotik-Address-List', ':=', 'HS_LIMITED'
+  UNION ALL SELECT 'HS_NOPAID', 'Mikrotik-Address-List', ':=', 'HS_NOPAID'
+) d
+  ON d.groupname = r.groupname
+ AND d.attribute = r.attribute
+SET r.op = d.op,
+    r.value = d.value
+WHERE r.op <> d.op
+   OR r.value <> d.value;
+
+INSERT INTO radgroupreply (groupname, attribute, op, value)
+SELECT d.groupname, d.attribute, d.op, d.value
+FROM (
+  SELECT 'HS_ACTIVE' AS groupname, 'Port-Limit' AS attribute, ':=' AS op, '2' AS value
+  UNION ALL SELECT 'HS_LIMITED', 'Port-Limit', ':=', '2'
+  UNION ALL SELECT 'HS_NOPAID', 'Port-Limit', ':=', '2'
+  UNION ALL SELECT 'HS_ACTIVE', 'Mikrotik-Group', ':=', 'active'
+  UNION ALL SELECT 'HS_LIMITED', 'Mikrotik-Group', ':=', 'limited'
+  UNION ALL SELECT 'HS_NOPAID', 'Mikrotik-Group', ':=', 'nopaid'
+  UNION ALL SELECT 'HS_ACTIVE', 'Mikrotik-Address-List', ':=', 'HS_ACTIVE'
+  UNION ALL SELECT 'HS_LIMITED', 'Mikrotik-Address-List', ':=', 'HS_LIMITED'
+  UNION ALL SELECT 'HS_NOPAID', 'Mikrotik-Address-List', ':=', 'HS_NOPAID'
+) d
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM radgroupreply r
+  WHERE r.groupname = d.groupname
+    AND r.attribute = d.attribute
+);
+SQL
+}
+
+if ! ensure_hotspot_policy_replies; then
+  log "status=warn reason=hotspot_policy_reply_sync_failed"
+fi
+
 router_ssh(){
   local ros="$1"
   ssh \
@@ -166,13 +222,30 @@ rate_from_radius(){
   sql_one "
     SELECT value
     FROM (
-      SELECT rr.value AS value, 1 AS ord, rr.id AS sort_id
-      FROM radreply rr
-      WHERE rr.username IN (${in_users})
-        AND rr.attribute='Mikrotik-Rate-Limit'
-        AND rr.value <> ''
+      SELECT lp.rate_limit AS value, 1 AS ord, UNIX_TIMESTAMP(COALESCE(lp.updated_at, lp.created_at)) AS sort_id
+      FROM radreply pc
+      JOIN user_location_profiles ulp
+        ON ulp.msisdn IN (${in_users})
+      JOIN location_plans lp
+        ON lp.location_id=ulp.location_id
+       AND lp.plan_code=pc.value
+       AND lp.rate_limit IS NOT NULL
+       AND lp.rate_limit <> ''
+      WHERE pc.username IN (${in_users})
+        AND pc.attribute='Nister-Plan-Code'
+        AND pc.value <> ''
       UNION ALL
-      SELECT rgr.value AS value, 2 AS ord, rr.id AS sort_id
+      SELECT lp.rate_limit AS value, 2 AS ord, UNIX_TIMESTAMP(COALESCE(lp.updated_at, lp.created_at)) AS sort_id
+      FROM radreply pc
+      JOIN location_plans lp
+        ON lp.plan_code=pc.value
+       AND lp.rate_limit IS NOT NULL
+       AND lp.rate_limit <> ''
+      WHERE pc.username IN (${in_users})
+        AND pc.attribute='Nister-Plan-Code'
+        AND pc.value <> ''
+      UNION ALL
+      SELECT rgr.value AS value, 3 AS ord, rr.id AS sort_id
       FROM radreply rr
       JOIN radgroupreply rgr
         ON rgr.groupname=rr.value
@@ -182,13 +255,19 @@ rate_from_radius(){
         AND rr.attribute='Nister-Plan-Code'
         AND rr.value <> ''
       UNION ALL
-      SELECT rgr.value AS value, 3 AS ord, COALESCE(1000000-rug.priority,0) AS sort_id
+      SELECT rgr.value AS value, 4 AS ord, COALESCE(1000000-rug.priority,0) AS sort_id
       FROM radusergroup rug
       JOIN radgroupreply rgr
         ON rgr.groupname=rug.groupname
        AND rgr.attribute='Mikrotik-Rate-Limit'
        AND rgr.value <> ''
       WHERE rug.username IN (${in_users})
+      UNION ALL
+      SELECT rr.value AS value, 5 AS ord, rr.id AS sort_id
+      FROM radreply rr
+      WHERE rr.username IN (${in_users})
+        AND rr.attribute='Mikrotik-Rate-Limit'
+        AND rr.value <> ''
     ) q
     ORDER BY ord ASC, sort_id DESC
     LIMIT 1;"
