@@ -169,7 +169,7 @@ export class InMemoryVendorOperationsRepository implements VendorOperationsRepos
 export class VendorOperationsService {
   constructor(
     @Inject(VENDOR_OPERATIONS_REPOSITORY) private readonly repository: VendorOperationsRepository,
-    private readonly idempotency: IdempotencyService,
+    @Inject(IdempotencyService) private readonly idempotency: IdempotencyService,
   ) {}
 
   listOrders(vendorId: string, query: unknown): Promise<PageResult<VendorOrderSummary>> {
@@ -229,7 +229,7 @@ export class VendorOperationsService {
 @VendorScoped()
 @Controller("api/v1/vendors/:vendorId")
 export class VendorOperationsController {
-  constructor(private readonly operations: VendorOperationsService) {}
+  constructor(@Inject(VendorOperationsService) private readonly operations: VendorOperationsService) {}
 
   @Get("orders")
   @ListEnvelope()

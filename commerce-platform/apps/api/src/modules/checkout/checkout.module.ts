@@ -148,7 +148,7 @@ export class InMemoryCheckoutRepository implements CheckoutRepository {
 export class CheckoutService {
   constructor(
     @Inject(CHECKOUT_REPOSITORY) private readonly repository: CheckoutRepository,
-    private readonly idempotency: IdempotencyService,
+    @Inject(IdempotencyService) private readonly idempotency: IdempotencyService,
   ) {}
 
   create(principal: AuthenticatedPrincipal, input: CreateCheckout, idempotencyKey: string): Promise<CheckoutDto> {
@@ -171,7 +171,7 @@ export class CheckoutService {
 @ApiBearerAuth()
 @Controller("api/v1/checkouts")
 export class CheckoutController {
-  constructor(private readonly checkout: CheckoutService) {}
+  constructor(@Inject(CheckoutService) private readonly checkout: CheckoutService) {}
 
   @Post()
   @RequirePermissions("checkout:create")

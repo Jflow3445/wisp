@@ -2,6 +2,7 @@ export * from "./connection.js";
 export * from "./repositories/cart.js";
 export * from "./repositories/catalogue.js";
 export * from "./repositories/checkout.js";
+export * from "./repositories/driver.js";
 export * from "./repositories/idempotency.js";
 export * from "./repositories/operations.js";
 export * from "./repositories/payment.js";

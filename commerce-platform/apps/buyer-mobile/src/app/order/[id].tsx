@@ -44,8 +44,8 @@ export default function OrderTrackingScreen() {
 
 const styles = StyleSheet.create({
   summary: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
-  total: { color: colors.primary, fontSize: 20, fontWeight: "850" },
-  etaLabel: { color: colors.muted, fontSize: 13, fontWeight: "650" },
+  total: { color: colors.primary, fontSize: 20, fontWeight: "800" },
+  etaLabel: { color: colors.muted, fontSize: 13, fontWeight: "600" },
   eta: { color: colors.text, fontSize: 19, fontWeight: "800" },
   section: { gap: spacing.md },
   timelineRow: { flexDirection: "row", gap: spacing.md, minHeight: 58 },
@@ -56,6 +56,6 @@ const styles = StyleSheet.create({
   pending: { color: colors.muted, fontWeight: "600" },
   meta: { color: colors.muted, fontSize: 13 },
   addressTitle: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  strong: { color: colors.text, fontSize: 15, fontWeight: "750" },
+  strong: { color: colors.text, fontSize: 15, fontWeight: "700" },
   body: { color: colors.text, fontSize: 15, lineHeight: 22 },
 });

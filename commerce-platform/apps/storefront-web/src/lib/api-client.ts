@@ -3,7 +3,9 @@ import { categories, defaultAddress, orders, products, vendors } from "./demo-da
 import type { CatalogFilters, CheckoutPayload, Order, Product } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_MARKETPLACE_API_URL?.replace(/\/$/, "");
-const DEMO_ENABLED = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
+const DEMO_ENABLED =
+  process.env.NEXT_PUBLIC_DEMO_MODE === "true" ||
+  (process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_DEMO_MODE !== "false");
 
 export class ApiError extends Error {
   constructor(

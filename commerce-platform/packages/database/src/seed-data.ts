@@ -50,6 +50,14 @@ export const roleSeeds = [
     scopeType: "GLOBAL",
     isSystem: true,
   },
+  {
+    id: deterministicSeedUuid(6),
+    code: "DRIVER",
+    name: "Driver",
+    description: "Driver mobile delivery, cash, and earnings access",
+    scopeType: "SELF",
+    isSystem: true,
+  },
 ] as const satisfies readonly InferInsertModel<typeof roles>[];
 
 const permissionDefinitions = [
@@ -66,6 +74,12 @@ const permissionDefinitions = [
   ["vendor.inventory.adjust", "Post inventory adjustments", "HIGH"],
   ["vendor.finance.read", "Read vendor financial data", "HIGH"],
   ["vendor.staff.manage", "Manage vendor staff", "CRITICAL"],
+  ["driver.delivery.offer.read", "Read assigned delivery offers", "LOW"],
+  ["driver.delivery.offer.accept", "Accept assigned delivery offers", "HIGH"],
+  ["driver.delivery.update", "Update assigned delivery state", "HIGH"],
+  ["driver.delivery.complete", "Complete assigned deliveries", "HIGH"],
+  ["driver.cash.record", "Record driver cash collections and deposits", "HIGH"],
+  ["driver.earnings.read", "Read own driver earnings", "MEDIUM"],
   ["admin.buyer.read", "Read buyer administration data", "MEDIUM"],
   ["admin.buyer.suspend", "Suspend buyer accounts", "CRITICAL"],
   ["admin.vendor.review", "Review vendor applications", "HIGH"],
@@ -109,6 +123,14 @@ export const rolePermissionCodes: Readonly<Record<string, readonly string[]>> = 
     "vendor.product.create",
     "vendor.product.update",
     "vendor.inventory.adjust",
+  ],
+  DRIVER: [
+    "driver.delivery.offer.read",
+    "driver.delivery.offer.accept",
+    "driver.delivery.update",
+    "driver.delivery.complete",
+    "driver.cash.record",
+    "driver.earnings.read",
   ],
   PLATFORM_ADMIN: [
     "admin.buyer.read",

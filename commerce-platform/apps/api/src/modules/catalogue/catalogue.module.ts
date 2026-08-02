@@ -88,7 +88,7 @@ export class CatalogueService {
 @Public()
 @Controller("api/v1/public/catalogue/products")
 export class CatalogueController {
-  constructor(private readonly catalogue: CatalogueService) {}
+  constructor(@Inject(CatalogueService) private readonly catalogue: CatalogueService) {}
 
   @Get()
   @ListEnvelope()

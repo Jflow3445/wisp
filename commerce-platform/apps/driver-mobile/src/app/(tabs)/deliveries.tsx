@@ -1,0 +1,17 @@
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
+import { ArrowRight, Bike } from "lucide-react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+
+import { Card, PageHeader, QueryState, Screen, SectionHeader, StatusBadge } from "@/components/ui";
+import { driverData } from "@/data";
+import { formatMoney, formatTime } from "@/lib/format";
+import { colors, spacing } from "@/theme";
+
+export default function DeliveriesScreen() {
+  const router = useRouter();
+  const active = useQuery({ queryKey: ["driver-delivery", "active"], queryFn: driverData.getActiveDelivery });
+  const offers = useQuery({ queryKey: ["driver-offers"], queryFn: driverData.listOffers });
+  return <Screen><PageHeader title="Deliveries" subtitle="Active work, available offers, and recent activity." /><QueryState loading={active.isLoading} error={active.error} onRetry={() => void active.refetch()} />{active.data ? <Pressable accessibilityRole="button" accessibilityLabel={`Resume ${active.data.reference}`} onPress={() => router.push({ pathname: "/delivery/[id]", params: { id: active.data!.id } })} style={({ pressed }) => [styles.active, pressed ? styles.pressed : null]}><Bike color={colors.primary} size={23} /><View style={styles.grow}><Text style={styles.reference}>{active.data.reference}</Text><StatusBadge label={active.data.status} tone={active.data.status === "COMPLETED" ? "success" : "info"} /></View><ArrowRight color={colors.primary} size={21} /></Pressable> : <Card><Text style={styles.meta}>No active delivery.</Text></Card>}<View style={styles.section}><SectionHeader title="Open offers" /><QueryState loading={offers.isLoading} error={offers.error} empty={offers.data?.length === 0} emptyLabel="No open offers." onRetry={() => void offers.refetch()} />{offers.data?.map((offer) => <Pressable key={offer.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/offer/[id]", params: { id: offer.id } })} style={({ pressed }) => [styles.offer, pressed ? styles.pressed : null]}><View style={styles.grow}><Text style={styles.reference}>{offer.pickupArea} to {offer.dropoffArea}</Text><Text style={styles.meta}>{offer.estimatedDistanceKm.toFixed(1)} km · expires {formatTime(offer.expiresAt)}</Text></View><Text style={styles.amount}>{formatMoney(offer.expectedEarnings)}</Text><ArrowRight color={colors.muted} size={19} /></Pressable>)}</View><Card><Text style={styles.reference}>Delivery history</Text><Text style={styles.meta}>History is intentionally not fabricated in API mode. The documented `/api/v1/driver/deliveries/history` backend remains a Release 2 dependency.</Text></Card></Screen>;
+}
+const styles = StyleSheet.create({ active: { minHeight: 78, borderWidth: 1, borderColor: colors.primary, borderRadius: 8, backgroundColor: colors.surface, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.md }, grow: { flex: 1, gap: spacing.xs }, reference: { color: colors.text, fontSize: 15, fontWeight: "700" }, meta: { color: colors.muted, fontSize: 12, lineHeight: 18 }, section: { gap: spacing.sm }, offer: { minHeight: 70, borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.sm }, amount: { color: colors.primary, fontWeight: "800", fontSize: 14 }, pressed: { opacity: 0.68 } });

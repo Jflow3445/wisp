@@ -4,6 +4,7 @@ import {
   Catch,
   ExecutionContext,
   HttpException,
+  Inject,
   Injectable,
   NestInterceptor,
   PipeTransform,
@@ -59,7 +60,7 @@ export class ZodValidationPipe implements PipeTransform {
 
 @Injectable()
 export class ApiEnvelopeInterceptor implements NestInterceptor {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<MarketplaceRequest>();

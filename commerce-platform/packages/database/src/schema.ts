@@ -31,8 +31,14 @@ import {
   checkoutStatusEnum,
   contactTypeEnum,
   deliveryMethodEnum,
+  deliveryOfferStatusEnum,
   deliveryQuoteStatusEnum,
   deliveryStatusEnum,
+  driverCashTransactionStatusEnum,
+  driverCashTransactionTypeEnum,
+  driverLocationSourceEnum,
+  driverShiftStatusEnum,
+  driverStatusEnum,
   inventoryMovementTypeEnum,
   ledgerAccountStatusEnum,
   ledgerAccountTypeEnum,
@@ -55,6 +61,8 @@ import {
   storeStatusEnum,
   userStatusEnum,
   variantStatusEnum,
+  vehicleStatusEnum,
+  vehicleTypeEnum,
   vendorApplicationStatusEnum,
   vendorOrderStatusEnum,
   vendorStatusEnum,
@@ -376,6 +384,172 @@ export const serviceZones = pgTable(
     check("service_zones_country_code_ck", sql`${table.countryCode} ~ '^[A-Z]{2}$'`),
     check("service_zones_status_ck", sql`${table.status} in ('ACTIVE', 'PAUSED', 'ARCHIVED')`),
     check("service_zones_version_positive_ck", sql`${table.version} > 0`),
+  ],
+);
+
+export const driverProfiles = pgTable(
+  "driver_profiles",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    publicReference: varchar("public_reference", { length: 32 }).notNull(),
+    status: driverStatusEnum("status").default("DRAFT").notNull(),
+    profilePhotoStorageKey: varchar("profile_photo_storage_key", { length: 1000 }),
+    homeRegion: varchar("home_region", { length: 100 }),
+    emergencyContactData: jsonb("emergency_contact_data").default({}).notNull(),
+    cashLimitMinor: money("cash_limit_minor").default(sql`0`).notNull(),
+    currency: char("currency", { length: 3 }).default("GHS").notNull(),
+    approvedAt: timestampTz("approved_at"),
+    suspendedAt: timestampTz("suspended_at"),
+    suspensionReason: text("suspension_reason"),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+    version: integer("version").default(1).notNull(),
+  },
+  (table) => [
+    unique("driver_profiles_user_id_uq").on(table.userId),
+    unique("driver_profiles_public_reference_uq").on(table.publicReference),
+    index("driver_profiles_status_idx").on(table.status),
+    index("driver_profiles_created_at_idx").on(table.createdAt),
+    check("driver_profiles_cash_limit_ck", sql`${table.cashLimitMinor} >= 0`),
+    check("driver_profiles_currency_ck", currencyCheck(table.currency)),
+    check("driver_profiles_version_positive_ck", sql`${table.version} > 0`),
+  ],
+);
+
+export const driverDocuments = pgTable(
+  "driver_documents",
+  {
+    id: uuid("id").primaryKey(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    documentType: varchar("document_type", { length: 100 }).notNull(),
+    storageKey: varchar("storage_key", { length: 1000 }).notNull(),
+    status: varchar("status", { length: 16 }).default("PENDING").notNull(),
+    documentNumber: varchar("document_number", { length: 150 }),
+    issuedAt: date("issued_at", { mode: "date" }),
+    expiresAt: date("expires_at", { mode: "date" }),
+    reviewedByUserId: uuid("reviewed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+    reviewedAt: timestampTz("reviewed_at"),
+    rejectionReason: text("rejection_reason"),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("driver_documents_driver_status_idx").on(table.driverId, table.status),
+    unique("driver_documents_driver_type_storage_uq").on(table.driverId, table.documentType, table.storageKey),
+    check("driver_documents_status_ck", sql`${table.status} in ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED')`),
+    check("driver_documents_expiry_ck", sql`${table.expiresAt} is null or ${table.issuedAt} is null or ${table.expiresAt} >= ${table.issuedAt}`),
+  ],
+);
+
+export const vehicles = pgTable(
+  "vehicles",
+  {
+    id: uuid("id").primaryKey(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    vehicleType: vehicleTypeEnum("vehicle_type").notNull(),
+    registrationNumber: varchar("registration_number", { length: 64 }),
+    make: varchar("make", { length: 100 }),
+    model: varchar("model", { length: 100 }),
+    colour: varchar("colour", { length: 64 }),
+    capacityWeightKg: numeric("capacity_weight_kg", { precision: 12, scale: 3 }),
+    capacityVolumeM3: numeric("capacity_volume_m3", { precision: 12, scale: 4 }),
+    status: vehicleStatusEnum("status").default("PENDING").notNull(),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+    version: integer("version").default(1).notNull(),
+  },
+  (table) => [
+    index("vehicles_driver_status_idx").on(table.driverId, table.status),
+    uniqueIndex("vehicles_registration_uidx")
+      .on(table.registrationNumber)
+      .where(sql`${table.registrationNumber} is not null`),
+    check(
+      "vehicles_capacity_ck",
+      sql`(${table.capacityWeightKg} is null or ${table.capacityWeightKg} > 0)
+          and (${table.capacityVolumeM3} is null or ${table.capacityVolumeM3} > 0)`,
+    ),
+    check("vehicles_version_positive_ck", sql`${table.version} > 0`),
+  ],
+);
+
+export const driverPayoutAccounts = pgTable(
+  "driver_payout_accounts",
+  {
+    id: uuid("id").primaryKey(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    providerType: varchar("provider_type", { length: 32 }).notNull(),
+    providerName: varchar("provider_name", { length: 100 }).notNull(),
+    accountName: varchar("account_name", { length: 255 }).notNull(),
+    accountIdentifierEncrypted: text("account_identifier_encrypted").notNull(),
+    maskedIdentifier: varchar("masked_identifier", { length: 64 }).notNull(),
+    countryCode: char("country_code", { length: 2 }).default("GH").notNull(),
+    currency: char("currency", { length: 3 }).default("GHS").notNull(),
+    verificationStatus: varchar("verification_status", { length: 16 }).default("PENDING").notNull(),
+    verifiedAt: timestampTz("verified_at"),
+    activeFrom: timestampTz("active_from").defaultNow().notNull(),
+    coolingOffUntil: timestampTz("cooling_off_until"),
+    createdByUserId: uuid("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    archivedAt: timestampTz("archived_at"),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("driver_payout_accounts_driver_idx").on(table.driverId, table.archivedAt),
+    check("driver_payout_accounts_provider_type_ck", sql`${table.providerType} in ('BANK', 'MOBILE_MONEY')`),
+    check("driver_payout_accounts_country_code_ck", sql`${table.countryCode} ~ '^[A-Z]{2}$'`),
+    check("driver_payout_accounts_currency_ck", currencyCheck(table.currency)),
+    check("driver_payout_accounts_verification_status_ck", sql`${table.verificationStatus} in ('PENDING', 'VERIFIED', 'REJECTED')`),
+  ],
+);
+
+export const driverShifts = pgTable(
+  "driver_shifts",
+  {
+    id: uuid("id").primaryKey(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    vehicleId: uuid("vehicle_id")
+      .notNull()
+      .references(() => vehicles.id, { onDelete: "restrict" }),
+    serviceZoneId: uuid("service_zone_id")
+      .notNull()
+      .references(() => serviceZones.id, { onDelete: "restrict" }),
+    status: driverShiftStatusEnum("status").default("STARTED").notNull(),
+    startedAt: timestampTz("started_at").defaultNow().notNull(),
+    pausedAt: timestampTz("paused_at"),
+    endedAt: timestampTz("ended_at"),
+    startCheckData: jsonb("start_check_data").default({}).notNull(),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+    version: integer("version").default(1).notNull(),
+  },
+  (table) => [
+    index("driver_shifts_driver_started_idx").on(table.driverId, table.startedAt),
+    index("driver_shifts_zone_status_idx").on(table.serviceZoneId, table.status),
+    uniqueIndex("driver_shifts_one_active_uidx")
+      .on(table.driverId)
+      .where(sql`${table.status} <> 'ENDED'`),
+    check(
+      "driver_shifts_window_ck",
+      sql`${table.endedAt} is null or ${table.endedAt} >= ${table.startedAt}`,
+    ),
+    check(
+      "driver_shifts_pause_ck",
+      sql`${table.status} <> 'PAUSED' or ${table.pausedAt} is not null`,
+    ),
+    check("driver_shifts_version_positive_ck", sql`${table.version} > 0`),
   ],
 );
 
@@ -1254,6 +1428,8 @@ export const deliveries = pgTable(
     assignedDriverUserId: uuid("assigned_driver_user_id").references(() => users.id, {
       onDelete: "restrict",
     }),
+    driverId: uuid("driver_id").references(() => driverProfiles.id, { onDelete: "restrict" }),
+    vehicleId: uuid("vehicle_id").references(() => vehicles.id, { onDelete: "restrict" }),
     externalProvider: varchar("external_provider", { length: 100 }),
     externalReference: varchar("external_reference", { length: 255 }),
     pickupSnapshot: jsonb("pickup_snapshot").notNull(),
@@ -1277,6 +1453,7 @@ export const deliveries = pgTable(
       .where(sql`${table.externalReference} is not null`),
     index("deliveries_status_created_idx").on(table.status, table.createdAt),
     index("deliveries_driver_status_idx").on(table.assignedDriverUserId, table.status),
+    index("deliveries_driver_profile_status_idx").on(table.driverId, table.status),
     check(
       "deliveries_money_ck",
       sql`${table.deliveryFeeMinor} >= 0 and ${table.driverEarningMinor} >= 0
@@ -1289,6 +1466,45 @@ export const deliveries = pgTable(
           or ${table.estimatedDeliveryAt} >= ${table.estimatedPickupAt}`,
     ),
     check("deliveries_version_positive_ck", sql`${table.version} > 0`),
+  ],
+);
+
+export const deliveryOffers = pgTable(
+  "delivery_offers",
+  {
+    id: uuid("id").primaryKey(),
+    deliveryId: uuid("delivery_id")
+      .notNull()
+      .references(() => deliveries.id, { onDelete: "restrict" }),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    status: deliveryOfferStatusEnum("status").default("SENT").notNull(),
+    offeredEarningMinor: money("offered_earning_minor").notNull(),
+    currency: char("currency", { length: 3 }).default("GHS").notNull(),
+    distanceToPickupMetres: integer("distance_to_pickup_metres"),
+    sentAt: timestampTz("sent_at").defaultNow().notNull(),
+    expiresAt: timestampTz("expires_at").notNull(),
+    respondedAt: timestampTz("responded_at"),
+    rejectionReason: varchar("rejection_reason", { length: 100 }),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+    version: integer("version").default(1).notNull(),
+  },
+  (table) => [
+    unique("delivery_offers_delivery_driver_sent_uq").on(table.deliveryId, table.driverId, table.sentAt),
+    index("delivery_offers_driver_status_idx").on(table.driverId, table.status, table.expiresAt),
+    index("delivery_offers_delivery_status_idx").on(table.deliveryId, table.status),
+    check("delivery_offers_money_ck", sql`${table.offeredEarningMinor} >= 0`),
+    check("delivery_offers_currency_ck", currencyCheck(table.currency)),
+    check("delivery_offers_distance_ck", sql`${table.distanceToPickupMetres} is null or ${table.distanceToPickupMetres} >= 0`),
+    check("delivery_offers_expiry_ck", sql`${table.expiresAt} > ${table.sentAt}`),
+    check(
+      "delivery_offers_response_ck",
+      sql`${table.status} in ('SENT', 'EXPIRED', 'CANCELLED')
+          or ${table.respondedAt} is not null`,
+    ),
+    check("delivery_offers_version_positive_ck", sql`${table.version} > 0`),
   ],
 );
 
@@ -1319,6 +1535,124 @@ export const deliveryStatusHistory = pgTable(
       sql`(${table.actorType} = 'USER' and ${table.actorUserId} is not null)
           or (${table.actorType} <> 'USER' and ${table.actorUserId} is null)`,
     ),
+  ],
+);
+
+export const driverLocations = pgTable(
+  "driver_locations",
+  {
+    id: uuid("id").primaryKey(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    deliveryId: uuid("delivery_id").references(() => deliveries.id, { onDelete: "restrict" }),
+    latitude: numeric("latitude", { precision: 10, scale: 7 }).notNull(),
+    longitude: numeric("longitude", { precision: 10, scale: 7 }).notNull(),
+    accuracyMetres: numeric("accuracy_metres", { precision: 10, scale: 2 }),
+    headingDegrees: numeric("heading_degrees", { precision: 6, scale: 2 }),
+    speedMetresSecond: numeric("speed_metres_second", { precision: 8, scale: 3 }),
+    recordedAt: timestampTz("recorded_at").notNull(),
+    receivedAt: timestampTz("received_at").defaultNow().notNull(),
+    source: driverLocationSourceEnum("source").notNull(),
+    offlineEventId: uuid("offline_event_id"),
+  },
+  (table) => [
+    index("driver_locations_driver_recorded_idx").on(table.driverId, table.recordedAt),
+    index("driver_locations_delivery_recorded_idx").on(table.deliveryId, table.recordedAt),
+    uniqueIndex("driver_locations_offline_event_uidx")
+      .on(table.driverId, table.offlineEventId)
+      .where(sql`${table.offlineEventId} is not null`),
+    check("driver_locations_latitude_ck", sql`${table.latitude} between -90 and 90`),
+    check("driver_locations_longitude_ck", sql`${table.longitude} between -180 and 180`),
+    check("driver_locations_accuracy_ck", sql`${table.accuracyMetres} is null or ${table.accuracyMetres} >= 0`),
+    check("driver_locations_heading_ck", sql`${table.headingDegrees} is null or ${table.headingDegrees} between 0 and 360`),
+    check("driver_locations_speed_ck", sql`${table.speedMetresSecond} is null or ${table.speedMetresSecond} >= 0`),
+    check("driver_locations_received_ck", sql`${table.receivedAt} >= ${table.recordedAt} - interval '5 minutes'`),
+  ],
+);
+
+export const driverCashTransactions = pgTable(
+  "driver_cash_transactions",
+  {
+    id: uuid("id").primaryKey(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    deliveryId: uuid("delivery_id").references(() => deliveries.id, { onDelete: "restrict" }),
+    type: driverCashTransactionTypeEnum("type").notNull(),
+    amountMinor: money("amount_minor").notNull(),
+    currency: char("currency", { length: 3 }).default("GHS").notNull(),
+    status: driverCashTransactionStatusEnum("status").default("PENDING").notNull(),
+    evidenceStorageKey: varchar("evidence_storage_key", { length: 1000 }),
+    reference: varchar("reference", { length: 64 }),
+    reason: text("reason"),
+    offlineEventId: uuid("offline_event_id"),
+    idempotencyKey: varchar("idempotency_key", { length: 255 }).notNull(),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("driver_cash_transactions_driver_key_uq").on(table.driverId, table.idempotencyKey),
+    uniqueIndex("driver_cash_transactions_offline_event_uidx")
+      .on(table.driverId, table.offlineEventId)
+      .where(sql`${table.offlineEventId} is not null`),
+    index("driver_cash_transactions_driver_created_idx").on(table.driverId, table.createdAt),
+    index("driver_cash_transactions_delivery_idx").on(table.deliveryId),
+    check("driver_cash_transactions_amount_ck", sql`${table.amountMinor} > 0`),
+    check("driver_cash_transactions_currency_ck", currencyCheck(table.currency)),
+  ],
+);
+
+export const driverSafetyIncidents = pgTable(
+  "driver_safety_incidents",
+  {
+    id: uuid("id").primaryKey(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    deliveryId: uuid("delivery_id").references(() => deliveries.id, { onDelete: "restrict" }),
+    incidentType: varchar("incident_type", { length: 100 }).notNull(),
+    severity: varchar("severity", { length: 16 }).default("MEDIUM").notNull(),
+    description: text("description").notNull(),
+    latitude: numeric("latitude", { precision: 10, scale: 7 }),
+    longitude: numeric("longitude", { precision: 10, scale: 7 }),
+    evidenceStorageKeys: jsonb("evidence_storage_keys").default([]).notNull(),
+    status: varchar("status", { length: 32 }).default("OPEN").notNull(),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("driver_safety_incidents_driver_created_idx").on(table.driverId, table.createdAt),
+    index("driver_safety_incidents_status_idx").on(table.status),
+    check("driver_safety_incidents_severity_ck", sql`${table.severity} in ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')`),
+    check("driver_safety_incidents_status_ck", sql`${table.status} in ('OPEN', 'TRIAGED', 'RESOLVED', 'CLOSED')`),
+    check("driver_safety_incidents_latitude_ck", sql`${table.latitude} is null or ${table.latitude} between -90 and 90`),
+    check("driver_safety_incidents_longitude_ck", sql`${table.longitude} is null or ${table.longitude} between -180 and 180`),
+  ],
+);
+
+export const driverEmergencyEvents = pgTable(
+  "driver_emergency_events",
+  {
+    id: uuid("id").primaryKey(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => driverProfiles.id, { onDelete: "restrict" }),
+    deliveryId: uuid("delivery_id").references(() => deliveries.id, { onDelete: "restrict" }),
+    emergencyType: varchar("emergency_type", { length: 100 }).notNull(),
+    message: text("message"),
+    latitude: numeric("latitude", { precision: 10, scale: 7 }),
+    longitude: numeric("longitude", { precision: 10, scale: 7 }),
+    status: varchar("status", { length: 32 }).default("OPEN").notNull(),
+    createdAt: timestampTz("created_at").defaultNow().notNull(),
+    updatedAt: timestampTz("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("driver_emergency_events_driver_created_idx").on(table.driverId, table.createdAt),
+    index("driver_emergency_events_status_idx").on(table.status),
+    check("driver_emergency_events_status_ck", sql`${table.status} in ('OPEN', 'ACKNOWLEDGED', 'RESOLVED', 'CLOSED')`),
+    check("driver_emergency_events_latitude_ck", sql`${table.latitude} is null or ${table.latitude} between -90 and 90`),
+    check("driver_emergency_events_longitude_ck", sql`${table.longitude} is null or ${table.longitude} between -180 and 180`),
   ],
 );
 
@@ -1415,6 +1749,7 @@ export const ledgerEntries = pgTable(
     amountMinor: money("amount_minor").notNull(),
     currency: char("currency", { length: 3 }).notNull(),
     vendorId: uuid("vendor_id").references(() => vendors.id, { onDelete: "restrict" }),
+    driverId: uuid("driver_id").references(() => driverProfiles.id, { onDelete: "restrict" }),
     orderId: uuid("order_id").references(() => orders.id, { onDelete: "restrict" }),
     vendorOrderId: uuid("vendor_order_id").references(() => vendorOrders.id, { onDelete: "restrict" }),
     paymentId: uuid("payment_id").references(() => payments.id, { onDelete: "restrict" }),
@@ -1426,6 +1761,7 @@ export const ledgerEntries = pgTable(
     index("ledger_entries_transaction_idx").on(table.ledgerTransactionId),
     index("ledger_entries_account_created_idx").on(table.ledgerAccountId, table.createdAt),
     index("ledger_entries_vendor_created_idx").on(table.vendorId, table.createdAt),
+    index("ledger_entries_driver_created_idx").on(table.driverId, table.createdAt),
     index("ledger_entries_order_idx").on(table.orderId),
     index("ledger_entries_payment_idx").on(table.paymentId),
     check("ledger_entries_amount_positive_ck", sql`${table.amountMinor} > 0`),

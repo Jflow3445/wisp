@@ -16,13 +16,13 @@ test("shops the home, category, search and product routes", async ({ page }) => 
 
   await page.goto("/category/electronics");
   await expect(page.getByRole("heading", { name: "Electronics", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: /SonicFlow Wireless Headphones/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "SonicFlow Wireless Headphones", exact: true })).toBeVisible();
 
   await page.goto("/search?q=rice");
   await expect(page.getByRole("heading", { name: /Results for/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Aroma Ghana Rice, 5 kg" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Aroma Ghana Rice, 5 kg", exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "Aroma Ghana Rice, 5 kg" }).click();
+  await page.getByRole("link", { name: "Aroma Ghana Rice, 5 kg", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Aroma Ghana Rice, 5 kg" })).toBeVisible();
   await expect(page.getByText("Only 7 left")).toBeVisible();
 });

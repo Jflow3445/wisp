@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
   section: { gap: spacing.md },
   categories: { gap: spacing.sm },
   category: { minHeight: 48, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: spacing.md, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  categoryText: { color: colors.text, fontWeight: "650", fontSize: 15 },
+  categoryText: { color: colors.text, fontWeight: "600", fontSize: 15 },
   pressed: { opacity: 0.66 },
   productList: { paddingVertical: 0 },
 });

@@ -13,9 +13,9 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "npm run dev",
+    command: "NEXT_PUBLIC_DEMO_MODE=true npm run build && npm run start",
     url: "http://127.0.0.1:4200",
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

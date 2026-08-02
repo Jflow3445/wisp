@@ -127,7 +127,7 @@ export class CartService {
   constructor(
     @Inject(CART_REPOSITORY) private readonly carts: CartRepository,
     @Inject(CATALOGUE_REPOSITORY) private readonly catalogue: CatalogueRepository,
-    private readonly idempotency: IdempotencyService,
+    @Inject(IdempotencyService) private readonly idempotency: IdempotencyService,
   ) {}
 
   async get(principal: AuthenticatedPrincipal): Promise<CartDto> {
@@ -152,7 +152,7 @@ export class CartService {
 @ApiBearerAuth()
 @Controller("api/v1/cart")
 export class CartController {
-  constructor(private readonly cart: CartService) {}
+  constructor(@Inject(CartService) private readonly cart: CartService) {}
 
   @Get()
   @RequirePermissions("cart:read")

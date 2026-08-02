@@ -1,5 +1,4 @@
-import type { Product } from "./types";
-import { BuyerOrderSchema, BuyerSessionSchema, ProductSchema, type BuyerDataSource, type BuyerOrder } from "./types";
+import { BuyerOrderSchema, BuyerSessionSchema, ProductSchema, type BuyerDataSource, type BuyerOrder, type Product } from "./types";
 
 const ids = {
   categoryFood: "5c4a5a7a-8d36-4f91-aea2-fc6722a8f067",

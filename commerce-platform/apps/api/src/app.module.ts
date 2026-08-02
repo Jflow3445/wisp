@@ -8,6 +8,7 @@ import { AdminModule } from "./modules/admin/admin.module.js";
 import { CartModule } from "./modules/cart/cart.module.js";
 import { CatalogueModule } from "./modules/catalogue/catalogue.module.js";
 import { CheckoutModule } from "./modules/checkout/checkout.module.js";
+import { DriverModule } from "./modules/driver/driver.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { PaymentsModule } from "./modules/payments/payments.module.js";
 import { VendorModule } from "./modules/vendor/vendor.module.js";
@@ -24,6 +25,7 @@ import { PersistenceModule } from "./persistence/persistence.module.js";
     CheckoutModule,
     PaymentsModule,
     VendorModule,
+    DriverModule,
     AdminModule,
     HealthModule,
   ],

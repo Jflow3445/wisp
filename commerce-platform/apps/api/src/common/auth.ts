@@ -140,7 +140,7 @@ export class Auth0AuthenticationAdapter implements AuthenticationAdapter {
 @Injectable()
 export class AuthenticationGuard implements CanActivate {
   constructor(
-    private readonly reflector: Reflector,
+    @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(AUTHENTICATION_ADAPTER) private readonly adapter: AuthenticationAdapter,
   ) {}
 
@@ -163,7 +163,7 @@ function grantsPermission(granted: readonly string[], required: string): boolean
 
 @Injectable()
 export class ScopedPermissionGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
     const required = this.reflector.getAllAndOverride<string[]>(REQUIRED_PERMISSIONS, [

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 import { Search as SearchIcon, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 
 import { ProductRow } from "@/components/product-row";
@@ -13,12 +13,6 @@ export default function SearchScreen() {
   const params = useLocalSearchParams<{ q?: string }>();
   const [input, setInput] = useState(params.q ?? "");
   const [submitted, setSubmitted] = useState(params.q ?? "");
-  useEffect(() => {
-    if (params.q) {
-      setInput(params.q);
-      setSubmitted(params.q);
-    }
-  }, [params.q]);
   const results = useQuery({ queryKey: ["products", "search", submitted], queryFn: () => buyerData.listProducts(submitted) });
 
   return (

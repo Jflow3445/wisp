@@ -58,10 +58,10 @@ const styles = StyleSheet.create({
   meta: { color: colors.muted, fontSize: 14, lineHeight: 20 },
   quantityRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   iconButton: { width: 44, height: 44, borderWidth: 1, borderColor: colors.border, borderRadius: 6, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
-  quantity: { minWidth: 34, textAlign: "center", color: colors.text, fontSize: 17, fontWeight: "750" },
+  quantity: { minWidth: 34, textAlign: "center", color: colors.text, fontSize: 17, fontWeight: "700" },
   summaryRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.md },
   summaryValue: { color: colors.text, fontWeight: "700" },
   totalLabel: { color: colors.text, fontSize: 17, fontWeight: "800" },
-  total: { color: colors.primary, fontSize: 18, fontWeight: "850" },
+  total: { color: colors.primary, fontSize: 18, fontWeight: "800" },
   note: { color: colors.muted, fontSize: 13 },
 });

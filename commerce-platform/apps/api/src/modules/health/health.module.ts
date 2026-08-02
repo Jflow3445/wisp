@@ -45,7 +45,7 @@ export class HealthService {
 @Public()
 @Controller("health")
 export class HealthController {
-  constructor(private readonly health: HealthService) {}
+  constructor(@Inject(HealthService) private readonly health: HealthService) {}
 
   @Get("live")
   @ApiOperation({ summary: "Process liveness" })

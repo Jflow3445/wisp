@@ -168,8 +168,8 @@ export class PaymentService {
   constructor(
     @Inject(PAYMENT_REPOSITORY) private readonly payments: PaymentRepository,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
-    private readonly idempotency: IdempotencyService,
-    private readonly config: ConfigService,
+    @Inject(IdempotencyService) private readonly idempotency: IdempotencyService,
+    @Inject(ConfigService) private readonly config: ConfigService,
   ) {}
 
   initialize(
@@ -287,8 +287,8 @@ export class PaystackWebhookService {
 @Controller()
 export class PaymentsController {
   constructor(
-    private readonly payments: PaymentService,
-    private readonly webhooks: PaystackWebhookService,
+    @Inject(PaymentService) private readonly payments: PaymentService,
+    @Inject(PaystackWebhookService) private readonly webhooks: PaystackWebhookService,
   ) {}
 
   @Post("api/v1/checkouts/:checkoutId/payments/paystack")

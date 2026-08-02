@@ -7,7 +7,7 @@ import { Card, PageHeader, QueryState, Screen } from "@/components/ui";
 import { vendorData } from "@/data";
 import { useSessionStore } from "@/lib/session-store";
 import { useVendorStore } from "@/lib/vendor-store";
-import { colors, spacing } from "@/theme";
+import { colors } from "@/theme";
 
 export default function ScopeScreen() {
   const router = useRouter();

@@ -119,6 +119,18 @@ export const deliveryStatusValues = [
   "CANCELLED",
 ] as const;
 
+export const driverStatusValues = [
+  "DRAFT",
+  "SUBMITTED",
+  "UNDER_REVIEW",
+  "MORE_INFORMATION_REQUIRED",
+  "APPROVED",
+  "REJECTED",
+  "ACTIVE",
+  "SUSPENDED",
+  "DEACTIVATED",
+] as const;
+
 export const userStatusEnum = pgEnum("user_status", userStatusValues);
 export const vendorStatusEnum = pgEnum("vendor_status", vendorStatusValues);
 export const vendorApplicationStatusEnum = pgEnum(
@@ -132,6 +144,7 @@ export const paymentStatusEnum = pgEnum("payment_status", paymentStatusValues);
 export const parentOrderStatusEnum = pgEnum("parent_order_status", parentOrderStatusValues);
 export const vendorOrderStatusEnum = pgEnum("vendor_order_status", vendorOrderStatusValues);
 export const deliveryStatusEnum = pgEnum("delivery_status", deliveryStatusValues);
+export const driverStatusEnum = pgEnum("driver_status", driverStatusValues);
 
 export const contactTypeEnum = pgEnum("contact_type", ["EMAIL", "PHONE"]);
 export const permissionRiskEnum = pgEnum("permission_risk", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
@@ -205,5 +218,37 @@ export const deliveryQuoteStatusEnum = pgEnum("delivery_quote_status", [
   "ACCEPTED",
   "EXPIRED",
   "CANCELLED",
+]);
+export const vehicleTypeEnum = pgEnum("vehicle_type", ["BICYCLE", "MOTORBIKE", "CAR", "VAN", "TRUCK"]);
+export const vehicleStatusEnum = pgEnum("vehicle_status", [
+  "PENDING",
+  "APPROVED",
+  "ACTIVE",
+  "SUSPENDED",
+  "EXPIRED",
+]);
+export const driverShiftStatusEnum = pgEnum("driver_shift_status", ["STARTED", "PAUSED", "ENDED"]);
+export const driverLocationSourceEnum = pgEnum("driver_location_source", [
+  "FOREGROUND",
+  "BACKGROUND",
+  "OFFLINE_SYNC",
+]);
+export const deliveryOfferStatusEnum = pgEnum("delivery_offer_status", [
+  "SENT",
+  "ACCEPTED",
+  "REJECTED",
+  "EXPIRED",
+  "CANCELLED",
+]);
+export const driverCashTransactionTypeEnum = pgEnum("driver_cash_transaction_type", [
+  "CASH_COLLECTED",
+  "CASH_DEPOSITED",
+  "CASH_ADJUSTMENT",
+  "CASH_WRITEOFF",
+]);
+export const driverCashTransactionStatusEnum = pgEnum("driver_cash_transaction_status", [
+  "PENDING",
+  "CONFIRMED",
+  "DISPUTED",
 ]);
 export const outboxStatusEnum = pgEnum("outbox_status", ["PENDING", "PROCESSING", "PROCESSED", "FAILED"]);

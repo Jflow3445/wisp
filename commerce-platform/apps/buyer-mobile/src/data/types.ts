@@ -32,7 +32,7 @@ export const BuyerOrderSchema = z.object({
 });
 
 export interface CheckoutPayload {
-  lines: Array<{ offerId: string; quantity: number }>;
+  lines: { offerId: string; quantity: number }[];
   delivery: {
     recipientName: string;
     phone: string;
@@ -46,9 +46,9 @@ export interface CheckoutPayload {
 
 export interface BuyerDataSource {
   signIn(input: { phone: string; password: string }): Promise<z.infer<typeof BuyerSessionSchema>>;
-  listProducts(search?: string): Promise<Array<z.infer<typeof ProductSchema>>>;
+  listProducts(search?: string): Promise<z.infer<typeof ProductSchema>[]>;
   getProduct(id: string): Promise<z.infer<typeof ProductSchema>>;
-  listOrders(): Promise<Array<z.infer<typeof BuyerOrderSchema>>>;
+  listOrders(): Promise<z.infer<typeof BuyerOrderSchema>[]>;
   getOrder(id: string): Promise<z.infer<typeof BuyerOrderSchema>>;
   placeOrder(payload: CheckoutPayload): Promise<z.infer<typeof BuyerOrderSchema>>;
 }

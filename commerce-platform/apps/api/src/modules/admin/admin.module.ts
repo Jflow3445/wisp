@@ -49,7 +49,7 @@ export class AdminOverviewService {
 @ApiBearerAuth()
 @Controller("api/v1/admin")
 export class AdminController {
-  constructor(private readonly overview: AdminOverviewService) {}
+  constructor(@Inject(AdminOverviewService) private readonly overview: AdminOverviewService) {}
 
   @Get("overview")
   @RequirePermissions("admin:overview:read")

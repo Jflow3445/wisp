@@ -1,7 +1,7 @@
 import type { StateStorage } from "zustand/middleware";
 import { describe, expect, it } from "vitest";
 
-import { createVendorStore } from "./vendor-store";
+import { createVendorStore } from "./vendor-store-core";
 
 function memoryStorage(): StateStorage {
   const values = new Map<string, string>();

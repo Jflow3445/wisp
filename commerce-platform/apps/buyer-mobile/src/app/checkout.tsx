@@ -34,7 +34,7 @@ export default function CheckoutScreen() {
   const checkout = useCommerceStore((state) => state.checkout);
   const patchCheckout = useCommerceStore((state) => state.patchCheckout);
   const clearAfterOrder = useCommerceStore((state) => state.clearAfterOrder);
-  const { control, handleSubmit, watch } = useForm<DeliveryValues>({
+  const { control, handleSubmit, subscribe } = useForm<DeliveryValues>({
     resolver: zodResolver(DeliverySchema),
     defaultValues: {
       recipientName: checkout.recipientName,
@@ -46,9 +46,11 @@ export default function CheckoutScreen() {
   });
 
   useEffect(() => {
-    const subscription = watch((values) => patchCheckout(values as Partial<CheckoutDraft>));
-    return () => subscription.unsubscribe();
-  }, [patchCheckout, watch]);
+    return subscribe({
+      formState: { values: true },
+      callback: ({ values }) => patchCheckout(values as Partial<CheckoutDraft>),
+    });
+  }, [patchCheckout, subscribe]);
 
   const placeOrder = useMutation({
     mutationFn: () => buyerData.placeOrder({
@@ -139,17 +141,17 @@ export default function CheckoutScreen() {
 
 const styles = StyleSheet.create({
   section: { gap: spacing.sm },
-  edit: { color: colors.primary, fontWeight: "750", padding: spacing.sm },
+  edit: { color: colors.primary, fontWeight: "700", padding: spacing.sm },
   strong: { color: colors.text, fontSize: 15, fontWeight: "700", lineHeight: 21 },
   body: { color: colors.text, fontSize: 15, lineHeight: 21 },
   meta: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   payment: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: spacing.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, borderRadius: 6, paddingHorizontal: spacing.lg },
   paymentSelected: { borderColor: colors.primary, backgroundColor: colors.successSoft },
-  paymentText: { flex: 1, color: colors.text, fontSize: 15, fontWeight: "650" },
+  paymentText: { flex: 1, color: colors.text, fontSize: 15, fontWeight: "600" },
   paymentTextSelected: { color: colors.primary },
   pressed: { opacity: 0.7 },
   summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.md },
   totalLabel: { color: colors.text, fontSize: 17, fontWeight: "800" },
-  total: { color: colors.primary, fontSize: 18, fontWeight: "850" },
+  total: { color: colors.primary, fontSize: 18, fontWeight: "800" },
   error: { color: colors.danger, fontSize: 14, lineHeight: 20 },
 });

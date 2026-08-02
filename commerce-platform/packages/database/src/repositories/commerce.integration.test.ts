@@ -1,8 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Database } from "../connection.js";
@@ -11,6 +12,7 @@ import * as schema from "../schema.js";
 import { PostgresCartRepository } from "./cart.js";
 import { PostgresCatalogueRepository } from "./catalogue.js";
 import { PostgresCheckoutRepository } from "./checkout.js";
+import { PostgresDriverOperationsRepository } from "./driver.js";
 import { PostgresAdminOverviewRepository, PostgresVendorOperationsRepository } from "./operations.js";
 import { PostgresPaymentRepository } from "./payment.js";
 
@@ -31,16 +33,22 @@ const ids = {
   locationB: "80000000-0000-4000-8000-000000000002",
   inventoryA: "90000000-0000-4000-8000-000000000001",
   inventoryB: "90000000-0000-4000-8000-000000000002",
+  driverUser: "11111111-1111-4111-8111-111111111112",
+  serviceZone: "21000000-0000-4000-8000-000000000001",
+  driverProfile: "31000000-0000-4000-8000-000000000001",
+  vehicle: "41000000-0000-4000-8000-000000000001",
+  deliveryOffer: "a1000000-0000-4000-8000-000000000001",
 } as const;
 
-const migrationPath = fileURLToPath(
-  new URL("../../drizzle/0000_supreme_millenium_guard.sql", import.meta.url),
-);
+const migrationsFolder = fileURLToPath(new URL("../../drizzle", import.meta.url));
 
 const migrate = async (client: PGlite): Promise<void> => {
-  const migration = await readFile(migrationPath, "utf8");
-  for (const statement of migration.split("--> statement-breakpoint").map((part) => part.trim()).filter(Boolean)) {
-    await client.exec(statement);
+  const migrationFiles = (await readdir(migrationsFolder)).filter((file) => file.endsWith(".sql")).sort();
+  for (const file of migrationFiles) {
+    const migration = await readFile(new URL(`../../drizzle/${file}`, import.meta.url), "utf8");
+    for (const statement of migration.split("--> statement-breakpoint").map((part) => part.trim()).filter(Boolean)) {
+      await client.exec(statement);
+    }
   }
 };
 
@@ -54,10 +62,45 @@ describe.sequential("PostgreSQL commerce repositories", () => {
     db = drizzle(client, { schema }) as unknown as Database;
     await seedDatabase(db);
 
-    await db.insert(schema.users).values({
-      id: ids.buyer,
-      identityProviderSubject: `test|${ids.buyer}`,
-      primaryEmail: "buyer@example.test",
+    await db.insert(schema.users).values([
+      {
+        id: ids.buyer,
+        identityProviderSubject: `test|${ids.buyer}`,
+        primaryEmail: "buyer@example.test",
+        status: "ACTIVE",
+      },
+      {
+        id: ids.driverUser,
+        identityProviderSubject: `test|${ids.driverUser}`,
+        primaryEmail: "driver@example.test",
+        status: "ACTIVE",
+      },
+    ]);
+    await db.insert(schema.serviceZones).values({
+      id: ids.serviceZone,
+      name: "Accra Central",
+      countryCode: "GH",
+      region: "Greater Accra",
+      geometryGeoJson: { type: "Polygon", coordinates: [] },
+      status: "ACTIVE",
+    });
+    await db.insert(schema.driverProfiles).values({
+      id: ids.driverProfile,
+      userId: ids.driverUser,
+      publicReference: "DRV-A",
+      status: "ACTIVE",
+      homeRegion: "Greater Accra",
+      cashLimitMinor: 50_000n,
+      approvedAt: new Date(),
+    });
+    await db.insert(schema.vehicles).values({
+      id: ids.vehicle,
+      driverId: ids.driverProfile,
+      vehicleType: "MOTORBIKE",
+      registrationNumber: "GT-4821-24",
+      make: "Yamaha",
+      model: "YBR",
+      colour: "Blue",
       status: "ACTIVE",
     });
     await db.insert(schema.categories).values({
@@ -344,5 +387,127 @@ describe.sequential("PostgreSQL commerce repositories", () => {
     const overview = await new PostgresAdminOverviewRepository(db).readOverview();
     expect(overview.vendors.active).toBe(2);
     expect(overview.orders.awaitingVendor).toBe(2);
+  }, 30_000);
+
+  it("assigns a driver offer, records offline location once and completes COD delivery", async () => {
+    const [vendorOrder] = await db.select().from(schema.vendorOrders).where(eq(schema.vendorOrders.vendorId, ids.vendorA)).limit(1);
+    expect(vendorOrder).toBeDefined();
+
+    const deliveryId = "b1000000-0000-4000-8000-000000000001";
+    await db.insert(schema.deliveries).values({
+      id: deliveryId,
+      publicReference: "DEL-COD-1",
+      vendorOrderId: vendorOrder!.id,
+      deliveryMethod: "PLATFORM",
+      status: "OFFER_SENT",
+      serviceZoneId: ids.serviceZone,
+      pickupSnapshot: {
+        storeName: "Vendor A Store",
+        area: "Osu",
+        address: "Oxford Street",
+        packageCount: 1,
+        packageSize: "One parcel",
+        pickupCodeHash: "fixture",
+      },
+      dropoffSnapshot: {
+        recipientName: "Ama Mensah",
+        area: "Labone",
+        address: "Customer house",
+        packageCount: 1,
+        cashOnDeliveryMinor: "12800",
+        estimatedDurationSeconds: 1_500,
+      },
+      deliveryFeeMinor: 1_500n,
+      driverEarningMinor: 800n,
+      currency: "GHS",
+      deliveryCodeHash: "fixture",
+    });
+    await db.insert(schema.deliveryOffers).values({
+      id: ids.deliveryOffer,
+      deliveryId,
+      driverId: ids.driverProfile,
+      status: "SENT",
+      offeredEarningMinor: 800n,
+      currency: "GHS",
+      distanceToPickupMetres: 2_100,
+      expiresAt: new Date(Date.now() + 10 * 60_000),
+    });
+
+    const drivers = new PostgresDriverOperationsRepository(db);
+    const online = await drivers.startShift({
+      driverUserId: ids.driverUser,
+      vehicleId: ids.vehicle,
+      serviceZoneId: ids.serviceZone,
+      startCheckData: { batteryPercentage: 87 },
+    });
+    expect(online.onlineStatus).toBe("ONLINE");
+
+    const offers = await drivers.listOffers(ids.driverUser);
+    expect(offers).toHaveLength(1);
+    expect(offers[0]).toMatchObject({ id: ids.deliveryOffer, expectedEarnings: { amountMinor: "800" } });
+
+    let active = await drivers.acceptOffer({
+      driverUserId: ids.driverUser,
+      offerId: ids.deliveryOffer,
+      expectedOfferVersion: 1,
+      idempotencyKey: "accept-offer-cod",
+    });
+    expect(active.status).toBe("DRIVER_ACCEPTED");
+    expect((await drivers.findActiveDelivery(ids.driverUser))?.id).toBe(deliveryId);
+
+    const location = {
+      deliveryId,
+      latitude: "5.6037000",
+      longitude: "-0.1870000",
+      accuracyMetres: "8.50",
+      recordedAt: new Date(),
+      source: "OFFLINE_SYNC" as const,
+      offlineEventId: "c1000000-0000-4000-8000-000000000001",
+    };
+    await expect(drivers.recordLocations({ driverUserId: ids.driverUser, points: [location] })).resolves.toEqual({
+      accepted: 1,
+      duplicates: 0,
+    });
+    await expect(drivers.recordLocations({ driverUserId: ids.driverUser, points: [location] })).resolves.toEqual({
+      accepted: 0,
+      duplicates: 1,
+    });
+
+    const advance = async (newState: typeof active.status, action: string, evidence?: Record<string, unknown>) => {
+      active = await drivers.transitionDelivery({
+        driverUserId: ids.driverUser,
+        deliveryId: active.id,
+        expectedVersion: active.version,
+        expectedState: active.status,
+        newState,
+        action,
+        evidence,
+        idempotencyKey: `delivery-${action.toLowerCase()}`,
+        offlineEventId: `d1000000-0000-4000-8000-00000000000${active.version}`,
+        cashCollectedMinor: newState === "COMPLETED" ? "12800" : null,
+        currency: "GHS",
+      });
+      return active;
+    };
+
+    await advance("TRAVELLING_TO_PICKUP", "TRAVEL_TO_PICKUP");
+    await advance("ARRIVED_AT_PICKUP", "ARRIVE_PICKUP");
+    await advance("PICKUP_VERIFIED", "VERIFY_PICKUP", { pickupCode: "1234", packageCount: 1 });
+    await advance("IN_TRANSIT", "START_TRANSIT");
+    await advance("ARRIVED_AT_CUSTOMER", "ARRIVE_CUSTOMER");
+    await advance("COMPLETED", "COMPLETE", { deliveryCode: "9876", recipientName: "Ama Mensah" });
+
+    expect(active).toMatchObject({ status: "COMPLETED", cashExpected: { amountMinor: "12800" } });
+    await expect(drivers.readCash(ids.driverUser)).resolves.toEqual({
+      liability: { amountMinor: "12800", currency: "GHS" },
+    });
+    const earnings = await drivers.readEarnings(ids.driverUser);
+    expect(earnings.today.amountMinor).toBe("800");
+
+    const projection = await client.query<{ cash: number; histories: number; vendor_order_status: string }>(`select
+      (select count(*)::integer from driver_cash_transactions where delivery_id = $1) as cash,
+      (select count(*)::integer from delivery_status_history where delivery_id = $1) as histories,
+      (select status::text from vendor_orders where id = $2) as vendor_order_status`, [deliveryId, vendorOrder!.id]);
+    expect(projection.rows[0]).toEqual({ cash: 1, histories: 8, vendor_order_status: "DELIVERED" });
   }, 30_000);
 });

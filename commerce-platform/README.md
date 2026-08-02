@@ -9,11 +9,11 @@ operational controls are isolated under this directory.
 - `apps/storefront-web`: buyer storefront and account experience.
 - `apps/vendor-web`: vendor onboarding and operations portal.
 - `apps/admin-web`: platform administration and finance controls.
+- `apps/buyer-mobile`: Expo buyer shopping and order experience.
+- `apps/vendor-mobile`: Expo vendor operations experience.
+- `apps/driver-mobile`: Expo driver delivery and offline-sync experience.
 - `apps/api`: NestJS/Fastify modular-monolith API.
 - `apps/worker`: BullMQ workers for outbox and asynchronous processing.
-
-Mobile clients are tracked in the implementation ledger and will consume the
-same generated API client and contracts.
 
 ## Local Setup
 
@@ -26,6 +26,11 @@ pnpm db:migrate
 pnpm db:seed
 pnpm dev
 ```
+
+Node.js `20.19.4` or newer is required by the current Expo toolchain. Set each
+client's documented `*_DATA_MODE=demo` variable to use local fixtures. API mode
+fails closed where Auth0 or a Release 2 backend contract is not yet available;
+the remaining integration work is recorded in the implementation ledger.
 
 Local ports:
 

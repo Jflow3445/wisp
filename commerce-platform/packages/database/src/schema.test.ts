@@ -1,6 +1,7 @@
 import {
   checkoutStatuses,
   deliveryStatuses,
+  driverStatuses,
   parentOrderStatuses,
   paymentStatuses,
   productStatuses,
@@ -26,6 +27,12 @@ import {
   checkoutSessions,
   checkoutStatusValues,
   deliveryStatusValues,
+  deliveryOffers,
+  driverCashTransactions,
+  driverLocations,
+  driverProfiles,
+  driverShifts,
+  driverStatusValues,
   idempotencyRecords,
   inventoryItems,
   ledgerEntries,
@@ -44,6 +51,7 @@ import {
   vendorOffers,
   vendorOrderStatusValues,
   vendorStatusValues,
+  vehicles,
 } from "./schema.js";
 
 describe("shared database contract", () => {
@@ -58,6 +66,7 @@ describe("shared database contract", () => {
     expect(parentOrderStatusValues).toEqual(parentOrderStatuses);
     expect(vendorOrderStatusValues).toEqual(vendorOrderStatuses);
     expect(deliveryStatusValues).toEqual(deliveryStatuses);
+    expect(driverStatusValues).toEqual(driverStatuses);
   });
 
   it("uses bigint money and numeric(18,6) quantity columns", () => {
@@ -82,7 +91,7 @@ describe("shared database contract", () => {
     expect(journal.uniqueConstraints.map((constraint) => constraint.name)).toContain(
       "ledger_transactions_source_posting_uq",
     );
-    expect(entries.foreignKeys).toHaveLength(7);
+    expect(entries.foreignKeys).toHaveLength(8);
     expect(idempotency.uniqueConstraints.map((constraint) => constraint.name)).toContain(
       "idempotency_records_actor_scope_key_uq",
     );
@@ -93,6 +102,11 @@ describe("shared database contract", () => {
       [
         auditLogs,
         checkoutSessions,
+        deliveryOffers,
+        driverCashTransactions,
+        driverLocations,
+        driverProfiles,
+        driverShifts,
         inventoryItems,
         ledgerEntries,
         ledgerTransactions,
@@ -101,10 +115,16 @@ describe("shared database contract", () => {
         payments,
         stockReservations,
         vendorOffers,
+        vehicles,
       ].map(getTableName),
     ).toEqual([
       "audit_logs",
       "checkout_sessions",
+      "delivery_offers",
+      "driver_cash_transactions",
+      "driver_locations",
+      "driver_profiles",
+      "driver_shifts",
       "inventory_items",
       "ledger_entries",
       "ledger_transactions",
@@ -113,6 +133,7 @@ describe("shared database contract", () => {
       "payments",
       "stock_reservations",
       "vendor_offers",
+      "vehicles",
     ]);
   });
 });

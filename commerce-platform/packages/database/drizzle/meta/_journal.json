@@ -8,6 +8,13 @@
       "when": 1784554600461,
       "tag": "0000_supreme_millenium_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785712108162,
+      "tag": "0001_luxuriant_spot",
+      "breakpoints": true
     }
   ]
 }

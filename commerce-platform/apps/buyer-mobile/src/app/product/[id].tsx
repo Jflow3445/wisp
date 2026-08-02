@@ -53,7 +53,7 @@ export default function ProductScreen() {
 const styles = StyleSheet.create({
   productMark: { height: 160, borderRadius: 8, backgroundColor: colors.successSoft, alignItems: "center", justifyContent: "center" },
   priceLine: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: spacing.md },
-  price: { color: colors.primary, fontSize: 24, fontWeight: "850" },
+  price: { color: colors.primary, fontSize: 24, fontWeight: "800" },
   rating: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   meta: { color: colors.muted, fontSize: 14 },
   description: { color: colors.text, fontSize: 16, lineHeight: 24 },

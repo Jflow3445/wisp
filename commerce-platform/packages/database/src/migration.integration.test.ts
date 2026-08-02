@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { PGlite } from "@electric-sql/pglite";
@@ -10,19 +10,20 @@ import { ledgerAccountSeeds, deterministicSeedUuid } from "./seed-data.js";
 import { seedDatabase } from "./seed.js";
 import * as schema from "./schema.js";
 
-const migrationPath = fileURLToPath(
-  new URL("../drizzle/0000_supreme_millenium_guard.sql", import.meta.url),
-);
+const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
 
 const executeMigration = async (client: PGlite): Promise<void> => {
-  const migration = await readFile(migrationPath, "utf8");
-  const statements = migration
-    .split("--> statement-breakpoint")
-    .map((statement) => statement.trim())
-    .filter(Boolean);
+  const migrationFiles = (await readdir(migrationsFolder)).filter((file) => file.endsWith(".sql")).sort();
+  for (const file of migrationFiles) {
+    const migration = await readFile(new URL(`../drizzle/${file}`, import.meta.url), "utf8");
+    const statements = migration
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
 
-  for (const statement of statements) {
-    await client.exec(statement);
+    for (const statement of statements) {
+      await client.exec(statement);
+    }
   }
 };
 
@@ -34,7 +35,7 @@ const accountId = (code: string): string => {
   return account.id;
 };
 
-describe.sequential("Release 1 PostgreSQL migration", () => {
+describe.sequential("Marketplace PostgreSQL migrations", () => {
   let client: PGlite;
 
   beforeAll(async () => {
@@ -60,8 +61,8 @@ describe.sequential("Release 1 PostgreSQL migration", () => {
       "select count(*)::integer as account_count from ledger_accounts",
     );
 
-    expect(tableResult.rows[0]?.table_count).toBe(47);
-    expect(roleResult.rows[0]?.role_count).toBe(5);
+    expect(tableResult.rows[0]?.table_count).toBe(57);
+    expect(roleResult.rows[0]?.role_count).toBe(6);
     expect(accountResult.rows[0]?.account_count).toBe(45);
   });
 
