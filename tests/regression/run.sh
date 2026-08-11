@@ -49,6 +49,20 @@ assert_not_contains() {
   pass "$name"
 }
 
+assert_no_owner_rejected_status_enum() {
+  local name="$1"
+  local got="$2"
+  local flattened
+  local enum
+  flattened="$(printf '%s\n' "$got" | tr '\r\n' '  ')"
+  while IFS= read -r enum; do
+    if [[ "$enum" == *pending* && "$enum" == *approved* && "$enum" == *rejected* ]]; then
+      fail "$name" "owner status enum includes rejected: $enum"
+    fi
+  done < <(printf '%s\n' "$flattened" | grep -Eio '`?(status|previous_status|new_status)`?[[:space:]]+ENUM[[:space:]]*\([^)]*\)' || true)
+  pass "$name"
+}
+
 php_run() {
   php -d error_reporting=E_ERROR -d display_errors=0 "$@"
 }
@@ -286,9 +300,10 @@ purchase_content="$(cat pay-portal/purchase.php)"
 
 assert_contains "owner_schema_defines_leads" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_leads"
 assert_contains "owner_schema_no_rejected_owner_status" "$owner_schema_content" "ENUM('pending','approved','suspended')"
-assert_not_contains "owner_schema_never_defines_rejected_owner" "$owner_schema_content" "ENUM('pending','approved','rejected','suspended')"
+assert_no_owner_rejected_status_enum "owner_schema_never_defines_rejected_owner_status_enum" "$owner_schema_content"
 assert_contains "owner_auth_uses_owner_session" "$owner_auth_content" "session_name('nister_owner')"
-assert_contains "owner_pages_are_noindex" "$owner_auth_content$owner_pages_content" "noindex, nofollow"
+assert_contains "owner_auth_sets_noindex" "$owner_auth_content" "noindex, nofollow"
+assert_contains "owner_pages_are_noindex" "$owner_pages_content" "noindex, nofollow"
 assert_contains "property_revenue_has_reconciler_entrypoint" "$property_revenue_content" "property_allocation_reconcile"
 assert_not_contains "purchase_has_no_owner_allocation_hook" "$purchase_content" "property_allocation"
 assert_not_contains "purchase_has_no_owner_revenue_include" "$purchase_content" "property_revenue.php"
