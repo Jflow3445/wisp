@@ -182,7 +182,7 @@ export default function RequestInstallationPage() {
       <section className="section section-light">
         <div className="shell lead-layout">
           <div className="lead-intro">
-            <p className="eyebrow">Property assessment</p>
+            <p className="eyebrow">Hostel assessment</p>
             <h2>Start with what we need to understand your hostel.</h2>
             <p>
               Tell us where the hostel is, how many residents may need internet and what you want to improve. We&apos;ll use
