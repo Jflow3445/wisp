@@ -160,13 +160,14 @@ export type LeadFormField = {
   placeholder?: string;
   help?: string;
   min?: number;
+  step?: string;
+  inputMode?: "numeric" | "decimal";
   options?: readonly { value: string; label: string }[];
 };
 
-const yesNoOptions = [
-  { value: "yes", label: "Yes" },
-  { value: "no", label: "No" },
-  { value: "not_sure", label: "Not sure" },
+const binaryYesNoOptions = [
+  { value: "1", label: "Yes" },
+  { value: "0", label: "No" },
 ] as const;
 
 export const deploymentPreferenceOptions = [
@@ -289,15 +290,18 @@ export const leadFormFields = [
   {
     name: "current_occupancy",
     label: "Current occupancy",
-    type: "text",
-    placeholder: "Full, partial, seasonal, or still filling rooms",
+    type: "number",
+    min: 0,
+    inputMode: "numeric",
+    placeholder: "120",
+    help: "Enter the approximate current resident count. Leave blank if occupancy is not known.",
   },
   {
     name: "has_wifi",
     label: "Does the property already have Wi-Fi?",
     type: "select",
     required: true,
-    options: yesNoOptions,
+    options: binaryYesNoOptions,
   },
   {
     name: "current_provider",
@@ -320,10 +324,13 @@ export const leadFormFields = [
   },
   {
     name: "current_monthly_cost",
-    label: "Current monthly cost",
-    type: "text",
-    placeholder: "e.g. GHS 1,200",
-    help: "Enter the approximate monthly amount and currency if there is an existing bill.",
+    label: "Current monthly cost (GHS)",
+    type: "number",
+    min: 0,
+    step: "0.01",
+    inputMode: "decimal",
+    placeholder: "1200.00",
+    help: "Enter the approximate monthly amount in Ghana cedis. Use digits and decimals only.",
   },
   {
     name: "current_speed",

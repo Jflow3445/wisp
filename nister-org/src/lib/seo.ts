@@ -3,7 +3,16 @@ import { EXTERNAL_LINKS, type ResourceArticle } from "@/lib/content";
 export const SITE_ORIGIN = "https://nister.org";
 
 export function canonical(path: string): string {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const rawPath = path.trim();
+  let localPath = rawPath;
+
+  if (/^\/\//.test(rawPath)) {
+    localPath = new URL(`https:${rawPath}`).pathname;
+  } else if (/^[a-z][a-z\d+.-]*:\/\//i.test(rawPath)) {
+    localPath = new URL(rawPath).pathname;
+  }
+
+  const normalizedPath = `/${localPath.replace(/^\/+/, "").split(/[?#]/, 1)[0]}`;
   return new URL(normalizedPath, SITE_ORIGIN).toString();
 }
 

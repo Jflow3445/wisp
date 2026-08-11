@@ -25,25 +25,21 @@ export const metadata: Metadata = {
 const commercialModels = [
   {
     title: "Resident-paid Wi-Fi",
-    preference: "recommend_for_me",
     body:
       "Residents buy and manage their own access through the approved Nister payment and login flow. This can fit hostels where internet usage varies by resident and the owner wants less manual collection.",
   },
   {
     title: "Property-paid Wi-Fi",
-    preference: "property_paid_wifi",
     body:
       "The property pays for internet as part of the resident experience. This can fit owners who want a simpler resident promise and a clear operating agreement for support.",
   },
   {
     title: "Owner-funded deployment",
-    preference: "owner_funded",
     body:
       "The owner funds the rollout directly after the site, equipment needs, access model, and operating responsibilities are reviewed.",
   },
   {
     title: "Nister funding review",
-    preference: "request_nister_funding",
     body:
       "The property asks Nister to review whether a funded deployment path is appropriate. This is a review path, not an automatic approval or a live availability promise.",
   },
@@ -114,7 +110,7 @@ export default function PlansPage() {
           <div className="public-card-grid">
             {commercialModels.map((model) => (
               <article className="public-card" key={model.title}>
-                <span className="panel-label">Form preference: {model.preference}</span>
+                <span className="panel-label">Commercial model</span>
                 <h3>{model.title}</h3>
                 <p>{model.body}</p>
               </article>

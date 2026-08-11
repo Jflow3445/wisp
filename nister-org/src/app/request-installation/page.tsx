@@ -69,10 +69,12 @@ function LeadFormControl({ field }: { field: LeadFormField }) {
         <input
           aria-describedby={describedBy}
           id={fieldId}
+          inputMode={field.inputMode}
           min={field.type === "number" ? field.min : undefined}
           name={field.name}
           placeholder={field.placeholder}
           required={field.required}
+          step={field.type === "number" ? field.step : undefined}
           type={field.type}
         />
       )}

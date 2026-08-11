@@ -11,6 +11,7 @@ import {
   networkPreLoginChecks,
   networkTroubleshootingSteps,
 } from "../content";
+import { canonical } from "../seo";
 
 const projectRoot = process.cwd();
 const sourceRoot = join(projectRoot, "src");
@@ -111,6 +112,39 @@ test("Release 1 lead form fields stay in the approved browser POST order", () =>
   );
 });
 
+test("owner lead fields use backend-compatible browser control values", () => {
+  const leadFormFields = contentExports.leadFormFields as
+    | Array<{
+        name: string;
+        label?: string;
+        type?: string;
+        placeholder?: string;
+        help?: string;
+        min?: number;
+        step?: string;
+        inputMode?: string;
+        options?: Array<{ value: string; label: string }>;
+      }>
+    | undefined;
+  assert.ok(Array.isArray(leadFormFields), "leadFormFields must be exported from content.ts");
+
+  const fieldsByName = new Map(leadFormFields.map((field) => [field.name, field]));
+  const currentOccupancy = fieldsByName.get("current_occupancy");
+  assert.equal(currentOccupancy?.type, "number");
+  assert.equal(currentOccupancy?.min, 0);
+  assert.match(`${currentOccupancy?.placeholder ?? ""} ${currentOccupancy?.help ?? ""}`, /resident|people|count/i);
+
+  const hasWifi = fieldsByName.get("has_wifi");
+  assert.deepEqual(hasWifi?.options?.map((option) => option.value), ["1", "0"]);
+
+  const currentMonthlyCost = fieldsByName.get("current_monthly_cost");
+  assert.equal(currentMonthlyCost?.type, "number");
+  assert.equal(currentMonthlyCost?.step, "0.01");
+  assert.equal(currentMonthlyCost?.inputMode, "decimal");
+  assert.doesNotMatch(currentMonthlyCost?.placeholder ?? "", /GHS|,|¢|₵|\$/i);
+  assert.match(`${currentMonthlyCost?.label ?? ""} ${currentMonthlyCost?.help ?? ""}`, /GHS|Ghana cedi/i);
+});
+
 test("public CAPPORT API is static compatibility JSON", () => {
   const payload = JSON.parse(readFileSync(capportApiPath, "utf8"));
 
@@ -208,6 +242,13 @@ test("SEO helpers expose canonical and structured data builders", () => {
   assert.match(sourceText, /export function articleJsonLd\(/);
 });
 
+test("canonical helper keeps absolute and protocol-relative input site-local", () => {
+  assert.equal(canonical("/plans"), "https://nister.org/plans");
+  assert.equal(canonical("plans"), "https://nister.org/plans");
+  assert.equal(canonical("//evil.example/plans"), "https://nister.org/plans");
+  assert.equal(canonical("https://evil.example/coverage?x=1#frag"), "https://nister.org/coverage");
+});
+
 test("public route sources declare canonical OpenGraph metadata and JSON-LD", () => {
   for (const spec of publicRouteSourceSpecs) {
     const sourceText = sourceTextFor(spec.file);
@@ -232,6 +273,13 @@ test("public route sources declare canonical OpenGraph metadata and JSON-LD", ()
       );
     }
   }
+});
+
+test("plans page does not expose backend enum values as visible commercial copy", () => {
+  const sourceText = sourceTextFor("src/app/plans/page.tsx");
+
+  assert.doesNotMatch(sourceText, /Form preference:/);
+  assert.doesNotMatch(sourceText, /recommend_for_me|property_paid_wifi|owner_funded|request_nister_funding/);
 });
 
 test("source files do not contain forbidden legacy product references", () => {
