@@ -319,6 +319,124 @@ function fetchWithTimeout(url, opts, ms){
     .finally(function(){ clearTimeout(t); });
 }
 
+var STATUS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function statusTokenValue(raw){
+  var v = String(raw || '').trim();
+  return (v && v.indexOf('$(') === -1) ? v : '';
+}
+
+function currentStatusUsername(){
+  return statusTokenValue(qs('username') || '$(username)');
+}
+
+function statusCacheUser(username){
+  var v = statusTokenValue(username).toLowerCase();
+  return v.replace(/[^0-9a-z+_.-]/g, '');
+}
+
+function statusCacheKey(username){
+  var u = statusCacheUser(username);
+  return u ? ('nister.status.v2.' + u) : '';
+}
+
+function statusStorageGet(key){
+  if (!key) return '';
+  try {
+    if (window.sessionStorage) {
+      var sessionValue = sessionStorage.getItem(key);
+      if (sessionValue) return sessionValue;
+    }
+  } catch(_){ }
+  try {
+    return window.localStorage ? (localStorage.getItem(key) || '') : '';
+  } catch(_){
+    return '';
+  }
+}
+
+function statusStorageSet(key, value){
+  if (!key || !value) return;
+  try { if (window.sessionStorage) sessionStorage.setItem(key, value); } catch(_){ }
+  try { if (window.localStorage) localStorage.setItem(key, value); } catch(_){ }
+}
+
+function cachedStatusUsable(payload, username){
+  if (!payload || !payload.data || payload.data.ok !== true) return false;
+  var savedAt = Number(payload.saved_at || 0);
+  var now = Date.now();
+  if (!isFinite(savedAt) || savedAt <= 0 || savedAt > now + 60000) return false;
+  if ((now - savedAt) > STATUS_CACHE_TTL_MS) return false;
+  if (statusCacheUser(payload.username || '') !== statusCacheUser(username || '')) return false;
+  var expiry = payload.data.expiry_str ? new Date(payload.data.expiry_str) : null;
+  if (expiry && !isNaN(expiry) && expiry.getTime() <= now) return false;
+  return true;
+}
+
+function storeCachedStatus(username, j){
+  if (!j || j.ok !== true) return;
+  var key = statusCacheKey(username || j.username || '');
+  if (!key) return;
+  var payload = {
+    saved_at: Date.now(),
+    username: statusCacheUser(username || j.username || ''),
+    data: j
+  };
+  try { statusStorageSet(key, JSON.stringify(payload)); } catch(_){ }
+}
+
+function restoreCachedStatus(username){
+  var key = statusCacheKey(username);
+  if (!key) return false;
+  try {
+    var raw = statusStorageGet(key);
+    if (!raw) return false;
+    var payload = JSON.parse(raw);
+    if (!cachedStatusUsable(payload, username)) return false;
+    populateFromServer(payload.data);
+    state.lastGoodAt = Number(payload.saved_at || Date.now());
+    var note = h('statusNote');
+    note.className = 'note warn';
+    note.textContent = 'Showing the last verified account status while billing refreshes.';
+    note.style.display = 'block';
+    var badge = h('statusBadge');
+    if (badge && state.acct === 'ACTIVE') badge.textContent = 'ACTIVE - refreshing';
+    var d2 = h('debug2');
+    if (d2) d2.textContent = 'restored cached account status';
+    return true;
+  } catch(_){
+    return false;
+  }
+}
+
+function setRouterSessionFallback(username){
+  if (state.lastGoodAt) return;
+  state.routerFallbackShown = true;
+  h('title').textContent = 'Connected - verifying account';
+  var badge = h('statusBadge');
+  badge.className = 'badge warn';
+  badge.textContent = 'Router session online';
+  var note = h('statusNote');
+  note.className = 'note warn';
+  note.textContent = 'Your device is connected to the hotspot. Billing details are refreshing from NISTER.';
+  note.style.display = 'block';
+  var paidBadge = h('paidbadge');
+  if (paidBadge) {
+    paidBadge.className = 'badge warn';
+    paidBadge.textContent = 'VERIFYING';
+  }
+  var sessionUsed = sessionUsedBytes();
+  h('used').textContent = sessionUsed > 0 ? fmtBytes(sessionUsed) : 'Loading';
+  ['quota','remain','period','expiry','left','rate'].forEach(function(id){
+    h(id).textContent = 'Loading';
+  });
+  h('group').textContent = 'Loading';
+  h('alist').textContent = 'Checking';
+  h('pct').textContent = '';
+  h('barfill').style.width = '0%';
+  h('debug').textContent = 'build v2026-08-11a';
+}
+
 function sameOriginApiBase(){
   var h = String(location.hostname || '').toLowerCase();
   if (h !== 'wifi.nister.org') return '';
@@ -445,6 +563,7 @@ var state = {
   lastUrl:'',
   lastErr:'',
   lastGoodAt:0,
+  routerFallbackShown:false,
   inFlight:false,
   pendingRefresh:false,
   fetchSupported:(typeof fetch === 'function')
@@ -550,6 +669,7 @@ function setHeaderByAccount(j){
 function populateFromServer(j){
   setHeaderByAccount(j);
   state.lastGoodAt = Date.now();
+  state.routerFallbackShown = false;
 
 
   var isNoPaid = state.flags.isNoPaid;
@@ -759,7 +879,18 @@ function setUnknownUI(){
     noteRecent.className='note warn';
     noteRecent.textContent='The billing server did not respond to this refresh. The details shown are from the last successful verification; refresh again after the connection stabilizes.';
     noteRecent.style.display='block';
-    h('debug').textContent = 'build v2026-06-15d';
+    h('debug').textContent = 'build v2026-08-11a';
+    return;
+  }
+
+  if (state.routerFallbackShown) {
+    badge.textContent='Verification delayed';
+    h('title').textContent='Connected - billing still refreshing';
+    var noteFallback=h('statusNote');
+    noteFallback.className='note warn';
+    noteFallback.textContent='Your router session is still online. Billing details are taking longer than usual to refresh.';
+    noteFallback.style.display='block';
+    h('debug').textContent = 'build v2026-08-11a';
     return;
   }
 
@@ -775,7 +906,7 @@ function setUnknownUI(){
   h('barfill').style.width='0%';
 
   // Keep a minimal version marker only
-  h('debug').textContent = 'build v2026-06-15d';
+  h('debug').textContent = 'build v2026-08-11a';
 }
 
 function loadRadiusStatus(){
@@ -800,21 +931,28 @@ function loadRadiusStatus(){
     }
   }
 
-  h('title').textContent='Checking account...';
-  h('statusNote').style.display='none';
-  var badge=h('statusBadge'); badge.className='badge'; badge.textContent='Verifying...';
-  state.lastErr = '';
-
-  var user = (qs('username') || '$(username)' || '').trim();
-  if (user.indexOf('$(') !== -1) user = '';
+  var user = currentStatusUsername();
   if(!user){
-    badge.className='badge err'; badge.textContent='Need username';
+    var badgeMissing=h('statusBadge');
+    badgeMissing.className='badge err';
+    badgeMissing.textContent='Need username';
     h('title').textContent='Status needs your username';
     var note=h('statusNote'); note.className='note warn'; note.style.display='block';
     note.textContent='Open this page from the hotspot success screen or add ?username=YOUR_NUMBER to the URL.';
     finish();
     return;
   }
+
+  if (!state.lastGoodAt && !state.routerFallbackShown) {
+    if (!restoreCachedStatus(user)) setRouterSessionFallback(user);
+  } else {
+    var badgeRefresh=h('statusBadge');
+    if (badgeRefresh) {
+      badgeRefresh.className='badge';
+      badgeRefresh.textContent = state.lastGoodAt ? 'Refreshing...' : 'Verifying...';
+    }
+  }
+  state.lastErr = '';
 
   var urls = apiCandidates(user);
   var tryOne = function(idx){
@@ -846,6 +984,7 @@ function loadRadiusStatus(){
 
     loadJsonRobust(url)
       .then(function(j){
+        storeCachedStatus(user, j);
         populateFromServer(j);
         var d2ok = h('debug2');
         if (d2ok) d2ok.textContent = 'api ok';
@@ -861,9 +1000,14 @@ var _poll;
 document.addEventListener('DOMContentLoaded', function(){
   // Give mobile devices a brief moment after Wi-Fi rejoin/captive redirect
   // before the first billing API check.
-  setTimeout(loadRadiusStatus, 900);
+  setTimeout(loadRadiusStatus, 250);
   clearInterval(_poll);
   _poll = setInterval(loadRadiusStatus, 15000);
+  window.addEventListener('online', loadRadiusStatus);
+  window.addEventListener('pageshow', loadRadiusStatus);
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden) loadRadiusStatus();
+  });
 
   var lf = document.getElementById('logoutForm');
   if(lf){
@@ -940,8 +1084,8 @@ document.addEventListener('DOMContentLoaded', function(){
     </div>
 
     <div class="headline">
-      <h2 class="h" id="title">Checking account...</h2>
-      <span class="badge" id="statusBadge">Verifying...</span>
+      <h2 class="h" id="title">Connecting...</h2>
+      <span class="badge" id="statusBadge">Starting...</span>
     </div>
     <div class="note" id="statusNote"></div>
     <div class="meta-strip" aria-hidden="true">
@@ -961,25 +1105,25 @@ document.addEventListener('DOMContentLoaded', function(){
         <span class="chip">Device: $(mac)</span>
         <span class="chip">Hotspot: $(hostname)</span>
       </div>
-      <div class="small" id="debug">build v2026-06-15d</div>
+      <div class="small" id="debug">build v2026-08-11a</div>
       <div class="small" id="debug3" style="display:none"></div>
       <div class="small" id="debug2" style="display:none"></div>
     </div>
 
     <div class="section-title">Plan and usage</div>
     <div class="kv">
-      <div class="grid"><b>Billing status</b><span class="badge" id="paidbadge">...</span></div>
-      <div class="grid"><b>Plan</b><span id="group">N/A</span></div>
-      <div class="grid"><b>Quota</b><span id="quota">N/A</span></div>
-      <div class="grid"><b>Used</b><span id="used">N/A</span></div>
-      <div class="grid"><b>Remain</b><span id="remain">N/A</span></div>
+      <div class="grid"><b>Billing status</b><span class="badge" id="paidbadge">Loading</span></div>
+      <div class="grid"><b>Plan</b><span id="group">Loading</span></div>
+      <div class="grid"><b>Quota</b><span id="quota">Loading</span></div>
+      <div class="grid"><b>Used</b><span id="used">Loading</span></div>
+      <div class="grid"><b>Remain</b><span id="remain">Loading</span></div>
       <div class="bar"><i id="barfill"></i></div>
       <div class="muted" id="pct" style="text-align:right;margin-top:4px"></div>
-      <div class="grid" style="margin-top:8px"><b>Period</b><span id="period">N/A</span></div>
-      <div class="grid"><b>Expires</b><span id="expiry">N/A</span></div>
+      <div class="grid" style="margin-top:8px"><b>Period</b><span id="period">Loading</span></div>
+      <div class="grid"><b>Expires</b><span id="expiry">Loading</span></div>
       <div class="muted" id="left" style="text-align:right;margin-top:4px"></div>
-      <div class="grid" style="margin-top:8px"><b>Policy</b><span id="alist">N/A</span></div>
-      <div class="grid"><b>Rate</b><span id="rate">N/A</span></div>
+      <div class="grid" style="margin-top:8px"><b>Policy</b><span id="alist">Loading</span></div>
+      <div class="grid"><b>Rate</b><span id="rate">Loading</span></div>
     </div>
 
     <div class="section-title">Referrals</div>
