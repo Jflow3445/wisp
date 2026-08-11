@@ -174,12 +174,20 @@ assert_contains "status_page_candidates_keep_router_local_context" "$status_cand
 assert_not_contains "status_page_candidates_do_not_use_pay_host" "$status_candidates_block" "pay.nister.org"
 assert_not_contains "status_page_candidates_do_not_use_pay_base" "$status_candidates_block" "safePay"
 assert_not_contains "status_page_must_not_default_to_pay_api" "$status_page_content" "var base = (apiOverride || safePay || 'https://pay.nister.org')"
+assert_contains "status_page_fetch_timeout_does_not_depend_on_abort_controller" "$status_page_content" "if (typeof AbortController === 'function')"
+assert_contains "status_page_fetch_timeout_has_hard_reject" "$status_page_content" "reject(makeError('timeout', true));"
+assert_contains "status_page_fetch_sync_errors_fall_back_to_xhr" "$status_page_content" "fetchAttempt = Promise.reject(fetchErr);"
+assert_not_contains "status_page_fetch_timeout_does_not_depend_on_finally" "$status_page_content" ".finally(function()"
 assert_contains "router_status_page_prefers_api_base" "$router_status_page_content" "var base = (apiOverride || safeCfg || 'https://api.nister.org')"
 assert_contains "router_status_candidates_use_api_host" "$router_status_candidates_block" "'https://api.nister.org'"
 assert_contains "router_status_candidates_keep_router_local_context" "$router_status_candidates_block" "sameOrigin"
 assert_not_contains "router_status_candidates_do_not_use_pay_host" "$router_status_candidates_block" "pay.nister.org"
 assert_not_contains "router_status_candidates_do_not_use_pay_base" "$router_status_candidates_block" "safePay"
 assert_not_contains "router_status_must_not_default_to_pay_api" "$router_status_page_content" "var base = (apiOverride || safePay || 'https://pay.nister.org')"
+assert_contains "router_status_fetch_timeout_does_not_depend_on_abort_controller" "$router_status_page_content" "if (typeof AbortController === 'function')"
+assert_contains "router_status_fetch_timeout_has_hard_reject" "$router_status_page_content" "reject(makeError('timeout', true));"
+assert_contains "router_status_fetch_sync_errors_fall_back_to_xhr" "$router_status_page_content" "fetchAttempt = Promise.reject(fetchErr);"
+assert_not_contains "router_status_fetch_timeout_does_not_depend_on_finally" "$router_status_page_content" ".finally(function()"
 
 hotspot_config_content="$(cat hotspot/config.js nister-org/public/router-sync/config.js)"
 assert_contains "hotspot_config_default_api_host" "$hotspot_config_content" "var DEFAULT_API_BASE = 'https://api.nister.org';"
@@ -307,6 +315,8 @@ assert_contains "admin_api_plan_promo_keeps_canonical_device_limit" "$admin_api_
 assert_not_contains "admin_api_plan_promo_never_sets_per_user_rate_reply" "$admin_api_content" "radius_set_reply(\$r, \$u, 'Mikrotik-Rate-Limit', ':=', \$rateLimit)"
 assert_contains "admin_api_promo_targets_remain_strings" "$admin_api_content" "array_map('strval', array_keys(\$out))"
 assert_contains "admin_api_plan_promo_casts_target_msisdn" "$admin_api_content" "\$msisdn = (string)\$msisdn;"
+assert_contains "admin_stats_has_wallet_account_canonical_expr" "$admin_api_content" 'function admin_wallet_account_canon_sql(string $column): string'
+assert_contains "admin_stats_wallet_accounts_count_distinct_canonical" "$admin_api_content" 'COUNT(DISTINCT {$walletAccountCanon}) AS cnt'
 
 scope_block="$(awk '/function admin_user_scope_check/,/function admin_emit_scope_error/' pay-portal/admin/api.php)"
 assert_not_contains "admin_scope_check_no_profile_side_effect" "$scope_block" "location_profile_set"
@@ -495,6 +505,8 @@ assert_contains "account_queue_sync_reads_location_plan_rate" "$account_queue_co
 assert_contains "account_queue_sync_prefers_site_plan_rate" "$account_queue_content" 'JOIN user_location_profiles ulp'
 assert_contains "account_queue_sync_groups_targets_per_account" "$account_queue_content" 'printf '\''%s\t%s\t%s\n'\'' "$user" "$targets" "$max_limit"'
 assert_contains "account_queue_sync_sets_shared_simple_queue_limit" "$account_queue_content" 'max-limit=%s limit-at=0/0'
+assert_not_contains "account_queue_sync_never_parents_under_dynamic_hotspot_queue" "$account_queue_content" 'parent=$hotspotParent'
+assert_not_contains "account_queue_sync_never_targets_dynamic_hotspot_parent" "$account_queue_content" 'name~"^hs-<"'
 assert_contains "account_queue_sync_moves_queues_before_dynamic_hotspot_queues" "$account_queue_content" '/queue simple move $q 0'
 assert_contains "account_queue_sync_suppresses_known_host_noise" "$account_queue_content" '-o LogLevel=ERROR'
 account_queue_timer_content="$(cat systemd/nister-account-queue-sync.timer)"

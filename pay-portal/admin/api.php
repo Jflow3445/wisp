@@ -817,6 +817,18 @@ function admin_user_canon(string $username): string {
   return $d;
 }
 
+function admin_wallet_account_canon_sql(string $column): string {
+  $column = trim($column);
+  if (!preg_match('/^[A-Za-z_][A-Za-z0-9_\\.]*$/', $column)) {
+    throw new InvalidArgumentException('invalid_wallet_account_column');
+  }
+  return "CASE
+    WHEN {$column} REGEXP '^233[0-9]{9}$' THEN {$column}
+    WHEN {$column} REGEXP '^0[0-9]{9}$' THEN CONCAT('233', SUBSTRING({$column},2))
+    ELSE {$column}
+  END";
+}
+
 function admin_group_rank(string $group): int {
   $g = strtoupper(trim($group));
   if ($g === 'HS_ACTIVE') return 3;
@@ -1405,7 +1417,8 @@ try {
       $wallet_deposit_cents = 0;
       $wallet_purchase_cents = 0;
       if (table_exists($PDO, 'accounts')) {
-        $row = $PDO->query("SELECT COALESCE(SUM(balance_cents),0) AS cents, COUNT(*) AS cnt FROM accounts")->fetch();
+        $walletAccountCanon = admin_wallet_account_canon_sql('msisdn');
+        $row = $PDO->query("SELECT COALESCE(SUM(balance_cents),0) AS cents, COUNT(DISTINCT {$walletAccountCanon}) AS cnt FROM accounts")->fetch();
         $wallet_liability_cents = (int)($row['cents'] ?? 0);
         $wallet_accounts_cnt = (int)($row['cnt'] ?? 0);
       }
@@ -1695,7 +1708,8 @@ try {
           [$inUsers, $bindUsers] = $mkIn($locVariants, 'u');
 
           if (table_exists($PDO, 'accounts')) {
-            $stW = $PDO->prepare("SELECT COALESCE(SUM(balance_cents),0) AS cents, COUNT(*) AS cnt FROM accounts WHERE msisdn IN ({$inUsers})");
+            $walletAccountCanon = admin_wallet_account_canon_sql('msisdn');
+            $stW = $PDO->prepare("SELECT COALESCE(SUM(balance_cents),0) AS cents, COUNT(DISTINCT {$walletAccountCanon}) AS cnt FROM accounts WHERE msisdn IN ({$inUsers})");
             $stW->execute($bindUsers);
             $row = $stW->fetch() ?: ['cents'=>0, 'cnt'=>0];
             $wallet_liability_cents = (int)($row['cents'] ?? 0);

@@ -1,0 +1,1094 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/public/catalogue/products": {
+      "get": {
+        "operationId": "CatalogueController_list",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Browse approved marketplace products",
+        "tags": [
+          "Public catalogue"
+        ]
+      }
+    },
+    "/api/v1/public/catalogue/products/{slug}": {
+      "get": {
+        "operationId": "CatalogueController_bySlug",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Read a public product by slug",
+        "tags": [
+          "Public catalogue"
+        ]
+      }
+    },
+    "/api/v1/cart": {
+      "get": {
+        "operationId": "CartController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read the current buyer cart",
+        "tags": [
+          "Cart"
+        ]
+      }
+    },
+    "/api/v1/cart/items": {
+      "post": {
+        "operationId": "CartController_add",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add an offer to the current buyer cart",
+        "tags": [
+          "Cart"
+        ]
+      }
+    },
+    "/api/v1/checkouts": {
+      "post": {
+        "operationId": "CheckoutController_create",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Validate a cart, reserve inventory and create a checkout",
+        "tags": [
+          "Checkout"
+        ]
+      }
+    },
+    "/api/v1/checkouts/{checkoutId}/payments/paystack": {
+      "post": {
+        "operationId": "PaymentsController_initialize",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Initialize Paystack for a ready checkout",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/webhooks/v1/payments/paystack": {
+      "post": {
+        "operationId": "PaymentsController_webhook",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Receive a signature-verified Paystack event",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/api/v1/vendors/{vendorId}/orders": {
+      "get": {
+        "operationId": "VendorOperationsController_orders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List orders belonging to the scoped vendor",
+        "tags": [
+          "Vendor operations"
+        ]
+      }
+    },
+    "/api/v1/vendors/{vendorId}/orders/{orderId}/transitions": {
+      "post": {
+        "operationId": "VendorOperationsController_transitionOrder",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Apply a named vendor-order transition",
+        "tags": [
+          "Vendor operations"
+        ]
+      }
+    },
+    "/api/v1/vendors/{vendorId}/inventory": {
+      "get": {
+        "operationId": "VendorOperationsController_inventory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the vendor inventory projection",
+        "tags": [
+          "Vendor operations"
+        ]
+      }
+    },
+    "/api/v1/vendors/{vendorId}/inventory/{offerId}/adjustments": {
+      "post": {
+        "operationId": "VendorOperationsController_adjustInventory",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record an immutable inventory adjustment",
+        "tags": [
+          "Vendor operations"
+        ]
+      }
+    },
+    "/api/v1/driver/home": {
+      "get": {
+        "operationId": "DriverOperationsController_home",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read driver home state",
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/shifts": {
+      "post": {
+        "operationId": "DriverOperationsController_startShift",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start a driver shift",
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/shifts/current/end": {
+      "post": {
+        "operationId": "DriverOperationsController_endCurrentShift",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "End the current driver shift",
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/shifts/{shiftId}/pause": {
+      "post": {
+        "operationId": "DriverOperationsController_pauseShift",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/shifts/{shiftId}/resume": {
+      "post": {
+        "operationId": "DriverOperationsController_resumeShift",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/shifts/{shiftId}/end": {
+      "post": {
+        "operationId": "DriverOperationsController_endShift",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/delivery-offers": {
+      "get": {
+        "operationId": "DriverOperationsController_listOffers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/delivery-offers/{offerId}": {
+      "get": {
+        "operationId": "DriverOperationsController_getOffer",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/delivery-offers/{offerId}/accept": {
+      "post": {
+        "operationId": "DriverOperationsController_acceptOffer",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/delivery-offers/{offerId}/reject": {
+      "post": {
+        "operationId": "DriverOperationsController_rejectOffer",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/active": {
+      "get": {
+        "operationId": "DriverOperationsController_activeDelivery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/history": {
+      "get": {
+        "operationId": "DriverOperationsController_deliveryHistory",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryReference}": {
+      "get": {
+        "operationId": "DriverOperationsController_getDelivery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/travelling-to-pickup": {
+      "post": {
+        "operationId": "DriverOperationsController_travellingToPickup",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/arrived-at-pickup": {
+      "post": {
+        "operationId": "DriverOperationsController_arrivedAtPickup",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/verify-pickup": {
+      "post": {
+        "operationId": "DriverOperationsController_verifyPickup",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/start-transit": {
+      "post": {
+        "operationId": "DriverOperationsController_startTransit",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/arrived-at-customer": {
+      "post": {
+        "operationId": "DriverOperationsController_arrivedAtCustomer",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/complete": {
+      "post": {
+        "operationId": "DriverOperationsController_completeDelivery",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/fail": {
+      "post": {
+        "operationId": "DriverOperationsController_failDelivery",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/start-return": {
+      "post": {
+        "operationId": "DriverOperationsController_startReturn",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/deliveries/{deliveryId}/complete-return": {
+      "post": {
+        "operationId": "DriverOperationsController_completeReturn",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/location-batches": {
+      "post": {
+        "operationId": "DriverOperationsController_recordLocations",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/cash": {
+      "get": {
+        "operationId": "DriverOperationsController_cash",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/cash/deposits": {
+      "post": {
+        "operationId": "DriverOperationsController_depositCash",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/cash/transactions": {
+      "get": {
+        "operationId": "DriverOperationsController_cashTransactions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/cash/disputes": {
+      "post": {
+        "operationId": "DriverOperationsController_disputeCash",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/earnings/summary": {
+      "get": {
+        "operationId": "DriverOperationsController_earnings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/earnings/transactions": {
+      "get": {
+        "operationId": "DriverOperationsController_earningTransactions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/payouts": {
+      "get": {
+        "operationId": "DriverOperationsController_payouts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      },
+      "post": {
+        "operationId": "DriverOperationsController_requestPayout",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/performance": {
+      "get": {
+        "operationId": "DriverOperationsController_performance",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/safety-incidents": {
+      "post": {
+        "operationId": "DriverOperationsController_safetyIncident",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/driver/emergencies": {
+      "post": {
+        "operationId": "DriverOperationsController_emergency",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Driver operations"
+        ]
+      }
+    },
+    "/api/v1/admin/overview": {
+      "get": {
+        "operationId": "AdminController_readOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read marketplace operational overview counts",
+        "tags": [
+          "Administration"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "HealthController_live",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Process liveness",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Dependency readiness",
+        "tags": [
+          "Health"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "NISTER Marketplace API",
+    "description": "Marketplace-only buyer, vendor, driver, administrator and payment API",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {}
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -313,10 +313,38 @@ function effectiveUsedBytes(apiUsed){
   return u;
 }
 function fetchWithTimeout(url, opts, ms){
-  var ctrl=new AbortController();
-  var t=setTimeout(function(){ try{ctrl.abort();}catch(_){ } }, ms||5000);
-  return fetch(url, Object.assign({signal: ctrl.signal, cache:'no-store', mode:'cors', credentials:'omit'}, opts||{}))
-    .finally(function(){ clearTimeout(t); });
+  var timeoutMs = ms || 5000;
+  return new Promise(function(resolve, reject){
+    var settled = false;
+    var ctrl = null;
+    var fetchOpts = Object.assign({cache:'no-store', mode:'cors', credentials:'omit'}, opts||{});
+    var t = setTimeout(function(){
+      try{ if (ctrl) ctrl.abort(); }catch(_){ }
+      finish(false, makeError('timeout', true));
+    }, timeoutMs);
+
+    function finish(ok, value){
+      if (settled) return;
+      settled = true;
+      clearTimeout(t);
+      if (ok) resolve(value);
+      else reject(value);
+    }
+
+    try{
+      if (typeof AbortController === 'function') {
+        ctrl = new AbortController();
+        fetchOpts.signal = ctrl.signal;
+      }
+      fetch(url, fetchOpts).then(function(r){
+        finish(true, r);
+      }, function(err){
+        finish(false, err);
+      });
+    } catch(e) {
+      finish(false, e);
+    }
+  });
 }
 
 function sameOriginApiBase(){
@@ -712,7 +740,14 @@ function fetchJson(url, ms){
 function loadJsonOnce(url, ms){
   if (!state.fetchSupported) return loadViaXHR(url, ms).then(validateStatusJson);
 
-  return fetchJson(url, ms)
+  var fetchAttempt;
+  try {
+    fetchAttempt = fetchJson(url, ms);
+  } catch (fetchErr) {
+    fetchAttempt = Promise.reject(fetchErr);
+  }
+
+  return fetchAttempt
     .catch(function(fetchErr){
       // Do not waste time retrying a deterministic endpoint error with XHR.
       if (fetchErr && fetchErr.retryable === false) throw fetchErr;

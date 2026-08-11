@@ -1,0 +1,1971 @@
+# NISTER CONVERSION-FIRST HOMEPAGE, LANDING PAGE, ONBOARDING & MESSAGING SPECIFICATION
+
+## Objective
+
+Use this specification to rewrite and redesign the public Nister acquisition experience currently being built.
+
+This is a **conversion, positioning and UX-copy layer** on top of the approved Nister Owner Platform architecture.
+
+It must NOT alter the approved production boundaries.
+
+In particular:
+
+* Do not rebuild Get Online.
+* Do not rebuild Manage Access.
+* Do not modify the captive portal.
+* Do not modify resident authentication.
+* Do not modify resident payment behavior.
+* Do not modify MikroTik/RADIUS behavior.
+* Do not add owner accounting hooks to `purchase.php`.
+* Do not change existing hotspot/API routes.
+* Keep the lead-first onboarding architecture.
+* Keep owner/admin pages private and non-indexed.
+
+The purpose of this work is to make more qualified hostel/property owners understand Nister quickly and submit a property for assessment.
+
+---
+
+# 1. CONVERSION PRINCIPLES
+
+Apply these principles throughout the public site.
+
+## One dominant conversion goal
+
+For property-owner marketing pages, the primary conversion is:
+
+**Request a Property Assessment**
+
+Do not give six equally prominent CTAs.
+
+Secondary actions may exist, but visual hierarchy should clearly favour the primary conversion.
+
+---
+
+## Above-the-fold clarity
+
+Within the first viewport, a hostel owner should understand:
+
+1. What Nister does.
+2. Why it matters.
+3. Who it is for.
+4. What to do next.
+
+The visitor should NOT have to scroll to discover what Nister actually sells.
+
+---
+
+## Benefit before technology
+
+Do not lead with:
+
+* RADIUS
+* MikroTik
+* captive portals
+* network management systems
+* payment APIs
+* routers
+* software architecture
+
+Lead with the outcome.
+
+The customer does not want RADIUS.
+
+The customer wants:
+
+> Residents connected without personally managing the whole system.
+
+---
+
+## Keep copy scannable
+
+Use:
+
+* short paragraphs
+* clear headings
+* bullets where useful
+* generous whitespace
+* bold emphasis sparingly
+* visual demonstrations
+
+Do not create walls of text.
+
+Every major section should communicate its purpose even if the visitor reads only:
+
+* heading
+* one supporting sentence
+* CTA
+
+---
+
+## Specific CTAs
+
+Never use generic buttons such as:
+
+* Submit
+* Next
+* Click Here
+* Learn More
+
+when a more descriptive action is possible.
+
+Prefer:
+
+* **Assess My Property**
+* **Request a Property Assessment**
+* **See How Nister Works**
+* **Explore My Options**
+* **Verify My Number**
+
+The CTA should tell the visitor what happens next.
+
+---
+
+# 2. WHO WE ARE SPEAKING TO
+
+Primary public-site persona:
+
+> A hostel/property owner or manager who wants residents to have reliable internet but does not want to become responsible for operating a complicated network.
+
+They may already have:
+
+* MTN fibre
+* Telecel fibre
+* another fibre provider
+* wireless broadband
+* another commercially appropriate connection
+
+Or they may have no adequate network yet.
+
+Their questions are practical:
+
+> Will this work in my hostel?
+
+> How much work will this create for me?
+
+> Will residents actually get good access?
+
+> Can I see what is happening?
+
+> Can residents pay themselves?
+
+> Can the service help pay for itself?
+
+> Do I have to buy the equipment?
+
+> What does Nister actually do?
+
+Write for that person.
+
+Not for a network engineer.
+
+---
+
+# 3. THE NISTER POSITIONING
+
+Nister should occupy this category:
+
+## **Managed Wi-Fi for hostels and student accommodation**
+
+The category explanation:
+
+> Nister helps properties set up and manage resident Wi-Fi, access, payments and reporting without requiring the property owner to operate all of the technology themselves.
+
+---
+
+# 4. THE CORE CUSTOMER TRANSFORMATION
+
+Before Nister:
+
+```text
+Internet
+
+↓
+Monthly bill
+Equipment
+Shared passwords
+Coverage problems
+Resident complaints
+Manual payments
+Network headaches
+```
+
+With Nister:
+
+```text
+Internet
+
+↓
+
+Managed resident service
+
+↓
+
+Access
+Payments
+Visibility
+Network management
+Optional cost recovery/revenue
+```
+
+The business idea is:
+
+# **Turn internet from another hostel expense into a managed property service.**
+
+Do not promise that every property will make a profit.
+
+The point is that Nister gives owners the ability to manage and extract more value from connectivity.
+
+---
+
+# 5. MASTER BRAND MESSAGE
+
+## Tagline
+
+# **Make internet work for your property.**
+
+This should become the primary short Nister brand line.
+
+It is intentionally broader than:
+
+> Make money from Wi-Fi.
+
+Because Nister can create value through:
+
+* resident experience
+* reduced management burden
+* cost recovery
+* revenue
+* accommodation differentiation
+
+---
+
+# 6. CATEGORY LINE
+
+Use underneath the tagline where context is needed:
+
+> **Managed Wi-Fi for hostels and student accommodation.**
+
+Combined:
+
+> **Make internet work for your property.**
+> Managed Wi-Fi for hostels and student accommodation.
+
+---
+
+# 7. CANONICAL ONE-SENTENCE VALUE PROPOSITION
+
+Use:
+
+> **Nister helps hostel owners manage resident Wi-Fi, access and payments — and gives them the option to recover costs, earn from resident internet or include Wi-Fi with accommodation.**
+
+This is the central commercial explanation.
+
+---
+
+# 8. HOMEPAGE PURPOSE
+
+The homepage must serve two audiences without giving them equal visual weight.
+
+## Primary audience
+
+Property owners.
+
+Primary action:
+
+**Request a Property Assessment**
+
+## Existing operational audience
+
+Residents already using Nister.
+
+Utility actions:
+
+**Get Online**
+
+**Manage Access**
+
+These operational actions must remain easy to find but should not compete visually with the B2B acquisition proposition.
+
+---
+
+# 9. HOMEPAGE NAVIGATION
+
+Recommended desktop navigation:
+
+```text
+NISTER
+
+For Hostels
+How It Works
+Plans
+Coverage
+Resources
+
+Get Online
+Manage Access
+
+[Request Nister]
+```
+
+`Request Nister` should visually function as the primary navigation CTA.
+
+Get Online and Manage Access should remain obvious utility actions.
+
+Do not rename their existing destinations.
+
+---
+
+# 10. HOMEPAGE HERO
+
+The hero should be extremely simple.
+
+Do not use a carousel.
+
+Do not place six feature cards above the fold.
+
+Do not use generic networking imagery.
+
+### Eyebrow
+
+**Managed Wi-Fi for Hostels**
+
+### H1
+
+# **Make your hostel internet easier to run — and more valuable to your property.**
+
+### Supporting copy
+
+> Nister helps you manage Wi-Fi, resident access and payments across your property. Give residents a better way to connect while choosing whether internet is included, pays for itself or becomes an additional revenue stream.
+
+### Primary CTA
+
+# **Assess My Property**
+
+Destination:
+
+`/request-installation`
+
+### Secondary CTA
+
+**See How Nister Works**
+
+Destination:
+
+`/how-it-works`
+
+### Reassurance microcopy
+
+> **No commitment. Tell us about your property and we'll recommend the setup that makes sense.**
+
+---
+
+# 11. EXISTING RESIDENT UTILITY
+
+Directly beneath or adjacent to the hero, but visually secondary:
+
+### Already using Nister?
+
+**Get Online**
+
+**Manage Access**
+
+Do not recreate these experiences.
+
+Point directly to the approved production routes.
+
+---
+
+# 12. HERO VISUAL
+
+Use a visual that demonstrates the product.
+
+Preferred order:
+
+### Best
+
+A polished representation of the actual Nister property-owner dashboard.
+
+Show something like:
+
+```text
+VOLTA VIEW HOSTEL
+
+Network
+Online
+
+Residents Online
+183
+
+Resident Purchases
+GH₵—
+
+Your Share
+GH₵—
+
+Access Points
+12 Online
+```
+
+Clearly label fabricated illustrative numbers as:
+
+**Dashboard Preview**
+
+until real property data exists.
+
+### Later
+
+Replace preview data with an anonymised screenshot from a real Nister property when permission is available.
+
+Do not use:
+
+* random server racks
+* generic smiling call-centre staff
+* fake hostel owners
+* meaningless Wi-Fi stock imagery
+
+The visual should demonstrate what the customer receives.
+
+---
+
+# 13. FIRST SECTION AFTER HERO
+
+Heading:
+
+# **Getting internet into the building is the easy part.**
+
+Supporting copy:
+
+> Fibre, routers and access points can give a hostel internet.
+>
+> Running that internet well for dozens or hundreds of residents is where things become difficult.
+
+Then present four short problems.
+
+### Coverage
+
+**Residents need Wi-Fi where they actually live.**
+
+A connection at reception is not enough when residents spend their time in rooms across multiple floors or buildings.
+
+### Access
+
+**One shared password quickly becomes difficult to control.**
+
+Nister gives residents structured access instead of relying on a password that can spread indefinitely.
+
+### Payments
+
+**Collecting internet money should not become another administrative job.**
+
+Where residents pay individually, Nister connects eligible purchases with the resident access experience.
+
+### Visibility
+
+**Owners should know what is happening.**
+
+Approved property owners get a clearer view of their property, transactions, network status and applicable revenue information.
+
+---
+
+# 14. BRIDGE TO THE SOLUTION
+
+Large statement:
+
+# **Nister manages what happens after the internet reaches your property.**
+
+Supporting:
+
+> You focus on running the hostel. Nister helps run the connectivity service around it.
+
+This should be one of the most memorable lines on the homepage.
+
+---
+
+# 15. ADDRESS THE BIGGEST COMPETITIVE OBJECTION EARLY
+
+Heading:
+
+# **Already have fibre? Good.**
+
+Copy:
+
+> You do not necessarily need another internet provider.
+>
+> If your property already has a suitable connection, Nister can work around it and manage the systems residents interact with — including access, payments and the wider Wi-Fi service.
+
+Supporting line:
+
+> **Your internet provider supplies the connection. Nister helps you run the service around it.**
+
+This section should appear relatively high on the homepage.
+
+Do not hide this explanation in an FAQ.
+
+---
+
+# 16. PRODUCT VALUE SECTION
+
+Heading:
+
+# **Everything around the connection, managed.**
+
+Use four highly scannable cards.
+
+### Wi-Fi built around the property
+
+> Plan connectivity around your buildings, floors, rooms and expected number of residents.
+
+### Resident access you can manage
+
+> Give residents structured access instead of depending on one shared Wi-Fi password.
+
+### Payments connected to access
+
+> Where residents pay separately, Nister helps turn purchases into a manageable resident internet service.
+
+### Information owners can actually use
+
+> See the property, network status, relevant transactions and your share where revenue sharing applies.
+
+---
+
+# 17. PRIMARY COMMERCIAL SECTION
+
+This should be visually prominent.
+
+Heading:
+
+# **Your internet does not have to be just another monthly bill.**
+
+Supporting copy:
+
+> Once internet is properly managed, a hostel has choices.
+>
+> You can let residents pay for access, include Wi-Fi with accommodation or, for selected properties, explore a Nister-funded deployment.
+
+Then display three options.
+
+---
+
+# 18. OPTION ONE — NISTER MANAGED
+
+Badge:
+
+**Most Flexible**
+
+Heading:
+
+# **You own the setup. Nister helps you run it.**
+
+Copy:
+
+> Purchase the network equipment and connectivity for your property, then let Nister manage the technology around resident access, payments and reporting.
+
+Benefit bullets:
+
+* Keep ownership of your network equipment.
+* Give residents structured access.
+* Choose resident-paid internet where appropriate.
+* Track eligible property revenue.
+* Avoid running the technical systems yourself.
+
+CTA:
+
+**Assess My Property**
+
+Do not advertise a fixed commission percentage.
+
+---
+
+# 19. OPTION TWO — NISTER INCLUDED
+
+Heading:
+
+# **Make Wi-Fi part of the accommodation.**
+
+Copy:
+
+> Prefer a simpler experience for residents? Include internet with accommodation and let Nister manage the Wi-Fi service for the property.
+
+Benefits:
+
+* No separate internet purchase required from residents.
+* Internet becomes a hostel amenity.
+* Professional network management.
+* Simpler resident experience.
+
+CTA:
+
+**Explore Included Wi-Fi**
+
+---
+
+# 20. OPTION THREE — NISTER FUNDED
+
+Heading:
+
+# **For selected properties, Nister can invest too.**
+
+Copy:
+
+> Properties with suitable demand and deployment economics may be considered for infrastructure funded by Nister under an agreed commercial arrangement.
+
+Benefits:
+
+* Reduced upfront infrastructure burden where approved.
+* Nister participates directly in the deployment.
+* Commercial terms agreed before installation.
+
+CTA:
+
+**Ask About Nister Funding**
+
+Microcopy:
+
+> **Nister-funded deployments are assessed individually and are not guaranteed.**
+
+Never call this:
+
+**Free Wi-Fi Installation**
+
+---
+
+# 21. MONETIZATION SECTION
+
+Heading:
+
+# **If residents pay for internet, your property can share in the value it creates.**
+
+Copy:
+
+> With a resident-paid Nister setup, eligible resident purchases can be attributed to the property and divided according to the commercial terms agreed with Nister.
+
+Then:
+
+```text
+Resident buys access
+        ↓
+Payment confirmed
+        ↓
+Internet access applied
+        ↓
+Purchase attributed to property
+        ↓
+Property share recorded
+        ↓
+Owner sees reporting
+```
+
+Supporting statement:
+
+> **Instead of internet being only an operating expense, the property has a structured way to recover costs or generate additional revenue.**
+
+Do not use:
+
+* passive income
+* guaranteed revenue
+* guaranteed profit
+* make money while you sleep
+
+---
+
+# 22. IMPORTANT TRUST STATEMENT
+
+Immediately after monetization:
+
+> **Revenue is optional, not the entire Nister model.**
+>
+> Properties that prefer to include internet with accommodation can do that too.
+
+This prevents Nister from sounding like a scheme for charging students.
+
+---
+
+# 23. OWNER DASHBOARD SECTION
+
+Heading:
+
+# **See what matters without becoming the network engineer.**
+
+Use an actual or realistic dashboard preview.
+
+Cards:
+
+### Residents Online
+
+> See current connected-user information where available.
+
+### Network Status
+
+> Get a simple view of whether your property network is operating normally.
+
+### Resident Purchases
+
+> See purchases attributed to the property.
+
+### Your Share
+
+> See the property amount calculated under the agreed commercial terms.
+
+### Request Progress
+
+> Follow your property from assessment through installation and activation.
+
+CTA:
+
+**See How Nister Works**
+
+---
+
+# 24. HOW IT WORKS
+
+Heading:
+
+# **From hostel to connected residents.**
+
+Do not create ten steps.
+
+Use four.
+
+### 1. Tell us about the property
+
+> Give us the location, approximate rooms and residents, and a little information about the internet you have today.
+
+### 2. We assess what makes sense
+
+> Nister reviews the property, expected demand and existing connectivity before recommending an arrangement.
+
+### 3. We set up the service
+
+> Once everything is agreed, the network and Nister services are configured for the property.
+
+### 4. Residents connect. You get visibility.
+
+> Residents use Nister while approved owners can see relevant information from the property dashboard.
+
+CTA:
+
+# **Assess My Property**
+
+---
+
+# 25. DIY OBJECTION
+
+Heading:
+
+# **Could you install some routers yourself? Absolutely.**
+
+Body:
+
+> Nister is not built on pretending that Wi-Fi equipment is difficult to buy.
+>
+> The value comes after installation: managing coverage, resident access, packages, payments, reporting and the day-to-day service around the connection.
+>
+> Nister is for hostel owners who would rather run their property than run all of that themselves.
+
+This honesty should build trust.
+
+Do not disparage DIY solutions.
+
+---
+
+# 26. TRUST / SOCIAL PROOF SECTION
+
+Social proof is important for conversion, but Nister must not fabricate it.
+
+Never invent:
+
+* testimonials
+* hostel names
+* user counts
+* revenue numbers
+* uptime percentages
+* installations
+* logos
+
+Until sufficient genuine social proof exists, use **product proof** instead.
+
+Examples:
+
+### Built on a working Nister access platform
+
+Explain that the owner platform builds around Nister's existing resident connectivity system.
+
+### Real product screenshots
+
+Show Get Online, Manage Access and the owner dashboard where appropriate.
+
+### Real coverage
+
+Show only places actually served.
+
+### Transparent process
+
+Explain exactly how assessment, deployment and owner approval work.
+
+When genuine customers become available, introduce:
+
+```text
+Property name
+Location
+Number of residents served
+Owner quote
+Deployment type
+Measured result
+```
+
+Only with permission and real data.
+
+---
+
+# 27. FUTURE CASE STUDY FORMAT
+
+When Nister has a successful hostel deployment, create a case study around:
+
+### Property
+
+What type of property was it?
+
+### Problem
+
+What was wrong before Nister?
+
+### Deployment
+
+What did Nister implement?
+
+### Result
+
+Use actual measured outcomes.
+
+Examples might eventually include:
+
+* residents served
+* coverage improvement
+* support incidents
+* purchases
+* cost recovery
+* owner feedback
+
+Do not invent results now.
+
+---
+
+# 28. FINAL HOMEPAGE CTA
+
+The final section should return to the primary benefit.
+
+Heading:
+
+# **What could better-managed internet do for your property?**
+
+Copy:
+
+> Tell us where your hostel is, roughly how many rooms and residents it has, and what your internet situation looks like today.
+>
+> We'll use that information to understand what kind of Nister setup could make sense.
+
+Primary CTA:
+
+# **Request My Property Assessment**
+
+Supporting microcopy:
+
+> **No account required to send your property details. No commitment to install.**
+
+Secondary text link:
+
+**See How Nister Works**
+
+---
+
+# 29. HOMEPAGE CONTENT ORDER
+
+Use approximately this order:
+
+```text
+1. Hero
+2. Existing-user Get Online / Manage Access utility
+3. Core problem
+4. What Nister manages
+5. Already-have-fibre objection
+6. Product benefits
+7. Commercial options
+8. Monetization / cost recovery
+9. Dashboard proof
+10. How it works
+11. DIY objection
+12. Genuine proof / product proof
+13. FAQ
+14. Final CTA
+```
+
+Do not randomly intermix sections.
+
+This is a persuasion sequence:
+
+```text
+Understand
+↓
+Recognise problem
+↓
+Understand solution
+↓
+See benefit
+↓
+Handle objections
+↓
+Trust product
+↓
+Act
+```
+
+---
+
+# 30. HOMEPAGE VERSUS LANDING PAGES
+
+This distinction is essential.
+
+## Homepage
+
+The homepage serves:
+
+* owners discovering Nister
+* returning visitors
+* residents looking for Get Online
+* residents looking for Manage Access
+* search visitors
+* company information
+
+Therefore retain a restrained navigation.
+
+## Dedicated campaign landing page
+
+A page created for:
+
+* Google Ads
+* LinkedIn campaign
+* hostel-owner outreach
+* specific email campaign
+
+should have ONE conversion objective.
+
+Example:
+
+```text
+/lp/managed-hostel-wifi
+```
+
+or another campaign-specific route following existing routing conventions.
+
+On such a page:
+
+* remove the full marketing navigation
+* keep Nister logo
+* optionally retain a small existing-user utility link
+* focus the entire page on the campaign promise
+* use one primary CTA
+* repeat that same CTA through the page
+
+Do not send highly targeted ad traffic to a generic homepage when a dedicated landing page can provide stronger message match.
+
+---
+
+# 31. MESSAGE MATCH
+
+Campaign promise and landing-page promise must match.
+
+Example advertisement:
+
+> **Stop managing hostel Wi-Fi manually.**
+
+Landing page H1:
+
+# **Stop managing hostel Wi-Fi manually.**
+
+Supporting:
+
+> Nister helps manage resident access, payments and the network service around the connection you already have.
+
+Do NOT send that advertisement to a page headed:
+
+> Welcome to Nister.
+
+---
+
+# 32. SEARCH-INTENT LANDING PAGE
+
+Example search:
+
+> hostel Wi-Fi management Ghana
+
+Appropriate H1:
+
+# **Managed Wi-Fi for Hostels in Ghana**
+
+Supporting:
+
+> Nister helps hostel owners manage resident internet access, payments and property connectivity without having to operate the entire network themselves.
+
+CTA:
+
+**Assess My Property**
+
+Only use location claims Nister can genuinely support.
+
+---
+
+# 33. REQUEST-INSTALLATION PAGE
+
+This page has one goal:
+
+# **Capture a qualified property lead.**
+
+Remove unnecessary navigation distractions.
+
+Keep:
+
+* Nister logo
+* small existing-user utility where necessary
+* form
+* reassurance
+* privacy/legal links
+
+Primary headline:
+
+# **Tell us about your hostel. We'll handle the technical part.**
+
+Supporting:
+
+> We need a few practical details about the property to understand where to start. Estimates are fine.
+
+Trust microcopy:
+
+> **No commitment to install.**
+
+---
+
+# 34. IMPORTANT FORM CHANGE
+
+Do NOT visually present every database field in one giant form.
+
+The database may collect substantial qualification data.
+
+The visitor should not experience it as a database.
+
+Use progressive multi-step onboarding.
+
+Keep each screen short.
+
+---
+
+# 35. STEP 1 — CAPTURE THE LEAD
+
+This stage should collect only the information required to create a useful lead.
+
+Heading:
+
+# **Where should we start?**
+
+Fields:
+
+### Your name
+
+### Best phone number
+
+### Hostel/property name
+
+### Region
+
+### Town
+
+### Approximate number of rooms
+
+### Approximate number of residents
+
+Microcopy:
+
+> **Estimates are completely fine.**
+
+Primary CTA:
+
+# **Check My Property**
+
+This is better than:
+
+**Continue**
+
+because it reinforces what the visitor receives.
+
+The architecture must preserve the captured lead before requiring OTP/account creation.
+
+---
+
+# 36. STEP 2 — UNDERSTAND THE CURRENT SITUATION
+
+Heading:
+
+# **What does internet look like there today?**
+
+Ask:
+
+### Does the property currently provide Wi-Fi?
+
+* Yes
+* Partly
+* No
+
+If relevant:
+
+### Current provider
+
+Optional.
+
+### Current monthly internet cost
+
+Optional.
+
+### Current speed
+
+Optional.
+
+Microcopy:
+
+> **Don't know the technical details? Skip them.**
+
+---
+
+# 37. STEP 3 — IDENTIFY THE PAIN
+
+Heading:
+
+# **What would you most like to improve?**
+
+Subheading:
+
+> Select everything that sounds familiar.
+
+Options:
+
+* Wi-Fi does not reach every room.
+* Internet feels too slow.
+* Connection goes down too often.
+* Residents complain about Wi-Fi.
+* Managing access is difficult.
+* Wi-Fi passwords get shared.
+* Collecting internet payments is difficult.
+* We need Wi-Fi installed from scratch.
+* We want to recover our internet costs.
+* We want the service to generate revenue.
+* We want Wi-Fi included with accommodation.
+* Something else.
+
+These answers should help Nister qualify and personalise follow-up.
+
+---
+
+# 38. STEP 4 — COMMERCIAL PREFERENCE
+
+Heading:
+
+# **How would you prefer to set this up?**
+
+Do not expose internal enum terminology.
+
+### We'll buy the equipment
+
+> We want to own the network equipment and have Nister help set up and manage the service.
+
+### We'd like Nister to consider funding it
+
+> We'd like our property to be assessed for a Nister-funded deployment.
+
+### We want Wi-Fi included with accommodation
+
+> We'd prefer the property to pay for the service instead of residents purchasing access separately.
+
+### Recommend what makes sense
+
+> We're not sure yet. Review our property and guide us.
+
+Make:
+
+# **Recommend what makes sense**
+
+a normal, reassuring option.
+
+Do not force the customer to understand Nister's commercial architecture.
+
+---
+
+# 39. FORM SUBMISSION
+
+Final CTA:
+
+# **Request My Property Assessment**
+
+Do not use:
+
+**Submit**
+
+Confirmation:
+
+# **We've got your property details.**
+
+Supporting:
+
+> Next, verify your phone number so you can create your Nister owner account and track the request.
+
+CTA:
+
+**Verify My Number**
+
+Reassurance:
+
+> **Your property details have already been saved.**
+
+---
+
+# 40. OTP
+
+Heading:
+
+# **Let's confirm it's you.**
+
+Copy:
+
+> We sent a verification code to **[masked number]**.
+
+Field:
+
+**Verification code**
+
+CTA:
+
+**Verify My Number**
+
+Invalid:
+
+> **That code doesn't look right. Check it and try again.**
+
+Expired:
+
+> **That code has expired. Request a new one to continue.**
+
+Avoid exposing backend language.
+
+---
+
+# 41. OWNER ACCOUNT CREATION
+
+Heading:
+
+# **Create your owner account.**
+
+Supporting:
+
+> Use your account to follow this property request and access your dashboard once Nister approves and activates your property.
+
+CTA:
+
+# **Create My Account**
+
+---
+
+# 42. PENDING DASHBOARD
+
+Heading:
+
+# **Your request is with Nister.**
+
+Supporting:
+
+> We'll review the property details and contact you if we need anything else. You can follow the progress here.
+
+Avoid making the owner feel rejected because they have not yet been approved.
+
+Possible progress:
+
+```text
+Property submitted         ✓
+Nister review              ●
+Property assessment
+Proposal
+Deployment
+```
+
+Translate actual CRM states into customer-friendly language.
+
+---
+
+# 43. STATUS LANGUAGE
+
+Use:
+
+```text
+submitted
+→ Request received
+
+contacted
+→ We're in touch
+
+qualified
+→ Property assessment
+
+site_survey_required
+→ Site visit needed
+
+site_survey_scheduled
+→ Site visit scheduled
+
+site_survey_completed
+→ Assessment complete
+
+quote_prepared
+→ Preparing your proposal
+
+quote_sent
+→ Proposal sent
+
+negotiating
+→ Finalising the arrangement
+
+approved
+→ Approved
+
+agreement_signed
+→ Agreement complete
+
+equipment_pending
+→ Preparing equipment
+
+installation_scheduled
+→ Installation scheduled
+
+installing
+→ Installation underway
+
+testing
+→ Final testing
+
+active
+→ Nister is active
+
+rejected
+→ Not a fit right now
+
+lost
+→ Request closed
+```
+
+Do not show database terminology directly to customers.
+
+---
+
+# 44. OWNER DASHBOARD
+
+Approved owner headline:
+
+# **Your property at a glance.**
+
+Supporting:
+
+> See the information that matters without having to manage the technical systems underneath it.
+
+Cards:
+
+### Residents Online
+
+### Network Status
+
+### Resident Purchases
+
+### Your Share
+
+### Recent Transactions
+
+### Property Status
+
+Do not label cards:
+
+* RADIUS sessions
+* NAS connections
+* MikroTik
+* RadAcct
+
+---
+
+# 45. REVENUE LANGUAGE
+
+Be financially precise.
+
+Use:
+
+### Gross Resident Purchases
+
+### Your Share
+
+### Nister Share
+
+### Transactions
+
+### Reporting Period
+
+Do NOT call:
+
+**Your Share**
+
+“Profit.”
+
+Nister does not know all operating expenses incurred by the property.
+
+---
+
+# 46. SOCIAL PROOF RULE
+
+Add social proof as soon as genuine evidence is available.
+
+Potential future homepage component:
+
+> **Trusted by hostel operators serving X residents**
+
+ONLY when X is genuinely measurable.
+
+Potential testimonial:
+
+> “[Real owner quote]”
+
+Name
+Property
+Location
+
+ONLY when genuine and permission has been obtained.
+
+Until then, hide the component.
+
+Do not launch empty testimonial boxes or fabricated quotes.
+
+---
+
+# 47. VISUAL DESIGN RULE
+
+Every major image should help answer one of these questions:
+
+> What is Nister?
+
+> What will I receive?
+
+> How does this work?
+
+> Can I trust this?
+
+Prioritize:
+
+1. Nister dashboard
+2. Real Nister installations
+3. Real hostel/property environment
+4. Network diagram simplified for owners
+5. Real Nister team working on deployment
+
+Avoid decorative imagery that communicates nothing.
+
+---
+
+# 48. COPY VOICE
+
+Nister should sound like a technically capable person explaining things clearly to a hostel owner.
+
+Write:
+
+> **Already have fibre? Good.**
+
+Not:
+
+> Nister seamlessly interoperates with heterogeneous upstream service providers.
+
+Write:
+
+> **Tell us about the hostel. We'll handle the technical part.**
+
+Not:
+
+> Kindly provide the required topology and expected endpoint density.
+
+Write:
+
+> **You can install routers yourself. Nister is for owners who don't want to manage everything that comes after.**
+
+Not:
+
+> Our proprietary solution provides superior technological efficiency.
+
+---
+
+# 49. COPYWRITING FORMULA
+
+Most conversion sections should follow:
+
+```text
+Problem
+↓
+Consequence
+↓
+Nister solution
+↓
+Customer benefit
+↓
+CTA
+```
+
+Example:
+
+### Shared passwords spread quickly.
+
+When dozens or hundreds of residents use the same credentials, controlling access becomes difficult.
+
+**Nister gives residents structured access instead.**
+
+[Assess My Property]
+
+---
+
+# 50. HEADLINE RULE
+
+Headlines should describe:
+
+* a benefit
+* a problem being solved
+* a specific outcome
+
+Prefer:
+
+# **Make your hostel internet easier to run.**
+
+over:
+
+# **Powering the Future of Connectivity**
+
+Prefer:
+
+# **Already have fibre? Nister can work with it.**
+
+over:
+
+# **Flexible Infrastructure**
+
+Prefer:
+
+# **Let residents pay without making payments your job.**
+
+over:
+
+# **Integrated Billing**
+
+---
+
+# 51. SEO AND CONVERSION MUST SUPPORT EACH OTHER
+
+Do not stuff keywords.
+
+Write for the actual searcher's question.
+
+Target concepts naturally, such as:
+
+* hostel Wi-Fi
+* managed Wi-Fi for hostels
+* student accommodation Wi-Fi
+* hostel internet management
+* Wi-Fi installation for hostels
+* hostel internet payment systems
+* managed student residence internet
+
+Page titles and H1s should reflect actual page intent.
+
+---
+
+# 52. AEO ANSWER BLOCKS
+
+Important public pages should contain short direct answers to likely owner questions.
+
+Example:
+
+## Can I use Nister if my hostel already has fibre?
+
+> **Yes, potentially.** Nister does not necessarily need to replace a suitable existing internet connection. We can manage the resident Wi-Fi, access and payment layer around it.
+
+Then expand.
+
+---
+
+## Can my hostel earn from Wi-Fi?
+
+> **Yes, where the agreed arrangement allows residents to purchase access individually.** Eligible purchases can be attributed to the property and divided according to its commercial terms with Nister.
+
+Then expand.
+
+---
+
+## Does Nister have to own the equipment?
+
+> **No.** In the standard owner-funded model, the property can own the equipment while Nister manages the service around it. Selected properties may also be considered for Nister-funded deployments.
+
+---
+
+## Can Wi-Fi simply be included in hostel fees?
+
+> **Yes.** A property can choose an arrangement where internet is provided as an accommodation amenity rather than purchased separately by residents.
+
+---
+
+# 53. FAQ QUESTIONS
+
+Include genuinely useful questions such as:
+
+* What does Nister actually do?
+* Can Nister work with my existing fibre?
+* Do I have to replace my internet provider?
+* Who buys the Wi-Fi equipment?
+* Can residents pay for internet themselves?
+* Can my hostel earn from the service?
+* Can internet be included in hostel fees?
+* How does Nister-funded installation work?
+* What information do I need to request Nister?
+* What happens after I submit my property?
+* Can I see what my property is earning?
+* Does Nister give owners access to the routers?
+
+Answer concisely first.
+
+Expand only where needed.
+
+---
+
+# 54. DEDICATED CAMPAIGN PAGE TEMPLATE
+
+Every campaign landing page should approximately follow:
+
+```text
+CAMPAIGN-MATCHED HEADLINE
+
+Short benefit explanation
+
+Primary CTA
+
+Proof / product visual
+
+Problem
+
+Nister solution
+
+3–4 benefits
+
+Commercial benefit
+
+Objection handling
+
+Proof
+
+Short FAQ
+
+CTA
+
+Short lead form
+```
+
+Remove unnecessary navigation.
+
+One page = one primary conversion.
+
+---
+
+# 55. ANALYTICS
+
+Track conversion stages separately.
+
+At minimum:
+
+```text
+property_assessment_cta_click
+
+property_form_started
+
+property_lead_created
+
+property_form_details_completed
+
+owner_otp_started
+
+owner_otp_verified
+
+owner_account_created
+
+property_request_created
+```
+
+The most important distinction is between:
+
+**lead captured**
+
+and:
+
+**owner account created**
+
+because abandoned OTP/account creation should not make the marketing team think the acquisition produced nothing.
+
+---
+
+# 56. A/B TESTING
+
+Do not assume the first copy is permanently correct.
+
+Prepare components so Nister can test:
+
+### Hero
+
+Version A:
+
+> Make your hostel internet easier to run — and more valuable to your property.
+
+Version B:
+
+> Stop managing hostel Wi-Fi the hard way.
+
+Version C:
+
+> Better internet for residents. Less work for you.
+
+### CTA
+
+Test:
+
+**Assess My Property**
+
+against:
+
+**Request My Property Assessment**
+
+### Form
+
+Test:
+
+short qualification-first form
+
+against:
+
+slightly richer initial form
+
+### Commercial message
+
+Test emphasis on:
+
+**better resident Wi-Fi**
+
+against:
+
+**cost recovery**
+
+against:
+
+**managed service**
+
+Do not change multiple variables simultaneously when trying to learn what caused a conversion difference.
+
+---
+
+# 57. DO NOT USE FALSE URGENCY
+
+Do not implement:
+
+* Only 3 installations left!
+* Applications close tonight!
+* Limited slots!
+* Act now!
+
+unless that statement is genuinely true.
+
+Nister's sales cycle requires trust more than manufactured urgency.
+
+Appropriate urgency can come naturally from:
+
+* actual semester opening dates
+* genuinely limited installation capacity
+* actual funding windows
+
+only when verifiable.
+
+---
+
+# 58. NO RANDOM POPUPS
+
+Do not interrupt a property owner five seconds after arriving with:
+
+> Request Nister Now!
+
+Let the page make the case.
+
+If exit-intent or similar conversion tooling is introduced later, test it rather than assuming it improves conversion.
+
+---
+
+# 59. MOBILE CONVERSION
+
+On mobile:
+
+Keep a persistent but unobtrusive primary action where appropriate:
+
+# **Assess My Property**
+
+Do not cover important content.
+
+Make phone number, room count and resident count fields use appropriate mobile input modes.
+
+Keep each onboarding screen short.
+
+Make CTA buttons easily tappable.
+
+---
+
+# 60. FINAL NISTER MESSAGING FRAMEWORK
+
+## Brand idea
+
+**Turn internet into a managed property service.**
+
+## Tagline
+
+# **Make internet work for your property.**
+
+## Category
+
+**Managed Wi-Fi for hostels and student accommodation.**
+
+## Functional promise
+
+> Nister helps manage Wi-Fi, resident access, payments and reporting.
+
+## Resident benefit
+
+> A simpler, more structured way to get connected.
+
+## Owner benefit
+
+> Better visibility without personally operating all the network technology.
+
+## Commercial benefit
+
+> Recover costs, earn from resident access or include Wi-Fi as an accommodation amenity.
+
+## Emotional benefit
+
+> Stop making hostel internet another problem you personally have to manage.
+
+---
+
+# 61. TEN-SECOND NISTER EXPLANATION
+
+> **Nister helps hostel owners manage Wi-Fi for residents — including access, payments and reporting — while giving the property the option to recover costs or earn from the service.**
+
+---
+
+# 62. THIRTY-SECOND NISTER EXPLANATION
+
+> **Getting an internet connection is only the first step. A hostel still has to make Wi-Fi work across the property, manage who gets access, handle payments and deal with the service day to day. Nister manages that layer. If residents pay separately, the hostel can also recover costs or earn a share under its agreement with Nister.**
+
+---
+
+# 63. SALES RESPONSE: “WE ALREADY HAVE MTN FIBRE”
+
+> **That's a good starting point. Nister doesn't necessarily need to replace your provider. We help manage what happens after the connection reaches the property — resident Wi-Fi, access, payments and the systems around running the service.**
+
+---
+
+# 64. SALES RESPONSE: “WHY CAN'T WE JUST INSTALL ROUTERS?”
+
+> **You can. Nister is useful if you don't want the job to stop at installing the routers. We help manage resident access, payments, packages, reporting and the ongoing service around the network.**
+
+---
+
+# 65. SALES RESPONSE: “CAN WE MAKE MONEY FROM IT?”
+
+> **If you choose a resident-paid arrangement, residents can purchase their internet access through Nister and your property's share can be tracked under the commercial terms we agree with you. Some properties may use that to recover connectivity costs, while others may generate additional revenue.**
+
+---
+
+# 66. SALES RESPONSE: “WHAT PERCENTAGE DOES NISTER TAKE?”
+
+> **There isn't one percentage that has to apply to every property. The commercial arrangement depends on how the deployment is funded and how the internet service is paid for. We agree those terms before deployment.**
+
+Never publicly default this answer to 10%.
+
+---
+
+# 67. CONVERSION TEST
+
+A property owner should be able to look at the first screen of Nister.org for approximately a few seconds and understand:
+
+> **This is for hostels.**
+
+> **They manage the Wi-Fi side for me.**
+
+> **My residents benefit.**
+
+> **My property can potentially recover costs or earn from it.**
+
+> **I can submit my hostel for assessment.**
+
+If any of those ideas require reading several screens of copy, simplify the page.
+
+---
+
+# 68. FINAL HOMEPAGE NARRATIVE
+
+The homepage should feel like one conversation:
+
+> **Running hostel Wi-Fi is harder than buying an internet connection.**
+>
+> **Nister manages the difficult part.**
+>
+> **Residents get connected.**
+>
+> **You see what's happening.**
+>
+> **And if you want, the service can help recover its own cost or generate revenue.**
+>
+> **Already have fibre? Good.**
+>
+> **Want to buy your own equipment? Fine.**
+>
+> **Want Wi-Fi included with accommodation? We can structure it that way.**
+>
+> **Have a particularly attractive property and want Nister to invest? Apply.**
+>
+> **Tell us about the hostel and we'll determine what makes sense.**
+
+Then:
+
+# **Assess My Property**
+
+That is the conversion story the site should tell.
+
+---
+
+# 69. FINAL IMPLEMENTATION CONSTRAINT
+
+This specification changes **copy, presentation, information hierarchy and conversion UX**.
+
+It does not authorize changes to the existing operational Nister network platform.
+
+Where conversion requirements conflict with production compatibility:
+
+**preserve production compatibility.**
+
+Build conversion improvements in:
+
+* `nister.org`
+* new public marketing routes
+* the property-lead flow
+* owner-facing presentation
+
+rather than modifying Get Online, Manage Access, resident purchasing, captive pages, RADIUS or router infrastructure.
+
+The finished product should make Nister look simpler to the customer precisely because the complexity remains behind the scenes.

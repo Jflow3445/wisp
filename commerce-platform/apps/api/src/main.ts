@@ -4,8 +4,8 @@ import helmet from "@fastify/helmet";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
-import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module.js";
+import { setupMarketplaceOpenApi } from "./openapi.js";
 
 async function bootstrap(): Promise<void> {
   const adapter = new FastifyAdapter({ logger: true, trustProxy: true });
@@ -22,13 +22,7 @@ async function bootstrap(): Promise<void> {
     ],
   });
 
-  const openApi = new DocumentBuilder()
-    .setTitle("NISTER Marketplace API")
-    .setDescription("Marketplace-only buyer, vendor, administrator and payment API")
-    .setVersion("1.0")
-    .addBearerAuth({ type: "http", scheme: "bearer", bearerFormat: "JWT" })
-    .build();
-  SwaggerModule.setup("docs", app, SwaggerModule.createDocument(app, openApi));
+  setupMarketplaceOpenApi(app);
 
   app.enableShutdownHooks();
   await app.listen(config.getOrThrow<number>("PORT"), "0.0.0.0");
