@@ -37,7 +37,11 @@ The first release includes:
 - Revenue and transactions are included immediately, but read-only.
 - Revenue uses admin-controlled financial terms.
 - No owner-triggered payouts until reporting is proven.
-- `/request-installation` starts the service request flow publicly, then hands off by ordinary browser navigation to `pay.nister.org/owner/register.php`. OTP, owner account creation, login, and service request creation happen entirely on `pay.nister.org` to avoid cross-origin auth/CORS complexity in the public Next app.
+- `/request-installation` captures a property lead before OTP, password, or account creation so abandoned onboarding still produces an operations lead.
+- Lead capture is handled by ordinary browser navigation to `pay.nister.org/owner/lead.php`; verified account creation converts `property_leads` into `property_service_requests` and `property_owners`.
+- Release 1 owner revenue allocation must not modify or hook `pay-portal/purchase.php`. Allocation runs from a separate reconciliation worker/cron and from explicit admin retry.
+- Rejected service requests and properties are allowed; rejected owner identity is not. Owner accounts use `pending`, `approved`, and `suspended` only.
+- Release 1 includes SEO/AEO public content routes for resources, FAQ, coverage, about, sitemap, robots, canonical metadata, structured data, OpenGraph, and Search Console readiness. Authenticated owner/admin surfaces must be `noindex,nofollow`.
 
 ## Existing Production Dependency Map
 
@@ -287,13 +291,22 @@ Admin:
 
 Public Next routes on `nister.org`:
 
+- `/`
 - `/for-hostels`
 - `/how-it-works`
 - `/plans`
 - `/request-installation`
+- `/resources`
+- `/resources/[slug]`
+- `/faq`
+- `/coverage`
+- `/about`
+- `/sitemap.xml`
+- `/robots.txt`
 
 Owner PHP routes on `pay.nister.org`:
 
+- `/owner/lead.php`
 - `/owner/register.php`
 - `/owner/login.php`
 - `/owner/logout.php`
@@ -324,26 +337,27 @@ Fields:
 - `msisdn VARCHAR(16) NOT NULL UNIQUE`
 - `display_name VARCHAR(120) NOT NULL`
 - `password_hash VARCHAR(255) NOT NULL`
-- `status ENUM('pending','approved','rejected','suspended') NOT NULL DEFAULT 'pending'`
+- `status ENUM('pending','approved','suspended') NOT NULL DEFAULT 'pending'`
 - `created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`
 - `updated_at DATETIME NULL`
 - `approved_at DATETIME NULL`
 - `approved_by VARCHAR(120) NULL`
-- `rejected_at DATETIME NULL`
-- `rejected_by VARCHAR(120) NULL`
+- `suspended_at DATETIME NULL`
+- `suspended_by VARCHAR(120) NULL`
+- `suspended_reason TEXT NULL`
 - `admin_notes TEXT NULL`
 
 ### `property_owner_status_events`
 
-Immutable audit trail for owner approval, rejection, suspension, and reactivation.
+Immutable audit trail for owner approval, suspension, and reactivation.
 
 Fields:
 
 - `id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT`
 - `owner_id BIGINT UNSIGNED NOT NULL`
-- `action ENUM('approve','reject','suspend','reactivate') NOT NULL`
-- `previous_status ENUM('pending','approved','rejected','suspended') NOT NULL`
-- `new_status ENUM('pending','approved','rejected','suspended') NOT NULL`
+- `action ENUM('approve','suspend','reactivate') NOT NULL`
+- `previous_status ENUM('pending','approved','suspended') NOT NULL`
+- `new_status ENUM('pending','approved','suspended') NOT NULL`
 - `note TEXT NULL`
 - `created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`
 - `created_by VARCHAR(120) NOT NULL`
@@ -352,7 +366,7 @@ Fields:
 Rules:
 
 - Insert one row for every successful admin owner status change.
-- Do not insert a status event for a rejected invalid transition that does not mutate the owner.
+- Do not insert a status event for an invalid transition that does not mutate the owner.
 - Owner rows keep convenient current-state fields; this table is the audit source.
 
 ### `owner_otp_challenges`
@@ -372,23 +386,112 @@ Fields:
 - `ip VARCHAR(64) NULL`
 - `user_agent VARCHAR(255) NULL`
 
+### `property_leads`
+
+Stores public property interest before OTP, password, or account creation. This table is the first write in the request-installation funnel.
+
+Fields:
+
+- `id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT`
+- `public_ref VARCHAR(32) NOT NULL UNIQUE`
+- `contact_name VARCHAR(120) NOT NULL`
+- `contact_phone VARCHAR(16) NOT NULL`
+- `contact_whatsapp VARCHAR(16) NULL`
+- `contact_email VARCHAR(160) NULL`
+- `property_name VARCHAR(160) NOT NULL`
+- `country VARCHAR(80) NOT NULL`
+- `region VARCHAR(120) NOT NULL`
+- `town VARCHAR(120) NOT NULL`
+- `address TEXT NULL`
+- `digital_address VARCHAR(80) NULL`
+- `google_maps_url VARCHAR(500) NULL`
+- `nearby_campus VARCHAR(160) NULL`
+- `number_of_buildings INT NULL`
+- `number_of_floors INT NULL`
+- `number_of_rooms INT NULL`
+- `estimated_residents INT NULL`
+- `current_occupancy INT NULL`
+- `has_wifi TINYINT(1) NOT NULL DEFAULT 0`
+- `current_provider VARCHAR(160) NULL`
+- `connection_type VARCHAR(120) NULL`
+- `current_monthly_cost_cents INT NULL`
+- `current_monthly_cost_currency CHAR(3) NOT NULL DEFAULT 'GHS'`
+- `current_speed VARCHAR(120) NULL`
+- `poor_coverage TINYINT(1) NOT NULL DEFAULT 0`
+- `slow_internet TINYINT(1) NOT NULL DEFAULT 0`
+- `downtime TINYINT(1) NOT NULL DEFAULT 0`
+- `payment_problem TINYINT(1) NOT NULL DEFAULT 0`
+- `user_management_problem TINYINT(1) NOT NULL DEFAULT 0`
+- `shared_password_problem TINYINT(1) NOT NULL DEFAULT 0`
+- `starting_from_scratch TINYINT(1) NOT NULL DEFAULT 0`
+- `deployment_preference ENUM('owner_funded','request_nister_funding','property_paid_wifi','recommend_for_me') NOT NULL DEFAULT 'recommend_for_me'`
+- `status ENUM('new','otp_pending','verified','converted','closed','spam') NOT NULL DEFAULT 'new'`
+- `source VARCHAR(80) NOT NULL DEFAULT 'request-installation'`
+- `utm_source VARCHAR(120) NULL`
+- `utm_medium VARCHAR(120) NULL`
+- `utm_campaign VARCHAR(120) NULL`
+- `referrer VARCHAR(500) NULL`
+- `ip VARCHAR(64) NULL`
+- `user_agent VARCHAR(255) NULL`
+- `created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`
+- `updated_at DATETIME NULL`
+- `verified_at DATETIME NULL`
+- `converted_at DATETIME NULL`
+- `converted_owner_id BIGINT UNSIGNED NULL`
+- `converted_service_request_id BIGINT UNSIGNED NULL`
+- `admin_notes TEXT NULL`
+
+Rules:
+
+- Lead creation must not require an existing owner account, password, OTP verification, or session.
+- A lead is never deleted during failed or abandoned onboarding.
+- Successful OTP/password onboarding updates the lead to `converted` and links it to the owner and service request in the same transaction that creates the service request.
+- Public pages must not expose lead lists or raw lead data.
+
 ### `property_service_requests`
 
-Stores service requests from public and owner flows.
+Stores operational CRM requests from converted leads and authenticated owner flows.
 
 Fields:
 
 - `id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT`
 - `owner_id BIGINT UNSIGNED NOT NULL`
+- `lead_id BIGINT UNSIGNED NULL`
 - `property_name VARCHAR(160) NOT NULL`
-- `area VARCHAR(160) NOT NULL`
+- `country VARCHAR(80) NOT NULL`
+- `region VARCHAR(120) NOT NULL`
+- `town VARCHAR(120) NOT NULL`
 - `address TEXT NULL`
+- `digital_address VARCHAR(80) NULL`
+- `google_maps_url VARCHAR(500) NULL`
+- `nearby_campus VARCHAR(160) NULL`
 - `contact_name VARCHAR(120) NULL`
 - `contact_phone VARCHAR(16) NULL`
-- `expected_residents INT NULL`
-- `expected_rooms INT NULL`
+- `contact_whatsapp VARCHAR(16) NULL`
+- `contact_email VARCHAR(160) NULL`
+- `number_of_buildings INT NULL`
+- `number_of_floors INT NULL`
+- `number_of_rooms INT NULL`
+- `estimated_residents INT NULL`
+- `current_occupancy INT NULL`
+- `has_wifi TINYINT(1) NOT NULL DEFAULT 0`
+- `current_provider VARCHAR(160) NULL`
+- `connection_type VARCHAR(120) NULL`
+- `current_monthly_cost_cents INT NULL`
+- `current_monthly_cost_currency CHAR(3) NOT NULL DEFAULT 'GHS'`
+- `current_speed VARCHAR(120) NULL`
+- `poor_coverage TINYINT(1) NOT NULL DEFAULT 0`
+- `slow_internet TINYINT(1) NOT NULL DEFAULT 0`
+- `downtime TINYINT(1) NOT NULL DEFAULT 0`
+- `payment_problem TINYINT(1) NOT NULL DEFAULT 0`
+- `user_management_problem TINYINT(1) NOT NULL DEFAULT 0`
+- `shared_password_problem TINYINT(1) NOT NULL DEFAULT 0`
+- `starting_from_scratch TINYINT(1) NOT NULL DEFAULT 0`
+- `deployment_preference ENUM('owner_funded','request_nister_funding','property_paid_wifi','recommend_for_me') NOT NULL DEFAULT 'recommend_for_me'`
+- `deployment_model ENUM('owner_funded','nister_funded') NULL`
+- `billing_model ENUM('resident_pays','property_pays') NULL`
 - `notes TEXT NULL`
-- `status ENUM('submitted','reviewing','approved','rejected','converted') NOT NULL DEFAULT 'submitted'`
+- `status ENUM('submitted','contacted','qualified','site_survey_required','site_survey_scheduled','site_survey_completed','quote_prepared','quote_sent','negotiating','approved','agreement_signed','equipment_pending','installation_scheduled','installing','testing','active','rejected','lost') NOT NULL DEFAULT 'submitted'`
 - `created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`
 - `updated_at DATETIME NULL`
 - `reviewed_at DATETIME NULL`
@@ -400,15 +503,15 @@ Fields:
 
 ### `property_service_request_events`
 
-Immutable audit trail for service request review and conversion decisions.
+Immutable audit trail for service request CRM progression and conversion decisions.
 
 Fields:
 
 - `id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT`
 - `service_request_id BIGINT UNSIGNED NOT NULL`
-- `action ENUM('start_review','approve','reject','convert') NOT NULL`
-- `previous_status ENUM('submitted','reviewing','approved','rejected','converted') NOT NULL`
-- `new_status ENUM('submitted','reviewing','approved','rejected','converted') NOT NULL`
+- `action ENUM('advance','reject','lose','convert_property','admin_note') NOT NULL`
+- `previous_status ENUM('submitted','contacted','qualified','site_survey_required','site_survey_scheduled','site_survey_completed','quote_prepared','quote_sent','negotiating','approved','agreement_signed','equipment_pending','installation_scheduled','installing','testing','active','rejected','lost') NOT NULL`
+- `new_status ENUM('submitted','contacted','qualified','site_survey_required','site_survey_scheduled','site_survey_completed','quote_prepared','quote_sent','negotiating','approved','agreement_signed','equipment_pending','installation_scheduled','installing','testing','active','rejected','lost') NOT NULL`
 - `note TEXT NULL`
 - `created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`
 - `created_by VARCHAR(120) NOT NULL`
@@ -427,8 +530,19 @@ Fields:
 
 - `id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT`
 - `name VARCHAR(160) NOT NULL`
-- `area VARCHAR(160) NULL`
+- `country VARCHAR(80) NULL`
+- `region VARCHAR(120) NULL`
+- `town VARCHAR(120) NULL`
 - `address TEXT NULL`
+- `digital_address VARCHAR(80) NULL`
+- `google_maps_url VARCHAR(500) NULL`
+- `nearby_campus VARCHAR(160) NULL`
+- `number_of_buildings INT NULL`
+- `number_of_floors INT NULL`
+- `number_of_rooms INT NULL`
+- `estimated_residents INT NULL`
+- `deployment_model ENUM('owner_funded','nister_funded') NOT NULL DEFAULT 'owner_funded'`
+- `billing_model ENUM('resident_pays','property_pays') NOT NULL DEFAULT 'resident_pays'`
 - `status ENUM('prospect','active','paused','closed') NOT NULL DEFAULT 'prospect'`
 - `created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`
 - `updated_at DATETIME NULL`
@@ -476,12 +590,18 @@ Rules:
 
 ### `property_financial_terms`
 
-Admin-controlled owner share terms.
+Admin-controlled owner share and commercial terms.
 
 Fields:
 
 - `id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT`
 - `property_id BIGINT UNSIGNED NOT NULL`
+- `deployment_model ENUM('owner_funded','nister_funded') NOT NULL`
+- `billing_model ENUM('resident_pays','property_pays') NOT NULL`
+- `currency CHAR(3) NOT NULL DEFAULT 'GHS'`
+- `setup_fee_cents INT NOT NULL DEFAULT 0`
+- `recurring_fee_cents INT NOT NULL DEFAULT 0`
+- `recurring_fee_period ENUM('none','monthly','term','annual') NOT NULL DEFAULT 'none'`
 - `owner_share_bps INT NOT NULL`
 - `effective_from DATETIME NOT NULL`
 - `effective_to DATETIME NULL`
@@ -492,11 +612,21 @@ Fields:
 
 Rules:
 
+- `deployment_model` distinguishes owner-funded deployments from Nister-funded deployments.
+- `billing_model` distinguishes resident-paid Wi-Fi from property-paid included service.
 - `owner_share_bps` must be between `0` and `10000`, inclusive.
+- `setup_fee_cents` and `recurring_fee_cents` must be zero or positive.
+- `recurring_fee_period='none'` requires `recurring_fee_cents=0`.
 - Admin API must enforce at most one currently-active term per `property_id`, defined as `status='active'` and `effective_to IS NULL`, using transactional validation compatible with MySQL/MariaDB.
 - A purchase at time `T` matches a financial term when `status IN ('active','retired')`, `effective_from <= T`, and (`effective_to IS NULL` or `effective_to > T`).
 - Creating or updating terms must reject overlapping active/effective windows for the same property.
 - Admin deactivation closes the current term by setting `status='retired'` and `effective_to`; `void` rows are excluded from historical allocation.
+
+Business model examples:
+
+- Nister Managed: `owner_funded` plus `resident_pays`.
+- Nister Funded: `nister_funded` plus `resident_pays`.
+- Nister Included: `owner_funded` plus `property_pays`.
 
 ### `property_transaction_allocations`
 
@@ -512,6 +642,7 @@ Fields:
 - `msisdn_masked VARCHAR(24) NULL`
 - `plan_code VARCHAR(64) NOT NULL`
 - `gross_cents INT NOT NULL`
+- `currency CHAR(3) NOT NULL DEFAULT 'GHS'`
 - `owner_share_bps INT NOT NULL`
 - `owner_amount_cents INT NOT NULL`
 - `nister_amount_cents INT NOT NULL`
@@ -549,29 +680,28 @@ Fields:
 ### Public Request And Registration Flow
 
 1. Visitor opens `nister.org/request-installation`.
-2. Page explains the owner request flow and offers a service request form/CTA.
-3. Form submits by ordinary browser navigation to `https://pay.nister.org/owner/register.php?intent=request-installation`.
-4. All OTP, password, owner session, and service request writes happen on `pay.nister.org`.
-5. Owner enters phone number, name, property name, area/address, expected residents/rooms, and notes.
-6. Owner requests OTP.
-7. Owner verifies OTP.
-8. Owner sets or confirms password according to the state matrix below.
-9. System creates or updates the owner/request according to the state matrix below.
-10. Owner lands in the pending-limited dashboard or existing approved dashboard.
+2. Page presents the full property lead form with location, building, resident, existing connectivity, pain-point, and deployment preference fields.
+3. Form submits by ordinary browser navigation to `https://pay.nister.org/owner/lead.php`.
+4. `pay.nister.org` creates a `property_leads` row before OTP, password, owner session, or account creation.
+5. Owner requests OTP against the captured lead phone number.
+6. Owner verifies OTP.
+7. Owner sets or confirms password according to the state matrix below.
+8. System creates or updates the owner and converts the lead into a service request according to the state matrix below.
+9. Owner lands in the pending-limited dashboard or existing approved dashboard.
 
 No owner registration API is exposed from `nister.org`, `wifi.nister.org`, or `api.nister.org`.
 
 ### Owner Registration State Matrix
 
-| Existing owner state | After OTP verification | Password requirement | Account status result | Service request behavior |
+| Existing owner state | After OTP verification | Password requirement | Account status result | Lead/request behavior |
 | --- | --- | --- | --- | --- |
-| No owner row | Create owner | Set new password | `pending` | Create `submitted` request |
-| `pending` | Keep owner | Verify existing password, or set password only if password hash is empty | `pending` | Create additional `submitted` request |
-| `approved` | Keep owner | Verify existing password and start owner session | `approved` | Create additional `submitted` request |
-| `rejected` | Do not reopen automatically | None | `rejected` | Block request and show support/admin review message |
-| `suspended` | Do not reopen automatically | None | `suspended` | Block request and show support/admin review message |
+| No owner row | Create owner | Set new password | `pending` | Convert verified lead to `submitted` request |
+| `pending` | Keep owner | Verify existing password, or set password only if password hash is empty | `pending` | Convert verified lead to additional `submitted` request |
+| `approved` | Keep owner | Verify existing password and start owner session | `approved` | Convert verified lead to additional `submitted` request |
+| `suspended` | Do not reopen automatically | None | `suspended` | Keep lead captured but block conversion until admin reactivates owner |
 
-Implementation must never downgrade an approved owner to pending, revive a rejected/suspended owner, or overwrite an existing owner password during a public request flow.
+Implementation must never downgrade an approved owner to pending, revive a suspended owner, or overwrite an existing owner password during a public request flow.
+Rejected requests and rejected properties do not block the same owner from submitting a future lead.
 
 ### Pending Owner Dashboard
 
@@ -581,7 +711,7 @@ Allowed:
 - View submitted service requests.
 - Submit additional service requests.
 - Update only the owner `display_name` profile field.
-- Edit service request fields only while the request is still `submitted`: `property_name`, `area`, `address`, `contact_name`, `contact_phone`, `expected_residents`, `expected_rooms`, and `notes`.
+- Edit service request fields only while the request is still `submitted`: `property_name`, `country`, `region`, `town`, `address`, `digital_address`, `google_maps_url`, `nearby_campus`, `contact_name`, `contact_phone`, `contact_whatsapp`, `contact_email`, `number_of_buildings`, `number_of_floors`, `number_of_rooms`, `estimated_residents`, `current_occupancy`, connectivity fields, pain-point fields, `deployment_preference`, and `notes`.
 
 Blocked:
 
@@ -599,8 +729,11 @@ Allowed:
 
 - View linked properties.
 - View service request history.
-- View high-level deployment/location status.
-- View read-only revenue summary.
+- View "My Hostel" property details.
+- View high-level network online state.
+- View connected user counts.
+- View read-only revenue this month.
+- View read-only owner share.
 - View read-only transaction list from allocation rows.
 
 Blocked:
@@ -613,34 +746,48 @@ Blocked:
 Admin additions inside existing admin:
 
 - Review pending owners.
-- Approve, reject, or suspend owner accounts.
-- Review service requests.
-- Convert approved request into a property.
+- Approve or suspend owner accounts.
+- Reactivate suspended owner accounts.
+- Review service requests through the CRM pipeline.
+- Reject or mark service requests as lost without rejecting the owner.
+- Convert approved/agreement/installation requests into a property.
 - Add owner membership.
 - Link property to existing location.
 - Manage financial terms.
-- Trigger or review transaction allocations.
+- Trigger or review transaction allocation reconciliation.
 
 ### Admin Owner State Transition Matrix
 
 | Current status | Allowed admin transitions | Blocked transitions | Audit requirements |
 | --- | --- | --- | --- |
-| `pending` | `approved`, `rejected`, `suspended` | None | Store decision action, admin identity, timestamp, previous status, new status, and note |
-| `approved` | `suspended` | `pending`, `rejected` | Store suspension action, admin identity, timestamp, previous status, new status, and note |
-| `suspended` | `approved` | `pending`, `rejected` | Store reactivation action, admin identity, timestamp, previous status, new status, and note |
-| `rejected` | None in first release | `pending`, `approved`, `suspended` | Store attempted invalid transition as a rejected API response only; do not mutate the owner |
+| `pending` | `approved`, `suspended` | None | Store decision action, admin identity, timestamp, previous status, new status, and note |
+| `approved` | `suspended` | `pending` | Store suspension action, admin identity, timestamp, previous status, new status, and note |
+| `suspended` | `approved` | `pending` | Store reactivation action, admin identity, timestamp, previous status, new status, and note |
 
-Rejected owners are terminal in the first release so a public request cannot silently revive a previously rejected owner. If operations later need appeal/reopen behavior, it should be a separate audited admin action.
+Owner identity rejection is not part of Release 1. Use service request `rejected` or `lost` for business disqualification, and reserve owner `suspended` for security, fraud, or abuse.
 
 ### Service Request State Transition Matrix
 
 | Current status | Allowed admin transitions | Owner edit access | Audit requirements |
 | --- | --- | --- | --- |
-| `submitted` | `reviewing`, `approved`, `rejected` | Owner may edit allowed request fields | Store event action, admin identity, timestamp, previous status, new status, and note |
-| `reviewing` | `approved`, `rejected` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
-| `approved` | `converted` | Read-only for owner | Store conversion event, admin identity, timestamp, previous status, new status, note, and created property id |
-| `rejected` | None in first release | Read-only for owner | Terminal state; invalid transition response must not mutate the request |
-| `converted` | None in first release | Read-only for owner | Terminal state; property changes happen through property admin tools |
+| `submitted` | `contacted`, `rejected`, `lost` | Owner may edit allowed request fields | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `contacted` | `qualified`, `rejected`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `qualified` | `site_survey_required`, `quote_prepared`, `rejected`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `site_survey_required` | `site_survey_scheduled`, `rejected`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `site_survey_scheduled` | `site_survey_completed`, `rejected`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `site_survey_completed` | `quote_prepared`, `rejected`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `quote_prepared` | `quote_sent`, `rejected`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `quote_sent` | `negotiating`, `approved`, `rejected`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `negotiating` | `approved`, `rejected`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `approved` | `agreement_signed`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `agreement_signed` | `equipment_pending`, `installation_scheduled`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `equipment_pending` | `installation_scheduled`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `installation_scheduled` | `installing`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `installing` | `testing`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `testing` | `active`, `lost` | Read-only for owner | Store event action, admin identity, timestamp, previous status, new status, and note |
+| `active` | None in first release | Read-only for owner | Terminal request state; property changes happen through property admin tools |
+| `rejected` | None in first release | Read-only for owner | Terminal request state; owner may submit future leads |
+| `lost` | None in first release | Read-only for owner | Terminal request state; owner may submit future leads |
 
 ## Revenue And Transaction Design
 
@@ -656,7 +803,7 @@ Source of truth remains:
 Allocation rules:
 
 - Only `purchases.status='applied'` can become owner-visible revenue.
-- Purchase location attribution uses `purchases.location_id` captured by the resident purchase flow at purchase creation/apply time. `pay-portal/purchase.php` already attempts to insert `location_id` when the column exists; the implementation plan must keep that behavior, ensure owner allocation code only depends on that stored column, and add regression coverage around it.
+- Purchase location attribution uses `purchases.location_id` captured by the resident purchase flow at purchase creation/apply time. Release 1 owner accounting must not change `pay-portal/purchase.php`; allocation code only depends on the stored column and must add regression coverage proving `purchase.php` contains no owner allocation hook.
 - First release requires the `purchases.location_id` column. Owner schema setup must reuse or call the existing location schema helper that adds it; if the column still does not exist, allocation setup must fail closed with an admin-visible setup error rather than silently reporting zero owner revenue.
 - Allocation purchase time `T` is `purchases.activated_at` when present, otherwise `purchases.created_at`, otherwise the allocation attempt time only for legacy rows that have neither timestamp.
 - If a purchase row has no usable `location_id`, allocation records a failed attempt with reason `missing_purchase_location`; it must not infer from the resident's current profile because that can change after purchase. If the column itself is absent despite setup, allocation also exposes an admin-visible setup error.
@@ -677,10 +824,11 @@ Allocation rules:
 
 Integration point:
 
-- Preferred first-release behavior: run allocation after successful purchase apply and also through an admin/cron reconciliation path.
-- The resident purchase flow in `pay-portal/purchase.php` must call allocation after access activation, but allocation errors are caught and logged without changing the purchase response.
-- Auto-renewal purchase apply paths that create applied purchase rows should be reviewed in the implementation plan and either call the same allocation helper or be included in the admin/cron reconciliation query before deploy.
-- Paystack wallet crediting remains unchanged; allocation occurs at purchase/apply time, not top-up time.
+- Release 1 behavior: run allocation only through `pay-portal/cron/property_allocation_reconcile.php` and explicit admin retry. The worker should run every minute or every few minutes via the production scheduler.
+- The reconciliation query scans existing `purchases` where `status='applied'`, `location_id` is present, and either no allocation attempt exists or the attempt remains retryable.
+- `pay-portal/purchase.php` must not call owner allocation code in Release 1. Resident purchase success and "Get Online" latency take precedence over real-time owner reporting.
+- Auto-renewal purchase apply paths that create applied purchase rows are covered by the same reconciliation query before deploy.
+- Paystack wallet crediting remains unchanged; reconciliation attributes allocation to the purchase/apply time, not wallet top-up time.
 - Failed/skipped allocation attempts are upserted in `property_allocation_attempts` by `purchase_id`, with incremented `attempt_count` and updated `last_attempt_at`.
 - `failed` means a retry may succeed after admin, data, or schema correction, including missing amount, missing purchase location, missing or ambiguous property link, missing or ambiguous financial terms, setup errors, or unexpected allocation exceptions.
 - `skipped` means intentionally no owner revenue should be created for this attempt, including purchase status not `applied`, zero gross amount, existing allocation already present, or purchase explicitly marked void/refunded.
@@ -697,19 +845,30 @@ Files expected to change or be added:
 - `nister-org/src/app/how-it-works/page.tsx`
 - `nister-org/src/app/plans/page.tsx`
 - `nister-org/src/app/request-installation/page.tsx`
+- `nister-org/src/app/resources/page.tsx`
+- `nister-org/src/app/resources/[slug]/page.tsx`
+- `nister-org/src/app/faq/page.tsx`
+- `nister-org/src/app/coverage/page.tsx`
+- `nister-org/src/app/about/page.tsx`
+- `nister-org/src/app/sitemap.ts`
+- `nister-org/src/app/robots.ts`
 - `nister-org/src/components/shared/site-nav.tsx`
 - `nister-org/src/components/home/*`
 - `nister-org/src/components/marketing/*`
 - `nister-org/src/lib/content.ts`
+- `nister-org/src/lib/seo.ts`
 - `nister-org/src/lib/hosts.ts` only if host routing needs additive awareness.
 
 Public pages should:
 
 - Keep Get Online and Manage Access prominent.
-- Start the request flow with ordinary browser navigation to `pay.nister.org/owner/register.php?intent=request-installation`.
+- Start the request flow with ordinary browser navigation to `pay.nister.org/owner/lead.php`.
 - Avoid cross-origin owner registration XHR from `nister.org`.
 - Avoid global middleware that canonicalizes/removes query strings.
 - Avoid changes to `/api.json` and `/router-sync/*`.
+- Include canonical metadata, OpenGraph metadata, Organization JSON-LD, BreadcrumbList schema where useful, Article schema for resource articles, sitemap generation, robots rules, and Search Console friendly public paths.
+- Keep OAI-SearchBot and ordinary search crawler access open for public acquisition and resources pages.
+- Ensure authenticated `/owner/*` and `/admin/*` responses on `pay.nister.org` send `X-Robots-Tag: noindex, nofollow` or equivalent HTML metadata.
 
 ### Owner PHP Portal
 
@@ -718,8 +877,10 @@ Expected new files:
 - `pay-portal/lib/owner_auth.php`
 - `pay-portal/lib/owner_otp.php`
 - `pay-portal/lib/owner_schema.php`
+- `pay-portal/lib/property_leads.php`
 - `pay-portal/lib/property_requests.php`
 - `pay-portal/lib/property_revenue.php`
+- `pay-portal/owner/lead.php`
 - `pay-portal/owner/register.php`
 - `pay-portal/owner/login.php`
 - `pay-portal/owner/logout.php`
@@ -728,6 +889,9 @@ Expected new files:
 - `pay-portal/owner/revenue.php`
 - `pay-portal/owner/transactions.php`
 - `pay-portal/owner/api.php`
+- `pay-portal/cron/property_allocation_reconcile.php`
+- `systemd/nister-property-allocation-reconcile.service` if production uses systemd timers for this worker.
+- `systemd/nister-property-allocation-reconcile.timer` if production uses systemd timers for this worker.
 - `pay-portal/assets/owner.css`
 - `pay-portal/assets/owner.js` if needed.
 
@@ -749,7 +913,7 @@ Owner mutation security:
 - `pay-portal/owner/api.php` must reject mutating `fn` calls without an authenticated owner session and valid CSRF.
 - GET owner routes are read-only. `owner/logout.php` may render a logout confirmation on GET, but it destroys the session only on POST with a valid owner CSRF token.
 - Public registration/OTP steps use one-time OTP challenge state and rate limits; after password verification creates an owner session, subsequent service request writes use the owner CSRF token.
-- Owner status gates apply after CSRF: pending owners may create requests and edit allowed submitted request fields, approved owners may also view approved-only reporting, and suspended/rejected owners cannot mutate requests through owner routes.
+- Owner status gates apply after CSRF: pending owners may create requests and edit allowed submitted request fields, approved owners may also view approved-only reporting, and suspended owners cannot mutate requests through owner routes.
 
 ### Admin Additions
 
@@ -778,10 +942,12 @@ Mutating actions must require existing admin CSRF.
 
 Owner registration:
 
+- Lead capture stores the submitted property information before OTP; failed or abandoned verification must not delete the lead.
 - Invalid OTP returns a non-specific failure and increments attempts.
 - Expired OTP requires a new challenge.
 - Existing pending owner may add another request after OTP verification.
-- Existing approved/suspended/rejected owner receives a clear state-specific response.
+- Existing approved/suspended owner receives a clear state-specific response.
+- Suspended owners cannot convert new leads to service requests until admin reactivation.
 
 Pending dashboard:
 
@@ -802,8 +968,9 @@ Revenue allocation:
 Admin:
 
 - Reject invalid state transitions.
-- Keep immutable audit fields for approval, rejection, suspension, and reactivation.
+- Keep immutable audit fields for approval, suspension, and reactivation.
 - Store owner decision audit rows for every successful admin status change.
+- Store service request rejection/lost decisions on the request, never on the owner identity.
 
 ## Testing Strategy
 
@@ -831,6 +998,10 @@ Next:
 - `/api.json` remains static CAPPORT JSON with no macros.
 - `/router-sync/*` still serves captive source files.
 - New pages render and keep `Get Online`, `Manage Access`, and `Request Nister` prominent.
+- `/request-installation` renders the full lead form field set and submits to `https://pay.nister.org/owner/lead.php` without cross-origin XHR.
+- `/resources`, `/resources/[slug]`, `/faq`, `/coverage`, and `/about` render public SEO/AEO content with canonical and OpenGraph metadata.
+- Sitemap and robots routes include public acquisition/resource pages and exclude authenticated owner/admin pages.
+- Public resources include Organization JSON-LD, BreadcrumbList where useful, and Article schema for article pages.
 - Existing legacy redirects remain unchanged.
 
 PHP/static regression:
@@ -840,19 +1011,24 @@ PHP/static regression:
 - Owner POST/API mutations require owner CSRF; GET owner routes do not mutate state.
 - Owner tables are additive.
 - Owner OTP table is separate from `signup_otp_*`.
+- Public lead capture creates `property_leads` before OTP/account creation and preserves abandoned leads.
+- OTP/password conversion links `property_leads` to `property_owners` and `property_service_requests`.
 - Pending owner can create service requests.
 - Pending owner can update only `display_name` and submitted request fields listed in the spec.
 - Pending owner cannot view revenue/properties/transactions.
 - Approved owner can view linked property revenue.
+- Owner identity status allows only `pending`, `approved`, and `suspended`; rejected/lost decisions apply to service requests.
 - Service request state transitions follow the explicit transition matrix and write audit rows for successful changes.
 - Allocation only uses applied purchases.
 - Allocation gross source and integer split math follow the spec exactly.
 - Allocation uses `purchases.location_id`, point-in-time non-void location-property link windows, and point-in-time non-void financial term windows.
 - Allocation records failed/skipped attempts for missing purchase location, missing/ambiguous property link, and missing/ambiguous financial terms.
-- Allocation hook is present in `pay-portal/purchase.php` after successful resident activation and does not alter activation response on allocation failure.
+- `pay-portal/purchase.php` contains no owner allocation hook in Release 1.
+- `pay-portal/cron/property_allocation_reconcile.php` scans applied purchases and creates/updates allocations idempotently.
 - Allocation does not mutate resident access.
 - Admin owner actions require CSRF.
 - Admin owner state transitions follow the explicit transition matrix and write audit rows for successful changes.
+- Authenticated owner/admin pages emit `noindex,nofollow` controls.
 
 Manual/live verification before deploy:
 
@@ -867,14 +1043,15 @@ Manual/live verification before deploy:
 Implementation should be sliced:
 
 1. Route freeze and public Next page tests.
-2. Public marketing pages and navigation.
-3. Owner schema and phone OTP registration.
-4. Pending owner login/dashboard and service requests.
-5. Admin owner/service request approval.
-6. Properties, memberships, and location links.
-7. Financial terms and allocation engine.
-8. Approved owner dashboard revenue/transactions.
-9. Full verification and deploy.
+2. Public marketing, SEO/AEO pages, sitemap, robots, and navigation.
+3. Lead-first request-installation capture.
+4. Owner schema and phone OTP registration.
+5. Pending owner login/dashboard and service requests.
+6. Admin owner/service request CRM.
+7. Properties, memberships, and location links.
+8. Financial terms and reconciliation-only allocation engine.
+9. Approved owner dashboard revenue/transactions.
+10. Full verification and deploy.
 
 Although revenue is part of the first release, each slice must be independently testable and reversible.
 
@@ -908,22 +1085,44 @@ Although revenue is part of the first release, each slice must be independently 
 - `nister-org/src/app/page.tsx`
 - `nister-org/src/components/shared/site-nav.tsx`
 - `nister-org/src/components/shared/site-footer.tsx`
+- `nister-org/src/app/for-hostels/page.tsx`
+- `nister-org/src/app/how-it-works/page.tsx`
+- `nister-org/src/app/plans/page.tsx`
+- `nister-org/src/app/request-installation/page.tsx`
+- `nister-org/src/app/resources/page.tsx`
+- `nister-org/src/app/resources/[slug]/page.tsx`
+- `nister-org/src/app/faq/page.tsx`
+- `nister-org/src/app/coverage/page.tsx`
+- `nister-org/src/app/about/page.tsx`
+- `nister-org/src/app/sitemap.ts`
+- `nister-org/src/app/robots.ts`
 - `nister-org/src/lib/content.ts`
+- `nister-org/src/lib/seo.ts`
 - `nister-org/src/app/globals.css`
 - `nister-org/src/lib/__tests__/*`
 - `nister-org/e2e/host-render.spec.ts`
+- `pay-portal/lib/owner_auth.php`
+- `pay-portal/lib/owner_otp.php`
+- `pay-portal/lib/owner_schema.php`
+- `pay-portal/lib/property_leads.php`
+- `pay-portal/lib/property_requests.php`
+- `pay-portal/lib/property_revenue.php`
+- `pay-portal/owner/*`
 - `pay-portal/admin/index.php`
 - `pay-portal/admin/api.php`
-- `pay-portal/purchase.php`
+- `pay-portal/cron/property_allocation_reconcile.php`
+- `systemd/nister-property-allocation-reconcile.service` if production uses systemd timers for this worker.
+- `systemd/nister-property-allocation-reconcile.timer` if production uses systemd timers for this worker.
 - `tests/regression/run.sh`
 
-Avoid modifying captive files, hotspot API files, Paystack callback/webhook files, and router scripts unless implementation proves there is no additive path.
+Avoid modifying `pay-portal/purchase.php`, captive files, hotspot API files, Paystack callback/webhook files, and router scripts unless a later release explicitly approves that production-path change.
 
 ## Why Each Existing Modification Is Necessary
 
 - Next app files: public acquisition pages and navigation live there.
 - Admin files: owner approval, property linking, financial terms, and allocation review belong in existing admin.
-- `pay-portal/purchase.php`: owner allocation must be triggered after successful resident access activation while preserving the existing purchase response and location capture behavior.
+- Owner PHP files: lead capture, phone OTP, owner sessions, dashboards, and request forms live outside resident/admin sessions.
+- Reconciliation cron/timer files: Release 1 owner accounting runs outside the resident purchase path.
 - Regression tests: protect existing route/payment/captive contracts and new owner boundaries.
 - `pay-portal/admin/api.php`: needed only for admin owner/property/revenue actions; keep changes additive.
 
