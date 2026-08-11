@@ -315,7 +315,13 @@ assert_not_contains "fallback_sources_no_public_login_html_default" "$hotspot_fa
 owner_schema_content="$(cat pay-portal/lib/owner_schema.php 2>/dev/null || true)"
 property_leads_content="$(cat pay-portal/lib/property_leads.php 2>/dev/null || true)"
 owner_auth_content="$(cat pay-portal/lib/owner_auth.php 2>/dev/null || true)"
+owner_otp_content="$(cat pay-portal/lib/owner_otp.php 2>/dev/null || true)"
+property_requests_content="$(cat pay-portal/lib/property_requests.php 2>/dev/null || true)"
 property_revenue_content="$(cat pay-portal/lib/property_revenue.php 2>/dev/null || true)"
+owner_lead_content="$(cat pay-portal/owner/lead.php 2>/dev/null || true)"
+owner_register_content="$(cat pay-portal/owner/register.php 2>/dev/null || true)"
+owner_login_content="$(cat pay-portal/owner/login.php 2>/dev/null || true)"
+owner_logout_content="$(cat pay-portal/owner/logout.php 2>/dev/null || true)"
 purchase_content="$(cat pay-portal/purchase.php)"
 
 assert_contains "owner_schema_defines_leads" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_leads"
@@ -498,7 +504,66 @@ PHP
 assert_eq "db_php_preserves_explicit_global_pdo" "$db_preserves_existing_global_pdo" "OK"
 assert_contains "owner_auth_uses_owner_session" "$owner_auth_content" "session_name('nister_owner')"
 assert_contains "owner_auth_sets_noindex" "$owner_auth_content" "noindex, nofollow"
+assert_contains "owner_auth_defines_boot" "$owner_auth_content" "function owner_boot(): array"
+assert_contains "owner_auth_defines_require_approved" "$owner_auth_content" "function owner_require_approved(bool \$json = false): void"
+assert_contains "owner_auth_login_regenerates_session" "$owner_auth_content" "session_regenerate_id(true)"
+assert_contains "owner_auth_uses_lax_samesite" "$owner_auth_content" "'samesite' => 'Lax'"
+assert_contains "owner_otp_uses_owner_challenges" "$owner_otp_content" "owner_otp_challenges"
+assert_not_contains "owner_otp_never_uses_signup_otp_tables" "$owner_otp_content" "signup_otp_"
+assert_contains "owner_register_regenerates_owner_session" "$owner_register_content$property_requests_content$owner_auth_content" "session_regenerate_id(true)"
+assert_contains "owner_login_regenerates_owner_session" "$owner_login_content$owner_auth_content" "session_regenerate_id(true)"
+assert_contains "owner_logout_posts_only" "$owner_logout_content" "REQUEST_METHOD'] === 'POST'"
+assert_contains "owner_logout_requires_owner_csrf" "$owner_logout_content" "owner_require_csrf_post()"
+assert_contains "owner_logout_destroys_owner_session" "$owner_logout_content" "owner_logout()"
+assert_contains "property_requests_defines_statuses" "$property_requests_content" "function property_request_statuses(): array"
+assert_contains "property_requests_owner_statuses_pending_approved_suspended" "$property_requests_content" "return ['pending', 'approved', 'suspended'];"
+assert_not_contains "property_requests_no_rejected_owner_status" "$property_requests_content" "'rejected' =>"
+assert_not_contains "property_requests_no_rejected_owner_list_entry" "$property_requests_content" "return ['pending', 'approved', 'suspended', 'rejected']"
+assert_contains "property_requests_full_crm_statuses" "$property_requests_content" "submitted','contacted','qualified','site_survey_required','site_survey_scheduled','site_survey_completed','quote_prepared','quote_sent','negotiating','approved','agreement_signed','equipment_pending','installation_scheduled','installing','testing','active','rejected','lost"
+assert_contains "property_requests_conversion_transaction" "$property_requests_content" "beginTransaction()"
+assert_contains "property_requests_conversion_starts_owner_session" "$property_requests_content$owner_auth_content" "owner_start_session_for_owner"
+assert_contains "owner_lead_noindex_helper" "$owner_lead_content" "owner_noindex_headers()"
+assert_contains "owner_register_noindex_helper" "$owner_register_content" "owner_noindex_headers()"
+assert_contains "owner_login_noindex_helper" "$owner_login_content" "owner_noindex_headers()"
+assert_contains "owner_logout_noindex_helper" "$owner_logout_content" "owner_noindex_headers()"
 assert_owner_pages_each_noindex "owner_pages_are_noindex"
+
+owner_auth_runtime="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/owner_auth.php';
+$_SERVER = ['HTTPS' => 'on', 'REQUEST_METHOD' => 'GET'];
+owner_boot();
+$token = owner_csrf_token();
+$rotated = owner_csrf_token(true);
+$ok = session_name() === 'nister_owner'
+  && $token !== ''
+  && $rotated !== ''
+  && $token !== $rotated
+  && owner_verify_csrf($rotated);
+owner_logout();
+echo $ok ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "owner_auth_runtime_session_and_csrf" "$owner_auth_runtime" "OK"
+
+property_requests_runtime="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/property_requests.php';
+$ownerStatuses = property_request_statuses();
+$transitions = property_request_allowed_transitions();
+$crm = property_service_request_statuses();
+$ok = $ownerStatuses === ['pending', 'approved', 'suspended']
+  && in_array('submitted', $crm, true)
+  && in_array('site_survey_required', $crm, true)
+  && in_array('active', $crm, true)
+  && in_array('rejected', $crm, true)
+  && in_array('lost', $crm, true)
+  && !in_array('rejected', $ownerStatuses, true)
+  && ($transitions['submitted'] ?? []) !== [];
+echo $ok ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "property_requests_runtime_status_contracts" "$property_requests_runtime" "OK"
 assert_contains "property_revenue_has_reconciler_entrypoint" "$property_revenue_content" "property_allocation_reconcile"
 assert_not_contains "purchase_has_no_owner_allocation_hook" "$purchase_content" "property_allocation"
 assert_not_contains "purchase_has_no_owner_revenue_include" "$purchase_content" "property_revenue.php"
