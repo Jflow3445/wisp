@@ -16,26 +16,29 @@ function property_service_request_statuses(): array {
 
 function property_request_allowed_transitions(): array {
   return [
-    'submitted' => ['contacted', 'qualified', 'site_survey_required', 'lost'],
-    'contacted' => ['qualified', 'site_survey_required', 'lost'],
-    'qualified' => ['site_survey_required', 'quote_prepared', 'lost'],
-    'site_survey_required' => ['site_survey_scheduled', 'quote_prepared', 'lost'],
-    'site_survey_scheduled' => ['site_survey_completed', 'lost'],
-    'site_survey_completed' => ['quote_prepared', 'lost'],
-    'quote_prepared' => ['quote_sent', 'lost'],
-    'quote_sent' => ['negotiating', 'approved', 'lost'],
-    'negotiating' => ['approved', 'lost'],
+    'submitted' => ['contacted', 'rejected', 'lost'],
+    'contacted' => ['qualified', 'rejected', 'lost'],
+    'qualified' => ['site_survey_required', 'quote_prepared', 'rejected', 'lost'],
+    'site_survey_required' => ['site_survey_scheduled', 'rejected', 'lost'],
+    'site_survey_scheduled' => ['site_survey_completed', 'rejected', 'lost'],
+    'site_survey_completed' => ['quote_prepared', 'rejected', 'lost'],
+    'quote_prepared' => ['quote_sent', 'rejected', 'lost'],
+    'quote_sent' => ['negotiating', 'approved', 'rejected', 'lost'],
+    'negotiating' => ['approved', 'rejected', 'lost'],
     'approved' => ['agreement_signed', 'lost'],
     'agreement_signed' => ['equipment_pending', 'installation_scheduled', 'lost'],
     'equipment_pending' => ['installation_scheduled', 'lost'],
     'installation_scheduled' => ['installing', 'lost'],
     'installing' => ['testing', 'lost'],
     'testing' => ['active', 'lost'],
+    'active' => [],
+    'rejected' => [],
+    'lost' => [],
   ];
 }
 
 function property_request_owner_editable_statuses(): array {
-  return ['submitted', 'contacted', 'qualified', 'site_survey_required'];
+  return ['submitted'];
 }
 
 function property_request_insert_columns(): array {

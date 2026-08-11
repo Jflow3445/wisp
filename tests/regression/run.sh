@@ -335,6 +335,7 @@ owner_logout_content="$(cat pay-portal/owner/logout.php 2>/dev/null || true)"
 owner_dashboard_content="$(cat pay-portal/owner/dashboard.php 2>/dev/null || true)"
 owner_start_session_block="$(awk '/function owner_start_session_for_owner/,/^}/' pay-portal/lib/owner_auth.php 2>/dev/null || true)"
 owner_do_login_block="$(awk '/function owner_do_login/,/^}/' pay-portal/lib/owner_auth.php 2>/dev/null || true)"
+property_request_owner_statuses_block="$(awk '/function property_request_statuses/,/^}/' pay-portal/lib/property_requests.php 2>/dev/null || true)"
 owner_convert_lead_block="$(awk '/function property_owner_convert_lead_after_otp/,/^}/' pay-portal/lib/property_requests.php 2>/dev/null || true)"
 purchase_content="$(cat pay-portal/purchase.php)"
 
@@ -534,9 +535,14 @@ assert_contains "owner_logout_requires_owner_csrf" "$owner_logout_content" "owne
 assert_contains "owner_logout_destroys_owner_session" "$owner_logout_content" "owner_logout()"
 assert_contains "property_requests_defines_statuses" "$property_requests_content" "function property_request_statuses(): array"
 assert_contains "property_requests_owner_statuses_pending_approved_suspended" "$property_requests_content" "return ['pending', 'approved', 'suspended'];"
-assert_not_contains "property_requests_no_rejected_owner_status" "$property_requests_content" "'rejected' =>"
+assert_not_contains "property_requests_no_rejected_owner_status" "$property_request_owner_statuses_block" "rejected"
 assert_not_contains "property_requests_no_rejected_owner_list_entry" "$property_requests_content" "return ['pending', 'approved', 'suspended', 'rejected']"
 assert_contains "property_requests_full_crm_statuses" "$property_requests_content" "submitted','contacted','qualified','site_survey_required','site_survey_scheduled','site_survey_completed','quote_prepared','quote_sent','negotiating','approved','agreement_signed','equipment_pending','installation_scheduled','installing','testing','active','rejected','lost"
+assert_contains "property_requests_owner_edits_only_submitted" "$property_requests_content" "return ['submitted'];"
+assert_contains "property_requests_submitted_transition_matrix" "$property_requests_content" "'submitted' => ['contacted', 'rejected', 'lost']"
+assert_contains "property_requests_contacted_transition_matrix" "$property_requests_content" "'contacted' => ['qualified', 'rejected', 'lost']"
+assert_contains "property_requests_terminal_rejected_not_transitioned" "$property_requests_content" "'rejected' => []"
+assert_contains "property_requests_terminal_active_not_transitioned" "$property_requests_content" "'active' => []"
 assert_contains "property_requests_conversion_transaction" "$property_requests_content" "beginTransaction()"
 assert_contains "property_requests_conversion_starts_owner_session" "$property_requests_content$owner_auth_content" "owner_start_session_for_owner"
 assert_contains "owner_lead_noindex_helper" "$owner_lead_content" "owner_noindex_headers()"
@@ -578,14 +584,21 @@ require getcwd() . '/pay-portal/lib/property_requests.php';
 $ownerStatuses = property_request_statuses();
 $transitions = property_request_allowed_transitions();
 $crm = property_service_request_statuses();
+$ownerEdit = property_request_owner_editable_statuses();
 $ok = $ownerStatuses === ['pending', 'approved', 'suspended']
+  && $ownerEdit === ['submitted']
   && in_array('submitted', $crm, true)
   && in_array('site_survey_required', $crm, true)
   && in_array('active', $crm, true)
   && in_array('rejected', $crm, true)
   && in_array('lost', $crm, true)
   && !in_array('rejected', $ownerStatuses, true)
-  && ($transitions['submitted'] ?? []) !== [];
+  && ($transitions['submitted'] ?? []) === ['contacted', 'rejected', 'lost']
+  && ($transitions['contacted'] ?? []) === ['qualified', 'rejected', 'lost']
+  && ($transitions['site_survey_scheduled'] ?? []) === ['site_survey_completed', 'rejected', 'lost']
+  && ($transitions['active'] ?? []) === []
+  && ($transitions['rejected'] ?? []) === []
+  && ($transitions['lost'] ?? []) === [];
 echo $ok ? 'OK' : 'BAD';
 PHP
 )"
