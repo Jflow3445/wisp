@@ -114,7 +114,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
           </div>
           <div class="owner-button-row">
             <button class="owner-button" type="submit">Sign in</button>
-            <a class="owner-link-button" href="/owner/lead.php">Submit installation request</a>
+            <a class="owner-link-button" href="/owner/lead.php">Request My Property Assessment</a>
           </div>
         </form>
       </section>

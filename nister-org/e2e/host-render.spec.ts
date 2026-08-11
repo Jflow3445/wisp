@@ -157,7 +157,7 @@ test("nister.org homepage keeps Get Online and Manage Access visible", async ({ 
 
   await page.goto("/");
   const primaryNav = page.getByLabel("Primary navigation");
-  await expect(page.getByRole("heading", { level: 1, name: /dependable internet closer/i })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /Make your hostel internet easier/i })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Get Online" })).toHaveAttribute(
     "href",
     "https://wifi.nister.org/",
@@ -166,10 +166,10 @@ test("nister.org homepage keeps Get Online and Manage Access visible", async ({ 
     "href",
     "https://pay.nister.org/",
   );
-  await expect(page.getByText("2.2B")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Request Coverage" }).first()).toHaveAttribute(
+  await expect(page.getByText("Dashboard Preview")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Assess My Property" }).first()).toHaveAttribute(
     "href",
-    /https:\/\/wa\.me\/233530488905/,
+    "/request-installation",
   );
   await page.screenshot({ path: testInfo.outputPath("nister-org-home.png"), fullPage: true });
 
@@ -187,12 +187,13 @@ test("nister.org renders the request installation lead form", async ({ browser }
   const response = await page.goto("/request-installation");
   expect(response?.status()).toBe(200);
 
-  await expect(page.getByRole("heading", { name: /request.*installation|request nister/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Tell us about your hostel/i })).toBeVisible();
   await expect(page.locator("main")).toContainText(/property|hostel|coverage/i);
 
   const form = page.locator('form[action="https://pay.nister.org/owner/lead.php"]').first();
   await expect(form).toBeVisible();
   await expect(form).toHaveAttribute("method", /post/i);
+  await expect(form.getByRole("button", { name: "Request My Property Assessment" })).toBeVisible();
 
   for (const fieldName of releaseOneLeadFieldNames) {
     expect(await form.locator(`[name="${fieldName}"]`).count(), fieldName).toBeGreaterThan(0);

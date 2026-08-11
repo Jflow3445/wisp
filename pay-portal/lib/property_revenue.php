@@ -791,8 +791,10 @@ function property_allocation_reconcile(PDO $pdo, int $limit = 100): array {
 function property_revenue_summary_for_owner(PDO $pdo, int $ownerId): array {
   owner_schema_bootstrap($pdo);
   if ($ownerId <= 0) return ['ok' => false, 'error' => 'owner_id_required'];
-  $start = gmdate('Y-m-01 00:00:00');
-  $end = gmdate('Y-m-01 00:00:00', strtotime('+1 month'));
+  $monthStart = new DateTimeImmutable('first day of this month 00:00:00', new DateTimeZone('UTC'));
+  $monthEnd = $monthStart->modify('first day of next month 00:00:00');
+  $start = $monthStart->format('Y-m-d H:i:s');
+  $end = $monthEnd->format('Y-m-d H:i:s');
   $st = $pdo->prepare(
     "SELECT COUNT(DISTINCT p.id) AS property_count,
             COUNT(a.id) AS transaction_count,

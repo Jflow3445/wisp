@@ -204,14 +204,15 @@ test("network page does not include removed outside-coverage explainer", () => {
   );
 });
 
-test("homepage content stays focused on Wi-Fi access for hostels and remote communities", () => {
+test("homepage content stays focused on managed hostel Wi-Fi and owner outcomes", () => {
   const allHomeCopy = homeSections.map((section) => `${section.eyebrow} ${section.title} ${section.body}`).join(" ");
 
-  assert.match(allHomeCopy, /hostels/i);
-  assert.match(allHomeCopy, /remote communities/i);
-  assert.match(allHomeCopy, /2\.2 billion/i);
-  assert.match(allHomeCopy, /83%/i);
-  assert.match(allHomeCopy, /48%/i);
+  assert.match(allHomeCopy, /managed Wi-Fi/i);
+  assert.match(allHomeCopy, /hostel owners/i);
+  assert.match(allHomeCopy, /resident access/i);
+  assert.match(allHomeCopy, /payments/i);
+  assert.match(allHomeCopy, /owner share/i);
+  assert.doesNotMatch(allHomeCopy, /2\.2 billion|83%|48%/i);
 });
 
 test("public SEO content exports planned routes and resource articles without unsupported Nister impact metrics", () => {

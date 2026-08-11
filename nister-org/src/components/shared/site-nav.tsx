@@ -20,9 +20,10 @@ const mainSiteUrl = (path: string) => `${EXTERNAL_LINKS.main.replace(/\/$/, "")}
 
 const acquisitionLinks = [
   { active: "for-hostels", label: "For Hostels", href: mainSiteUrl("/for-hostels") },
+  { active: "how-it-works", label: "How It Works", href: mainSiteUrl("/how-it-works") },
   { active: "plans", label: "Plans", href: mainSiteUrl("/plans") },
+  { active: "coverage", label: "Coverage", href: mainSiteUrl("/coverage") },
   { active: "resources", label: "Resources", href: mainSiteUrl("/resources") },
-  { active: "request-installation", label: "Request Installation", href: mainSiteUrl("/request-installation") },
 ] as const;
 
 export function SiteNav({ active }: SiteNavProps) {
@@ -53,8 +54,15 @@ export function SiteNav({ active }: SiteNavProps) {
           >
             Get Online
           </a>
-          <a className="nav-action nav-action-strong" href={EXTERNAL_LINKS.login}>
+          <a className="nav-action" href={EXTERNAL_LINKS.login}>
             Manage Access
+          </a>
+          <a
+            aria-current={active === "request-installation" ? "page" : undefined}
+            className="nav-action nav-action-strong"
+            href={mainSiteUrl("/request-installation")}
+          >
+            Request Nister
           </a>
         </nav>
       </div>

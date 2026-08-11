@@ -38,7 +38,7 @@ const operatorBenefits = [
   {
     title: "A review before commitments",
     body:
-      "The installation request captures the property shape, existing provider, pain points, and preferred deployment model before owner account creation.",
+      "The property assessment request captures the property shape, existing provider, pain points, and preferred setup before owner account creation.",
   },
   {
     title: "Billing options that fit the property",
@@ -75,7 +75,7 @@ export default function ForHostelsPage() {
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Request Installation
+                Assess My Property
               </Link>
               <a className="button button-secondary" href={EXTERNAL_LINKS.network}>
                 Get Online
@@ -134,13 +134,13 @@ export default function ForHostelsPage() {
             <p className="eyebrow">Ready for review?</p>
             <h2>Send the property details before you create an owner account.</h2>
             <p>
-              The request form posts directly to the owner lead endpoint on pay.nister.org. No cross-origin app request
+              The assessment form posts directly to the owner lead endpoint on pay.nister.org. No cross-origin app request
               is needed from this public page.
             </p>
           </div>
           <div className="button-row">
             <Link className="button button-primary" href="/request-installation">
-              Request Installation
+              Assess My Property
             </Link>
             <Link className="button button-secondary" href="/how-it-works">
               How It Works

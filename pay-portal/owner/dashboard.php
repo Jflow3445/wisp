@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/owner_auth.php';
 require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../lib/property_requests.php';
+require_once __DIR__ . '/../lib/property_revenue.php';
 
 $ENV = owner_boot();
 $GLOBALS['ENV'] = $ENV;
@@ -89,39 +90,19 @@ function owner_dashboard_count_location_links(PDO $pdo, int $ownerId): int {
   return (int)$st->fetchColumn();
 }
 
-function owner_dashboard_month_allocation(PDO $pdo, int $ownerId): array {
-  $start = (new DateTimeImmutable('first day of this month 00:00:00', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
-  $st = $pdo->prepare(
-    "SELECT
-       COALESCE(SUM(a.gross_cents), 0) AS gross_cents,
-       COALESCE(SUM(a.owner_amount_cents), 0) AS owner_cents,
-       COALESCE(SUM(a.nister_amount_cents), 0) AS nister_cents,
-       COUNT(*) AS transaction_count,
-       COALESCE(MAX(a.currency), 'GHS') AS currency
-     FROM property_transaction_allocations a
-     JOIN property_memberships pm ON pm.property_id = a.property_id
-     WHERE pm.owner_id = :owner_id
-       AND pm.status = 'active'
-       AND a.status = 'allocated'
-       AND a.purchased_at >= :start"
-  );
-  $st->execute([':owner_id' => $ownerId, ':start' => $start]);
-  $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
-  return [
-    'gross_cents' => (int)($row['gross_cents'] ?? 0),
-    'owner_cents' => (int)($row['owner_cents'] ?? 0),
-    'nister_cents' => (int)($row['nister_cents'] ?? 0),
-    'transaction_count' => (int)($row['transaction_count'] ?? 0),
-    'currency' => (string)($row['currency'] ?? 'GHS'),
-  ];
-}
-
 function owner_dashboard_summary(PDO $pdo, int $ownerId): array {
   try {
     owner_schema_bootstrap($pdo);
     $properties = owner_dashboard_count_linked_properties($pdo, $ownerId);
     $locations = owner_dashboard_count_location_links($pdo, $ownerId);
-    $allocation = owner_dashboard_month_allocation($pdo, $ownerId);
+    $revenue = property_revenue_summary_for_owner($pdo, $ownerId);
+    $allocation = [
+      'gross_cents' => (int)($revenue['gross_cents'] ?? 0),
+      'owner_cents' => (int)($revenue['owner_amount_cents'] ?? 0),
+      'nister_cents' => (int)($revenue['nister_amount_cents'] ?? 0),
+      'transaction_count' => (int)($revenue['transaction_count'] ?? 0),
+      'currency' => (string)($revenue['currency'] ?? 'GHS'),
+    ];
     return [
       'property_count' => $properties,
       'location_count' => $locations,
@@ -263,7 +244,7 @@ $summary = $ownerStatus === 'approved' ? owner_dashboard_summary($PDO, $ownerId)
             </div>
             <div class="owner-button-row">
               <button class="owner-button" type="submit">Update profile</button>
-              <a class="owner-link-button" href="/owner/requests.php#new-request">Submit a service request</a>
+              <a class="owner-link-button" href="/owner/requests.php#new-request">Request another property assessment</a>
             </div>
           </form>
 

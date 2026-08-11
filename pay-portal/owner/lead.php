@@ -42,12 +42,12 @@ function owner_lead_origin_allowed(): bool {
 function owner_lead_error_message(Throwable $e): string {
   $message = $e->getMessage();
   if (str_starts_with($message, 'invalid_property_lead:')) {
-    return 'Check the required property and contact fields, then submit the request again.';
+    return 'Check the required property and contact fields, then request the assessment again.';
   }
   if ($message === 'settings table missing and cannot be created (db permissions?)') {
     return 'The request was saved, but SMS settings are not ready. Contact Nister support to complete phone verification.';
   }
-  return 'We could not save the installation request. Review the form and try again.';
+  return 'We could not save the property assessment request. Review the form and try again.';
 }
 
 $err = '';
@@ -78,7 +78,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>Nister Wi-Fi | Owner Installation Request</title>
+  <title>Nister Wi-Fi | Request Property Assessment</title>
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -102,19 +102,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     <section class="owner-layout">
       <div class="owner-panel owner-hero">
-        <span class="owner-eyebrow">Installation request</span>
-        <h1>Request a Nister Wi-Fi review for your property.</h1>
-        <p>Share the property, resident, and current internet details first. After the request is saved, Nister verifies your phone number before creating or reopening the owner account.</p>
+        <span class="owner-eyebrow">Request Nister</span>
+        <h1>Tell us about your hostel. We'll handle the technical part.</h1>
+        <p>We need a few practical details about the property to understand where to start. Estimates are fine.</p>
         <div class="owner-status-list" aria-label="Request steps">
-          <span>1. Save the property request</span>
-          <span>2. Verify the contact phone by OTP</span>
-          <span>3. Create or confirm the owner password</span>
+          <span>1. Request the property assessment</span>
+          <span>2. Verify your phone number</span>
+          <span>3. Track the request from your owner account</span>
         </div>
       </div>
 
       <section class="owner-card">
-        <h1>Property details</h1>
-        <p class="owner-muted">Required fields are marked with an asterisk.</p>
+        <h1>Where should we start?</h1>
+        <p class="owner-muted">No commitment to install. Required fields are marked with an asterisk.</p>
         <?php if ($err !== ''): ?>
           <div class="owner-message owner-message-error"><?=owner_lead_e($err)?></div>
         <?php endif; ?>
@@ -125,11 +125,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         <form class="owner-form" method="post" action="/owner/lead.php" autocomplete="on">
           <div class="owner-form-grid">
             <div class="owner-field">
-              <label for="contact_name">Contact name *</label>
+              <label for="contact_name">Your name *</label>
               <input id="contact_name" name="contact_name" type="text" required value="<?=owner_lead_e(owner_lead_old('contact_name'))?>">
             </div>
             <div class="owner-field">
-              <label for="contact_phone">Primary phone *</label>
+              <label for="contact_phone">Best phone number *</label>
               <input id="contact_phone" name="contact_phone" type="tel" required inputmode="tel" value="<?=owner_lead_e(owner_lead_old('contact_phone'))?>">
               <small>Use a Ghana phone number Nister can call for site questions.</small>
             </div>
@@ -142,7 +142,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
               <input id="contact_email" name="contact_email" type="email" value="<?=owner_lead_e(owner_lead_old('contact_email'))?>">
             </div>
             <div class="owner-field">
-              <label for="property_name">Property name *</label>
+              <label for="property_name">Hostel/property name *</label>
               <input id="property_name" name="property_name" type="text" required value="<?=owner_lead_e(owner_lead_old('property_name'))?>">
             </div>
             <div class="owner-field">
@@ -182,11 +182,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
               <input id="number_of_floors" name="number_of_floors" type="number" min="0" value="<?=owner_lead_e(owner_lead_old('number_of_floors'))?>">
             </div>
             <div class="owner-field">
-              <label for="number_of_rooms">Number of rooms</label>
+              <label for="number_of_rooms">Approximate number of rooms</label>
               <input id="number_of_rooms" name="number_of_rooms" type="number" min="0" value="<?=owner_lead_e(owner_lead_old('number_of_rooms'))?>">
             </div>
             <div class="owner-field">
-              <label for="estimated_residents">Estimated residents</label>
+              <label for="estimated_residents">Approximate number of residents</label>
               <input id="estimated_residents" name="estimated_residents" type="number" min="0" value="<?=owner_lead_e(owner_lead_old('estimated_residents'))?>">
             </div>
             <div class="owner-field">
@@ -194,10 +194,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
               <input id="current_occupancy" name="current_occupancy" type="number" min="0" value="<?=owner_lead_e(owner_lead_old('current_occupancy'))?>">
             </div>
             <div class="owner-field">
-              <label for="has_wifi">Does the property already have Wi-Fi? *</label>
+              <label for="has_wifi">Does the property currently provide Wi-Fi? *</label>
               <select id="has_wifi" name="has_wifi" required>
                 <option value="">Select one</option>
                 <option value="1"<?=owner_lead_selected('has_wifi', '1')?>>Yes</option>
+                <option value="yes"<?=owner_lead_selected('has_wifi', 'yes')?>>Partly</option>
                 <option value="0"<?=owner_lead_selected('has_wifi', '0')?>>No</option>
               </select>
             </div>
@@ -218,7 +219,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
               </select>
             </div>
             <div class="owner-field">
-              <label for="current_monthly_cost">Current monthly cost (GHS)</label>
+              <label for="current_monthly_cost">Current monthly internet cost (GHS)</label>
               <input id="current_monthly_cost" name="current_monthly_cost" type="number" min="0" step="0.01" inputmode="decimal" value="<?=owner_lead_e(owner_lead_old('current_monthly_cost'))?>">
             </div>
             <div class="owner-field">
@@ -226,29 +227,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
               <input id="current_speed" name="current_speed" type="text" value="<?=owner_lead_e(owner_lead_old('current_speed'))?>">
             </div>
             <div class="owner-field">
-              <label for="deployment_preference">Deployment preference *</label>
+              <label for="deployment_preference">Commercial preference *</label>
               <select id="deployment_preference" name="deployment_preference" required>
                 <option value="">Select one</option>
-                <option value="owner_funded"<?=owner_lead_selected('deployment_preference', 'owner_funded')?>>Owner funded</option>
-                <option value="request_nister_funding"<?=owner_lead_selected('deployment_preference', 'request_nister_funding')?>>Request Nister funding review</option>
-                <option value="property_paid_wifi"<?=owner_lead_selected('deployment_preference', 'property_paid_wifi')?>>Property-paid Wi-Fi for residents</option>
-                <option value="recommend_for_me"<?=owner_lead_selected('deployment_preference', 'recommend_for_me', 'recommend_for_me')?>>Recommend the best model</option>
+                <option value="owner_funded"<?=owner_lead_selected('deployment_preference', 'owner_funded')?>>We'll buy the equipment</option>
+                <option value="request_nister_funding"<?=owner_lead_selected('deployment_preference', 'request_nister_funding')?>>We'd like Nister to consider funding it</option>
+                <option value="property_paid_wifi"<?=owner_lead_selected('deployment_preference', 'property_paid_wifi')?>>We want Wi-Fi included with accommodation</option>
+                <option value="recommend_for_me"<?=owner_lead_selected('deployment_preference', 'recommend_for_me', 'recommend_for_me')?>>Recommend what makes sense</option>
               </select>
             </div>
           </div>
 
           <div class="owner-form-grid">
-            <label class="owner-check"><input name="poor_coverage" type="checkbox" value="yes"<?=owner_lead_checked('poor_coverage')?>><span><strong>Poor coverage</strong><small>Rooms or blocks lose signal.</small></span></label>
-            <label class="owner-check"><input name="slow_internet" type="checkbox" value="yes"<?=owner_lead_checked('slow_internet')?>><span><strong>Slow internet</strong><small>Service slows during busy periods.</small></span></label>
-            <label class="owner-check"><input name="downtime" type="checkbox" value="yes"<?=owner_lead_checked('downtime')?>><span><strong>Frequent downtime</strong><small>Connection drops or becomes unstable.</small></span></label>
-            <label class="owner-check"><input name="payment_problem" type="checkbox" value="yes"<?=owner_lead_checked('payment_problem')?>><span><strong>Payment collection problem</strong><small>Resident payments are hard to track.</small></span></label>
-            <label class="owner-check"><input name="user_management_problem" type="checkbox" value="yes"<?=owner_lead_checked('user_management_problem')?>><span><strong>User management problem</strong><small>Access is difficult to control.</small></span></label>
-            <label class="owner-check"><input name="shared_password_problem" type="checkbox" value="yes"<?=owner_lead_checked('shared_password_problem')?>><span><strong>Shared password misuse</strong><small>Residents share one password too widely.</small></span></label>
-            <label class="owner-check"><input name="starting_from_scratch" type="checkbox" value="yes"<?=owner_lead_checked('starting_from_scratch')?>><span><strong>Starting from scratch</strong><small>No existing Wi-Fi service is in place.</small></span></label>
+            <label class="owner-check"><input name="poor_coverage" type="checkbox" value="yes"<?=owner_lead_checked('poor_coverage')?>><span><strong>Wi-Fi does not reach every room.</strong><small>Rooms or blocks lose signal.</small></span></label>
+            <label class="owner-check"><input name="slow_internet" type="checkbox" value="yes"<?=owner_lead_checked('slow_internet')?>><span><strong>Internet feels too slow.</strong><small>Service slows during busy periods.</small></span></label>
+            <label class="owner-check"><input name="downtime" type="checkbox" value="yes"<?=owner_lead_checked('downtime')?>><span><strong>Connection goes down too often.</strong><small>Residents complain when access is unstable.</small></span></label>
+            <label class="owner-check"><input name="payment_problem" type="checkbox" value="yes"<?=owner_lead_checked('payment_problem')?>><span><strong>Collecting internet payments is difficult.</strong><small>Payments should not become another admin job.</small></span></label>
+            <label class="owner-check"><input name="user_management_problem" type="checkbox" value="yes"<?=owner_lead_checked('user_management_problem')?>><span><strong>Managing access is difficult.</strong><small>Access is hard to control manually.</small></span></label>
+            <label class="owner-check"><input name="shared_password_problem" type="checkbox" value="yes"<?=owner_lead_checked('shared_password_problem')?>><span><strong>Wi-Fi passwords get shared.</strong><small>One password can spread indefinitely.</small></span></label>
+            <label class="owner-check"><input name="starting_from_scratch" type="checkbox" value="yes"<?=owner_lead_checked('starting_from_scratch')?>><span><strong>We need Wi-Fi installed from scratch.</strong><small>No adequate resident Wi-Fi is in place.</small></span></label>
           </div>
 
           <div class="owner-button-row">
-            <button class="owner-button" type="submit">Save request and send OTP</button>
+            <button class="owner-button" type="submit">Request My Property Assessment</button>
             <a class="owner-link-button" href="/owner/login.php">I already have an owner account</a>
           </div>
         </form>

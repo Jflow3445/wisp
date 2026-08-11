@@ -24,9 +24,9 @@ function owner_register_support_href(array $env): string {
 
 function owner_register_otp_error(string $error): string {
   $messages = [
-    'otp_invalid' => 'The verification code is incorrect. Check the SMS and try again.',
+    'otp_invalid' => "That code doesn't look right. Check it and try again.",
     'otp_locked' => 'Too many incorrect OTP attempts. Send a new code before trying again.',
-    'otp_expired' => 'The verification code has expired. Send a new code and continue.',
+    'otp_expired' => 'That code has expired. Request a new one to continue.',
     'otp_not_requested' => 'Send a verification code before submitting the form.',
     'rate_limited' => 'Too many verification attempts. Wait a few minutes and try again.',
     'sms_send_failed' => 'The request was saved, but the SMS could not be sent. Try sending a new code or contact support.',
@@ -41,7 +41,7 @@ function owner_register_conversion_error(Throwable $e): string {
     'password_too_short' => 'Use a password with at least 8 characters.',
     'owner_password_invalid' => 'The owner account password is incorrect.',
     'owner_suspended' => 'This owner account is suspended. Contact Nister support or an administrator.',
-    'lead_not_found' => 'The installation request could not be found. Submit the request again.',
+    'lead_not_found' => 'The property assessment request could not be found. Request the assessment again.',
     'lead_phone_invalid' => 'The request phone number is not a valid Ghana phone number.',
     'lead_owner_phone_mismatch' => 'The request phone does not match this owner account.',
   ];
@@ -98,7 +98,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   $action = (string)($_POST['action'] ?? 'verify');
 
   if (!is_array($lead)) {
-    $err = 'The installation request could not be found. Submit the request again.';
+    $err = 'The property assessment request could not be found. Request the assessment again.';
   } elseif ($mode === 'suspended') {
     $err = 'This owner account is suspended. Contact Nister support or an administrator.';
   } elseif ($action === 'resend') {
@@ -175,8 +175,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     <section class="owner-layout">
       <div class="owner-panel owner-hero">
         <span class="owner-eyebrow">Phone verification</span>
-        <h1>Verify the owner phone before conversion.</h1>
-        <p>Nister keeps the submitted lead separate until the OTP is verified and the owner password is created or confirmed.</p>
+        <h1>Let's confirm it's you.</h1>
+        <p>We've got your property details. Next, verify your phone number so you can create your Nister owner account and track the request.</p>
         <?php if (is_array($lead)): ?>
           <div class="owner-status-list" aria-label="Request summary">
             <span><?=owner_register_e((string)$lead['property_name'])?></span>
@@ -187,7 +187,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
       </div>
 
       <section class="owner-card">
-        <h1>Complete owner verification</h1>
+        <h1><?=$mode === 'new' ? 'Create your owner account.' : "Let's confirm it's you."?></h1>
         <?php if ($err !== ''): ?>
           <div class="owner-message owner-message-error"><?=owner_register_e($err)?></div>
         <?php endif; ?>
@@ -196,9 +196,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         <?php endif; ?>
 
         <?php if (!is_array($lead)): ?>
-          <p class="owner-muted">No installation request was found for this verification step.</p>
+          <p class="owner-muted">No property assessment request was found for this verification step.</p>
           <div class="owner-button-row">
-            <a class="owner-button" href="/owner/lead.php">Submit installation request</a>
+            <a class="owner-button" href="/owner/lead.php">Request My Property Assessment</a>
           </div>
         <?php elseif ($mode === 'suspended'): ?>
           <p class="owner-muted">The owner account for <?=owner_register_e(msisdn_display((string)$lead['contact_phone']))?> is suspended. Nister must review the account before another request can be submitted.</p>
@@ -213,7 +213,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             <div class="owner-field">
               <label for="otp">Verification code</label>
               <input id="otp" name="otp" type="text" inputmode="numeric" pattern="[0-9]{4,8}" autocomplete="one-time-code" required>
-              <small>Enter the OTP sent to <?=owner_register_e(msisdn_display((string)$lead['contact_phone']))?>.</small>
+              <small>We sent a verification code to <?=owner_register_e(msisdn_display((string)$lead['contact_phone']))?>.</small>
             </div>
 
             <?php if ($mode === 'new'): ?>
@@ -234,7 +234,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             <?php endif; ?>
 
             <div class="owner-button-row">
-              <button class="owner-button" name="action" value="verify" type="submit">Verify and submit request</button>
+              <button class="owner-button" name="action" value="verify" type="submit"><?=$mode === 'new' ? 'Create My Account' : 'Verify My Number'?></button>
               <button class="owner-button owner-button-secondary" name="action" value="resend" type="submit" formnovalidate>Send a new code</button>
             </div>
           </form>

@@ -449,6 +449,62 @@ body.owner-page::before {
   line-height: 1.1;
 }
 
+.owner-report-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.owner-report {
+  display: grid;
+  gap: 16px;
+}
+
+.owner-empty {
+  margin: 0;
+  border-radius: 8px;
+  border: 1px dashed var(--owner-line);
+  background: #fff8ef;
+  color: var(--owner-muted);
+  line-height: 1.6;
+  padding: 14px;
+}
+
+.owner-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--owner-line);
+  background: #ffffff;
+}
+
+.owner-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.owner-table th,
+.owner-table td {
+  border-bottom: 1px solid var(--owner-line);
+  color: var(--owner-ink);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  padding: 12px;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.owner-table th {
+  color: var(--owner-muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.owner-table tr:last-child td {
+  border-bottom: 0;
+}
+
 .owner-request-list {
   display: grid;
   gap: 10px;
@@ -518,7 +574,8 @@ body.owner-page::before {
 @media (max-width: 900px) {
   .owner-layout,
   .owner-form-grid,
-  .owner-metric-grid {
+  .owner-metric-grid,
+  .owner-report-grid {
     grid-template-columns: 1fr;
   }
 

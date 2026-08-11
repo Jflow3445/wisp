@@ -49,7 +49,7 @@ export default function CoveragePage() {
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Request Installation
+                Assess My Property
               </Link>
               <a className="button button-secondary" href={EXTERNAL_LINKS.coverageRequest}>
                 WhatsApp Coverage Request

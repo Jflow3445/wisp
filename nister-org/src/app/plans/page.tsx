@@ -80,7 +80,7 @@ export default function PlansPage() {
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Request Installation
+                Assess My Property
               </Link>
               <a className="button button-secondary" href={EXTERNAL_LINKS.login}>
                 Manage Access
@@ -148,7 +148,7 @@ export default function PlansPage() {
           </div>
           <div className="button-row">
             <Link className="button button-primary" href="/request-installation">
-              Request Installation
+              Assess My Property
             </Link>
             <Link className="button button-secondary" href="/resources">
               Read Resources

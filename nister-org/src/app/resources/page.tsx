@@ -49,7 +49,7 @@ export default function ResourcesPage() {
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Request Installation
+                Assess My Property
               </Link>
               <Link className="button button-secondary" href="/faq">
                 Read FAQ

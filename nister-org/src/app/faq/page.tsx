@@ -44,12 +44,12 @@ export default function FaqPage() {
             <p className="eyebrow">FAQ</p>
             <h1>Frequently asked questions about Nister Wi-Fi.</h1>
             <p className="hero-lede">
-              These answers cover the public acquisition flow: installation requests, coverage review, payment models,
+              These answers cover the public acquisition flow: property assessment requests, coverage review, payment models,
               resident access, owner onboarding, and support routing.
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Request Installation
+                Assess My Property
               </Link>
               <a className="button button-secondary" href={EXTERNAL_LINKS.support}>
                 WhatsApp Support

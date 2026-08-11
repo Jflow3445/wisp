@@ -89,34 +89,34 @@ export const networkTroubleshootingSteps = [
 
 export const homeSections = [
   {
-    eyebrow: "The access gap",
-    title: "People should not lose opportunities because the internet stops at their doorstep.",
+    eyebrow: "Managed Wi-Fi for Hostels",
+    title: "Make internet work for your property.",
     body:
-      "About 2.2 billion people remain offline globally, and the rural access gap is still visible: ITU reported 83% urban internet use compared with 48% rural internet use in 2024. In hostels and remote communities, that gap shows up as lost study time, missed messages, harder payments, and fewer digital opportunities.",
+      "Nister helps hostel owners manage resident Wi-Fi, access and payments while giving the property options for cost recovery, revenue sharing or included Wi-Fi.",
   },
   {
-    eyebrow: "What Nister Wi-Fi provides",
-    title: "Shared Wi-Fi that is easier to find, use, and support.",
+    eyebrow: "After the connection",
+    title: "Nister manages what happens after the internet reaches your property.",
     body:
-      "Nister Wi-Fi provides practical internet access for hostels and remote communities where people need a clear way to get online and operators need a network experience they can explain.",
+      "You focus on running the hostel. Nister helps run the connectivity service around it: resident access, payments, reporting and day-to-day service structure.",
   },
   {
-    eyebrow: "For hostels",
-    title: "Less confusion for residents. A cleaner flow for operators.",
+    eyebrow: "Already have fibre?",
+    title: "Good. Nister can work around a suitable existing connection.",
     body:
-      "Residents need internet for study, communication, research, and daily services. Hostel operators need clear log-in, payment, and access instructions so support questions do not become the whole Wi-Fi experience.",
+      "Your internet provider supplies the connection. Nister helps you run the resident Wi-Fi, access and payment service around it.",
   },
   {
-    eyebrow: "For remote communities",
-    title: "A practical connection point for daily life beyond city centers.",
+    eyebrow: "Commercial options",
+    title: "Your internet does not have to be just another monthly bill.",
     body:
-      "Remote communities need access models that can work in real conditions. Nister Wi-Fi focuses on coverage points that help people learn, communicate, work, and reach essential digital services.",
+      "You can let residents pay for access, include Wi-Fi with accommodation or ask Nister to assess whether a funded deployment could make sense.",
   },
   {
-    eyebrow: "Expansion case",
-    title: "The case for focused Wi-Fi expansion.",
+    eyebrow: "Owner visibility",
+    title: "See what matters without becoming the network engineer.",
     body:
-      "Reliable internet access now supports learning, work, payments, public information, and community participation. Targeted Wi-Fi deployments can help close access gaps for hostels and remote communities when the right partners support them.",
+      "Approved owners can view request progress, linked property details, high-level network state, read-only transactions and applicable owner share reporting.",
   },
 ] as const;
 
@@ -171,23 +171,23 @@ const binaryYesNoOptions = [
 ] as const;
 
 export const deploymentPreferenceOptions = [
-  { value: "owner_funded", label: "Owner funded" },
-  { value: "request_nister_funding", label: "Request Nister funding review" },
-  { value: "property_paid_wifi", label: "Property-paid Wi-Fi for residents" },
-  { value: "recommend_for_me", label: "Recommend the best model for me" },
+  { value: "owner_funded", label: "We'll buy the equipment" },
+  { value: "request_nister_funding", label: "We'd like Nister to consider funding it" },
+  { value: "property_paid_wifi", label: "We want Wi-Fi included with accommodation" },
+  { value: "recommend_for_me", label: "Recommend what makes sense" },
 ] as const;
 
 export const leadFormFields = [
   {
     name: "contact_name",
-    label: "Contact name",
+    label: "Your name",
     type: "text",
     required: true,
     placeholder: "Full name of the property owner or operator",
   },
   {
     name: "contact_phone",
-    label: "Primary phone",
+    label: "Best phone number",
     type: "tel",
     required: true,
     placeholder: "+233...",
@@ -208,7 +208,7 @@ export const leadFormFields = [
   },
   {
     name: "property_name",
-    label: "Property name",
+    label: "Hostel/property name",
     type: "text",
     required: true,
     placeholder: "Hostel, apartment, campus housing, or community name",
@@ -275,14 +275,14 @@ export const leadFormFields = [
   },
   {
     name: "number_of_rooms",
-    label: "Number of rooms",
+    label: "Approximate number of rooms",
     type: "number",
     min: 0,
     placeholder: "Rooms or units residents occupy",
   },
   {
     name: "estimated_residents",
-    label: "Estimated residents",
+    label: "Approximate number of residents",
     type: "number",
     min: 0,
     placeholder: "People who may need access",
@@ -298,7 +298,7 @@ export const leadFormFields = [
   },
   {
     name: "has_wifi",
-    label: "Does the property already have Wi-Fi?",
+    label: "Does the property currently provide Wi-Fi?",
     type: "select",
     required: true,
     options: binaryYesNoOptions,
@@ -324,7 +324,7 @@ export const leadFormFields = [
   },
   {
     name: "current_monthly_cost",
-    label: "Current monthly cost (GHS)",
+    label: "Current monthly internet cost (GHS)",
     type: "number",
     min: 0,
     step: "0.01",
@@ -340,42 +340,42 @@ export const leadFormFields = [
   },
   {
     name: "poor_coverage",
-    label: "Poor coverage inside rooms or blocks",
+    label: "Wi-Fi does not reach every room.",
     type: "checkbox",
   },
   {
     name: "slow_internet",
-    label: "Slow internet during busy periods",
+    label: "Internet feels too slow.",
     type: "checkbox",
   },
   {
     name: "downtime",
-    label: "Frequent downtime or unstable service",
+    label: "Connection goes down too often.",
     type: "checkbox",
   },
   {
     name: "payment_problem",
-    label: "Payment collection is difficult",
+    label: "Collecting internet payments is difficult.",
     type: "checkbox",
   },
   {
     name: "user_management_problem",
-    label: "User access is hard to manage",
+    label: "Managing access is difficult.",
     type: "checkbox",
   },
   {
     name: "shared_password_problem",
-    label: "Shared passwords are causing misuse",
+    label: "Wi-Fi passwords get shared.",
     type: "checkbox",
   },
   {
     name: "starting_from_scratch",
-    label: "Starting from scratch with no existing Wi-Fi",
+    label: "We need Wi-Fi installed from scratch.",
     type: "checkbox",
   },
   {
     name: "deployment_preference",
-    label: "Deployment preference",
+    label: "Commercial preference",
     type: "select",
     required: true,
     options: deploymentPreferenceOptions,
@@ -413,10 +413,10 @@ export const publicRoutes = [
   },
   {
     path: "/request-installation",
-    label: "Request Installation",
-    title: "Request a Nister Wi-Fi installation",
+    label: "Request Nister",
+    title: "Request a Nister property assessment",
     description:
-      "Share property, location, resident, current connection, and deployment details so Nister can review the site.",
+      "Tell Nister about your hostel, rooms, residents, current internet, and preferred setup so the property can be assessed.",
   },
   {
     path: "/resources",
@@ -467,7 +467,7 @@ export const faqItems = [
   {
     question: "Can the property pay for internet instead of each resident paying?",
     answer:
-      "Yes. Some owners prefer a property-paid model where internet is included in the resident experience. The installation request asks for enough detail to discuss that option.",
+      "Yes. Some owners prefer a property-paid model where internet is included in the resident experience. The property assessment request asks for enough detail to discuss that option.",
   },
   {
     question: "What if the property already has a provider?",
@@ -547,7 +547,7 @@ export const resourceArticles = [
       {
         heading: "Start with the property shape",
         paragraphs: [
-          "A useful installation request explains the physical site before it asks for a package. Nister needs the property name, town, address, landmarks, number of buildings, floors, rooms, and estimated residents because Wi-Fi design depends on walls, distance, room layout, and where people gather.",
+          "A useful property assessment request explains the physical site before it asks for a package. Nister needs the property name, town, address, landmarks, number of buildings, floors, rooms, and estimated residents because Wi-Fi design depends on walls, distance, room layout, and where people gather.",
           "If you already know the weak spots, list them plainly. Examples include rooms behind thick walls, upper floors, outdoor study areas, reception spaces, or blocks that lose signal when many residents are online. These details make the first review more practical.",
         ],
       },
@@ -600,7 +600,7 @@ export const resourceArticles = [
       {
         heading: "How to choose",
         paragraphs: [
-          "The better model depends on occupancy, resident behavior, building layout, the owner budget, and whether payment collection or support is currently the bigger problem. Nister uses the installation request to begin that discussion without promising a one-size-fits-all package.",
+          "The better model depends on occupancy, resident behavior, building layout, the owner budget, and whether payment collection or support is currently the bigger problem. Nister uses the property assessment request to begin that discussion without promising a one-size-fits-all package.",
         ],
       },
     ],
@@ -632,7 +632,7 @@ export const resourceArticles = [
       {
         heading: "What owners should share in the request",
         paragraphs: [
-          "If shared passwords are already a problem, say so in the installation request. Include whether residents complain about speed, whether payment collection is difficult, and whether some rooms or floors have weaker coverage. These details help the review focus on the operational problem, not only the signal.",
+          "If shared passwords are already a problem, say so in the property assessment request. Include whether residents complain about speed, whether payment collection is difficult, and whether some rooms or floors have weaker coverage. These details help the review focus on the operational problem, not only the signal.",
         ],
       },
     ],

@@ -9,7 +9,7 @@ export function SiteFooter() {
         <div>
           <p className="footer-title">Nister Wi-Fi</p>
           <p className="footer-copy">
-            Shared internet access for hostels and remote communities where getting online matters every day.
+            Managed Wi-Fi for hostels and student accommodation.
           </p>
         </div>
         <div className="footer-links" aria-label="Footer links">
@@ -21,7 +21,7 @@ export function SiteFooter() {
           <a href={mainSiteUrl("/faq")}>FAQ</a>
           <a href={mainSiteUrl("/coverage")}>Coverage</a>
           <a href={mainSiteUrl("/about")}>About</a>
-          <a href={mainSiteUrl("/request-installation")}>Request Installation</a>
+          <a href={mainSiteUrl("/request-installation")}>Request Nister</a>
           <a href={EXTERNAL_LINKS.network}>Get Online</a>
           <a href={EXTERNAL_LINKS.login}>Manage Access</a>
           <a href={EXTERNAL_LINKS.support}>Support</a>

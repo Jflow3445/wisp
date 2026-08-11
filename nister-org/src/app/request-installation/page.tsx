@@ -1,26 +1,35 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EXTERNAL_LINKS, leadFormFields, type LeadFormField } from "@/lib/content";
+import { EXTERNAL_LINKS, leadFormFields, type LeadFormField, type LeadFormFieldName } from "@/lib/content";
 import { breadcrumbJsonLd, canonical, organizationJsonLd } from "@/lib/seo";
 import { SiteFooter } from "@/components/shared/site-footer";
-import { SiteNav } from "@/components/shared/site-nav";
 
 export const metadata: Metadata = {
-  title: "Request Installation",
+  title: "Request a Property Assessment",
   description:
-    "Request Nister Wi-Fi installation review for a hostel, shared property, campus-area residence, or remote community access point.",
+    "Tell Nister about your hostel, rooms, residents, current internet, and preferred setup so the property can be assessed.",
   alternates: {
     canonical: canonical("/request-installation"),
   },
   openGraph: {
-    title: "Request Installation | Nister Wi-Fi",
+    title: "Request a Property Assessment | Nister Wi-Fi",
     description:
-      "Submit property, location, resident, current internet, pain-point, and deployment preference details.",
+      "Start the lead-first owner flow by sending practical property details before OTP, password, or account creation.",
     url: canonical("/request-installation"),
     siteName: "Nister Wi-Fi",
     type: "website",
   },
 };
+
+const fieldsByName = new Map<LeadFormFieldName, LeadFormField>(leadFormFields.map((field) => [field.name, field]));
+
+function requiredField(name: LeadFormFieldName): LeadFormField {
+  const field = fieldsByName.get(name);
+  if (!field) {
+    throw new Error(`Missing lead form field: ${name}`);
+  }
+  return field;
+}
 
 function LeadFormControl({ field }: { field: LeadFormField }) {
   const fieldId = `lead-${field.name}`;
@@ -60,7 +69,7 @@ function LeadFormControl({ field }: { field: LeadFormField }) {
             Select one
           </option>
           {field.options?.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option key={`${field.name}-${option.value}-${option.label}`} value={option.value}>
               {option.label}
             </option>
           ))}
@@ -83,10 +92,61 @@ function LeadFormControl({ field }: { field: LeadFormField }) {
   );
 }
 
+function HasWifiControl() {
+  return (
+    <div className="form-field">
+      <label htmlFor="lead-has_wifi">Does the property currently provide Wi-Fi? *</label>
+      <select id="lead-has_wifi" name="has_wifi" required defaultValue="">
+        <option disabled value="">
+          Select one
+        </option>
+        <option value="1">Yes</option>
+        <option value="yes">Partly</option>
+        <option value="0">No</option>
+      </select>
+    </div>
+  );
+}
+
+function LeadControls({ names }: { names: readonly LeadFormFieldName[] }) {
+  return (
+    <>
+      {names.map((name) => (
+        <LeadFormControl field={requiredField(name)} key={name} />
+      ))}
+    </>
+  );
+}
+
+function RequestHeader() {
+  return (
+    <header className="site-header request-header">
+      <div className="shell nav-shell">
+        <a className="brand" href={EXTERNAL_LINKS.main} aria-label="Nister Wi-Fi home">
+          <span className="brand-mark" aria-hidden="true">
+            <span className="signal-bar signal-bar-one" />
+            <span className="signal-bar signal-bar-two" />
+            <span className="signal-bar signal-bar-three" />
+          </span>
+          <span>Nister Wi-Fi</span>
+        </a>
+        <nav className="main-nav" aria-label="Existing user links">
+          <a className="nav-action" href={EXTERNAL_LINKS.network}>
+            Get Online
+          </a>
+          <a className="nav-action" href={EXTERNAL_LINKS.login}>
+            Manage Access
+          </a>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
 export default function RequestInstallationPage() {
   const breadcrumb = breadcrumbJsonLd([
     { name: "Home", path: "/" },
-    { name: "Request Installation", path: "/request-installation" },
+    { name: "Request a Property Assessment", path: "/request-installation" },
   ]);
 
   return (
@@ -97,32 +157,24 @@ export default function RequestInstallationPage() {
       />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }} />
 
-      <SiteNav active="request-installation" />
+      <RequestHeader />
 
-      <section className="public-hero">
+      <section className="public-hero request-hero">
         <div className="shell public-hero-grid">
           <div>
-            <p className="eyebrow">Installation request</p>
-            <h1>Request Nister Wi-Fi review for your property.</h1>
+            <p className="eyebrow">Request Nister</p>
+            <h1>Tell us about your hostel. We&apos;ll handle the technical part.</h1>
             <p className="hero-lede">
-              Send the property and contact details first. The form uses an ordinary browser POST to pay.nister.org so
-              Nister can capture the lead before OTP, password setup, or owner dashboard access.
+              We need a few practical details about the property to understand where to start. Estimates are fine.
             </p>
-            <div className="button-row">
-              <a className="button button-primary" href={EXTERNAL_LINKS.network}>
-                Get Online
-              </a>
-              <a className="button button-secondary" href={EXTERNAL_LINKS.login}>
-                Manage Access
-              </a>
-            </div>
+            <p className="hero-assurance">No commitment to install.</p>
           </div>
-          <aside className="public-summary-panel" aria-label="Before you submit">
-            <strong>Helpful details</strong>
-            <span>Property name and town</span>
-            <span>Digital address or map link</span>
-            <span>Building and room estimate</span>
-            <span>Current provider and Wi-Fi pain points</span>
+          <aside className="public-summary-panel" aria-label="What happens next">
+            <strong>After you send this</strong>
+            <span>Your property details are saved first</span>
+            <span>You verify your phone number</span>
+            <span>You create or confirm your owner account</span>
+            <span>Nister reviews what setup makes sense</span>
           </aside>
         </div>
       </section>
@@ -130,31 +182,94 @@ export default function RequestInstallationPage() {
       <section className="section section-light">
         <div className="shell lead-layout">
           <div className="lead-intro">
-            <p className="eyebrow">Property lead form</p>
-            <h2>Share enough detail for a useful first review.</h2>
+            <p className="eyebrow">Property assessment</p>
+            <h2>Start with what Nister needs to assess the property.</h2>
             <p>
-              Required fields are marked. Use the checkbox section to describe the problems residents and operators
-              already see. Leave optional fields blank when they do not apply.
+              No account is required to send your property details. After the request is saved, pay.nister.org will ask
+              you to verify your phone number so you can track the request.
             </p>
             <Link className="inline-link" href="/how-it-works">
-              See how the review works
+              See how Nister works
             </Link>
           </div>
 
           <form action={EXTERNAL_LINKS.ownerLead} className="lead-form" method="post">
-            <div className="form-grid">
-              {leadFormFields.map((field) => (
-                <LeadFormControl field={field} key={field.name} />
-              ))}
-            </div>
+            <input name="country" type="hidden" value="Ghana" />
+
+            <section className="lead-form-section">
+              <h2>Where should we start?</h2>
+              <p>Estimates are completely fine.</p>
+              <div className="form-grid">
+                <LeadControls
+                  names={[
+                    "contact_name",
+                    "contact_phone",
+                    "property_name",
+                    "region",
+                    "town",
+                    "number_of_rooms",
+                    "estimated_residents",
+                  ]}
+                />
+              </div>
+            </section>
+
+            <section className="lead-form-section">
+              <h2>What does internet look like there today?</h2>
+              <p>Do not know the technical details? Skip the optional fields.</p>
+              <div className="form-grid">
+                <HasWifiControl />
+                <LeadControls
+                  names={[
+                    "current_provider",
+                    "current_monthly_cost",
+                    "current_speed",
+                    "connection_type",
+                    "contact_whatsapp",
+                    "contact_email",
+                    "address",
+                    "digital_address",
+                    "google_maps_url",
+                    "nearby_campus",
+                    "number_of_buildings",
+                    "number_of_floors",
+                    "current_occupancy",
+                  ]}
+                />
+              </div>
+            </section>
+
+            <section className="lead-form-section">
+              <h2>What would you most like to improve?</h2>
+              <p>Select everything that sounds familiar.</p>
+              <div className="form-grid">
+                <LeadControls
+                  names={[
+                    "poor_coverage",
+                    "slow_internet",
+                    "downtime",
+                    "user_management_problem",
+                    "shared_password_problem",
+                    "payment_problem",
+                    "starting_from_scratch",
+                  ]}
+                />
+              </div>
+            </section>
+
+            <section className="lead-form-section">
+              <h2>How would you prefer to set this up?</h2>
+              <p>Choose recommend what makes sense if you want Nister to review the property before suggesting a model.</p>
+              <div className="form-grid">
+                <LeadControls names={["deployment_preference"]} />
+              </div>
+            </section>
+
             <div className="form-actions">
               <button className="button button-primary" type="submit">
-                Submit Installation Request
+                Request My Property Assessment
               </button>
-              <p>
-                Submitting opens the owner lead handler on pay.nister.org. Nister uses the submitted information to
-                review the property request.
-              </p>
+              <p>Your property details are saved before OTP, password, or owner dashboard access.</p>
             </div>
           </form>
         </div>
