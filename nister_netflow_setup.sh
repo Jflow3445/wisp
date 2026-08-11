@@ -192,7 +192,7 @@ cat > "$LOGROTATE_FILE" <<EOF
 # nfcapd already rotates capture files by timestamp (nfcapd.YYYYMMDDHHMM).
 # Do not run logrotate on ${NETFLOW_DIR}/nfcapd.* and do not send SIGHUP
 # to nister-nfcapd; this can stop collection.
-# Retention is handled by ${RETENTION_CRON_FILE}.
+# Capture deletion is handled only by verified archive cleanup.
 EOF
 chmod 0644 "$LOGROTATE_FILE"
 
@@ -202,26 +202,13 @@ set -eu
 
 NETFLOW_DIR="${NETFLOW_DIR}"
 RETENTION_DAYS="${NETFLOW_RETENTION_DAYS}"
+ARCHIVE_SCRIPT="${ARCHIVE_SCRIPT_DST}"
 
-capture_list() {
-  find "\$NETFLOW_DIR" -maxdepth 1 -type f -name 'nfcapd.[0-9]*' -printf '%f\\t%s\\t%p\\n' |
-    awk -F '\\t' '
-      {
-        name=\$1
-        stamp=name
-        sub(/^nfcapd\\./, "", stamp)
-        sub(/\\..*$/, "", stamp)
-        if (stamp ~ /^[0-9]{12}\$/) print stamp "\\t" \$2 "\\t" \$3
-      }
-    '
-}
+# Capture deletion is handled only by verified archive cleanup.
+# This job intentionally does not remove local nfcapd files by age.
 
-if [ -d "\$NETFLOW_DIR" ]; then
-  cutoff="\$(date -u -d "\$RETENTION_DAYS days ago" +%Y%m%d%H%M)"
-  capture_list | awk -F '\\t' -v cutoff="\$cutoff" '\$1 < cutoff { print \$3 }' |
-    while IFS= read -r file; do
-      rm -f -- "\$file"
-    done
+if [ -x "\$ARCHIVE_SCRIPT" ]; then
+  /usr/bin/php "\$ARCHIVE_SCRIPT" >/dev/null 2>&1 || true
 fi
 EOF
 chown root:root "$RETENTION_CRON_FILE"

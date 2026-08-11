@@ -868,6 +868,8 @@ assert_not_contains "netflow_setup_no_hup_kill" "$netflow_setup_content" 'kill -
 assert_contains "netflow_setup_retention_cron" "$netflow_setup_content" 'RETENTION_CRON_FILE='
 assert_contains "netflow_setup_installs_drive_archive_script" "$netflow_setup_content" 'ARCHIVE_SCRIPT_SRC="$REPO_DIR/ops/netflow_archive_to_drive.php"'
 assert_contains "netflow_setup_enables_drive_archive_timer" "$netflow_setup_content" 'systemctl enable --now nister-netflow-archive.timer'
+assert_not_contains "netflow_setup_no_unverified_capture_delete" "$netflow_setup_content" 'rm -f -- "$file"'
+assert_contains "netflow_setup_retention_preserves_captures" "$netflow_setup_content" 'Capture deletion is handled only by verified archive cleanup'
 
 drive_archive_content="$(cat pay-portal/lib/google_drive_archive.php pay-portal/admin/api.php pay-portal/admin/google_drive_callback.php ops/netflow_archive_to_drive.php)"
 assert_contains "drive_archive_uses_admin_oauth_cookie_state" "$drive_archive_content" 'nister_drive_oauth_state'
