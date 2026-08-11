@@ -201,14 +201,16 @@ cat > "$RETENTION_CRON_FILE" <<EOF
 set -eu
 
 NETFLOW_DIR="${NETFLOW_DIR}"
-RETENTION_DAYS="${NETFLOW_RETENTION_DAYS}"
 ARCHIVE_SCRIPT="${ARCHIVE_SCRIPT_DST}"
 
 # Capture deletion is handled only by verified archive cleanup.
 # This job intentionally does not remove local nfcapd files by age.
 
 if [ -x "\$ARCHIVE_SCRIPT" ]; then
-  /usr/bin/php "\$ARCHIVE_SCRIPT" >/dev/null 2>&1 || true
+  if ! /usr/bin/php "\$ARCHIVE_SCRIPT" >/dev/null 2>&1; then
+    /usr/bin/logger -t nister-netflow-retention "archive_script_failed script=\$ARCHIVE_SCRIPT"
+    exit 1
+  fi
 fi
 EOF
 chown root:root "$RETENTION_CRON_FILE"
@@ -226,7 +228,7 @@ echo "  dir      : $NETFLOW_DIR"
 echo "  web group: $NETFLOW_WEB_GROUP"
 echo "  port     : $NETFLOW_PORT"
 echo "  interval : $NETFLOW_INTERVAL"
-echo "  retention: $NETFLOW_RETENTION_DAYS days"
+echo "  cleanup  : verified archive only"
 
 echo
 echo "Collector status:"

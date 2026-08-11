@@ -870,6 +870,8 @@ assert_contains "netflow_setup_installs_drive_archive_script" "$netflow_setup_co
 assert_contains "netflow_setup_enables_drive_archive_timer" "$netflow_setup_content" 'systemctl enable --now nister-netflow-archive.timer'
 assert_not_contains "netflow_setup_no_unverified_capture_delete" "$netflow_setup_content" 'rm -f -- "$file"'
 assert_contains "netflow_setup_retention_preserves_captures" "$netflow_setup_content" 'Capture deletion is handled only by verified archive cleanup'
+assert_not_contains "netflow_setup_no_silent_archive_failure" "$netflow_setup_content" '>/dev/null 2>&1 || true'
+assert_contains "netflow_setup_reports_archive_failure" "$netflow_setup_content" 'archive_script_failed'
 
 drive_archive_content="$(cat pay-portal/lib/google_drive_archive.php pay-portal/admin/api.php pay-portal/admin/google_drive_callback.php ops/netflow_archive_to_drive.php)"
 assert_contains "drive_archive_uses_admin_oauth_cookie_state" "$drive_archive_content" 'nister_drive_oauth_state'
@@ -877,6 +879,9 @@ assert_contains "drive_archive_uses_google_consent" "$drive_archive_content" 'ht
 assert_contains "drive_archive_verifies_uploaded_file" "$drive_archive_content" 'gdrive_verify_uploaded_file'
 assert_contains "drive_archive_blocks_delete_without_existing_verify" "$drive_archive_content" 'existing_drive_file_verification_failed'
 assert_contains "drive_archive_deletes_after_verified_upload_only" "$drive_archive_content" 'local_delete_failed_after_verified_upload'
+assert_not_contains "drive_archive_rejects_empty_md5_shortcut" "$drive_archive_content" "\$localMd5 === '' || \$remoteMd5 === ''"
+assert_contains "drive_archive_requires_local_md5" "$drive_archive_content" "\$localMd5 !== ''"
+assert_contains "drive_archive_requires_remote_md5" "$drive_archive_content" "\$remoteMd5 !== ''"
 assert_not_contains "drive_archive_no_terminal_only_rclone" "$drive_archive_content" 'rclone'
 
 health_content="$(cat pay-portal/lib/health.php pay-portal/cron/health_check.php pay-portal/admin/index.php)"

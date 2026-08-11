@@ -462,8 +462,14 @@ function gdrive_verify_uploaded_file(string $fileId, int $localSize, string $loc
   $meta = gdrive_file_metadata($fileId);
   $remoteSize = (int)($meta['size'] ?? -1);
   $remoteMd5 = strtolower((string)($meta['md5Checksum'] ?? ''));
-  $ok = $remoteSize === $localSize && ($localMd5 === '' || $remoteMd5 === '' || hash_equals(strtolower($localMd5), $remoteMd5));
-  return ['ok' => $ok, 'metadata' => $meta];
+  $localMd5 = strtolower(trim($localMd5));
+  $ok = $remoteSize === $localSize
+    && $localMd5 !== ''
+    && $remoteMd5 !== ''
+    && preg_match('/^[a-f0-9]{32}$/', $localMd5) === 1
+    && preg_match('/^[a-f0-9]{32}$/', $remoteMd5) === 1
+    && hash_equals($localMd5, $remoteMd5);
+  return ['ok' => $ok, 'metadata' => $meta, 'remote_size' => $remoteSize, 'remote_md5' => $remoteMd5, 'local_md5' => $localMd5];
 }
 
 function gdrive_delete_file(string $fileId): void {
