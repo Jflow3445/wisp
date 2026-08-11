@@ -393,6 +393,109 @@ echo $ok ? 'OK' : 'BAD';
 PHP
 )"
 assert_eq "property_lead_normalize_validate_release1_fields" "$property_lead_validation" "OK"
+
+property_lead_invalid_booleans="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/property_leads.php';
+$lead = property_lead_normalize([
+  'contact_name' => 'Ama Owner',
+  'contact_phone' => '0241234567',
+  'property_name' => 'North Gate Hostel',
+  'country' => 'Ghana',
+  'region' => 'Ashanti',
+  'town' => 'Kumasi',
+  'has_wifi' => 'definitely',
+  'poor_coverage' => '2',
+  'starting_from_scratch' => 'maybe',
+]);
+$errors = property_lead_validate($lead);
+$ok = ($errors['has_wifi'] ?? null) === 'invalid_boolean'
+  && ($errors['poor_coverage'] ?? null) === 'invalid_boolean'
+  && ($errors['starting_from_scratch'] ?? null) === 'invalid_boolean';
+echo $ok ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "property_lead_rejects_invalid_boolean_values" "$property_lead_invalid_booleans" "OK"
+
+property_lead_integer_bounds="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/property_leads.php';
+$lead = property_lead_normalize([
+  'contact_name' => 'Ama Owner',
+  'contact_phone' => '0241234567',
+  'property_name' => 'North Gate Hostel',
+  'country' => 'Ghana',
+  'region' => 'Ashanti',
+  'town' => 'Kumasi',
+  'number_of_buildings' => '100000000000000000000',
+  'number_of_floors' => '1000',
+  'number_of_rooms' => '250000',
+  'estimated_residents' => '500000',
+  'current_occupancy' => '500000',
+]);
+$errors = property_lead_validate($lead);
+$ok = ($errors['number_of_buildings'] ?? null) === 'invalid_integer'
+  && ($errors['number_of_floors'] ?? null) === 'out_of_range'
+  && ($errors['number_of_rooms'] ?? null) === 'out_of_range'
+  && ($errors['estimated_residents'] ?? null) === 'out_of_range'
+  && ($errors['current_occupancy'] ?? null) === 'out_of_range';
+echo $ok ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "property_lead_rejects_oversized_integer_fields" "$property_lead_integer_bounds" "OK"
+
+property_lead_address_optional="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/property_leads.php';
+$lead = property_lead_normalize([
+  'contact_name' => 'Ama Owner',
+  'contact_phone' => '0241234567',
+  'property_name' => 'North Gate Hostel',
+  'country' => 'Ghana',
+  'region' => 'Ashanti',
+  'town' => 'Kumasi',
+  'digital_address' => 'AK-000-0000',
+]);
+$errors = property_lead_validate($lead);
+echo array_key_exists('address', $errors) ? 'BAD' : 'OK';
+PHP
+)"
+assert_eq "property_lead_address_is_optional" "$property_lead_address_optional" "OK"
+
+property_lead_metadata_server_only="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/property_leads.php';
+$lead = property_lead_normalize([
+  'contact_name' => 'Ama Owner',
+  'contact_phone' => '0241234567',
+  'property_name' => 'North Gate Hostel',
+  'country' => 'Ghana',
+  'region' => 'Ashanti',
+  'town' => 'Kumasi',
+  'ip' => '203.0.113.99',
+  'referrer' => 'https://attacker.example/form',
+  'user_agent' => 'spoofed-agent',
+]);
+$ok = ($lead['ip'] ?? null) === null
+  && ($lead['referrer'] ?? null) === null
+  && ($lead['user_agent'] ?? null) === null;
+echo $ok ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "property_lead_metadata_not_accepted_from_form_input" "$property_lead_metadata_server_only" "OK"
+
+db_preserves_existing_global_pdo="$(php_run <<'PHP'
+<?php
+putenv('DB_DSN=mysql:host=invalid.invalid;dbname=should_not_connect');
+putenv('DB_USER=bad');
+putenv('DB_PASS=bad');
+$pdo = new PDO('sqlite::memory:');
+$GLOBALS['PDO'] = $pdo;
+require getcwd() . '/pay-portal/lib/db.php';
+echo isset($GLOBALS['PDO']) && $GLOBALS['PDO'] === $pdo ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "db_php_preserves_explicit_global_pdo" "$db_preserves_existing_global_pdo" "OK"
 assert_contains "owner_auth_uses_owner_session" "$owner_auth_content" "session_name('nister_owner')"
 assert_contains "owner_auth_sets_noindex" "$owner_auth_content" "noindex, nofollow"
 assert_owner_pages_each_noindex "owner_pages_are_noindex"

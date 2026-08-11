@@ -48,11 +48,18 @@ function property_lead_deployment_preferences(): array {
   ];
 }
 
-function property_lead_bool_value($value): int {
+function property_lead_bool_value($value) {
+  if ($value === null) return 0;
   if (is_bool($value)) return $value ? 1 : 0;
-  if (is_int($value)) return $value === 1 ? 1 : 0;
+  if (is_int($value)) {
+    if ($value === 0 || $value === 1) return $value;
+    return 'invalid_boolean';
+  }
   $raw = strtolower(trim((string)$value));
-  return in_array($raw, ['1', 'true', 'yes', 'y', 'on'], true) ? 1 : 0;
+  if ($raw === '') return 0;
+  if (in_array($raw, ['1', 'true', 'yes', 'y', 'on'], true)) return 1;
+  if (in_array($raw, ['0', 'false', 'no', 'n', 'off'], true)) return 0;
+  return 'invalid_boolean';
 }
 
 function property_lead_trimmed($value) {
@@ -64,11 +71,29 @@ function property_lead_required_text(array $in, string $field): string {
   return trim((string)($in[$field] ?? ''));
 }
 
+function property_lead_integer_bounds(): array {
+  return [
+    'number_of_buildings' => 200,
+    'number_of_floors' => 100,
+    'number_of_rooms' => 20000,
+    'estimated_residents' => 50000,
+    'current_occupancy' => 50000,
+  ];
+}
+
+function property_lead_digits_fit_php_int(string $digits): bool {
+  $digits = ltrim($digits, '0');
+  if ($digits === '') return true;
+  $max = (string)PHP_INT_MAX;
+  if (strlen($digits) !== strlen($max)) return strlen($digits) < strlen($max);
+  return strcmp($digits, $max) <= 0;
+}
+
 function property_lead_optional_int(array $in, string $field) {
   if (!array_key_exists($field, $in)) return null;
   $raw = trim((string)$in[$field]);
   if ($raw === '') return null;
-  if (preg_match('/^\d+$/', $raw)) return (int)$raw;
+  if (preg_match('/^\d+$/', $raw) && property_lead_digits_fit_php_int($raw)) return (int)$raw;
   return $raw;
 }
 
@@ -96,7 +121,7 @@ function property_lead_normalize(array $in): array {
     'country' => property_lead_required_text($in, 'country'),
     'region' => property_lead_required_text($in, 'region'),
     'town' => property_lead_required_text($in, 'town'),
-    'address' => property_lead_required_text($in, 'address'),
+    'address' => property_lead_trimmed($in['address'] ?? null),
     'digital_address' => property_lead_trimmed($in['digital_address'] ?? null),
     'google_maps_url' => property_lead_trimmed($in['google_maps_url'] ?? null),
     'nearby_campus' => property_lead_trimmed($in['nearby_campus'] ?? null),
@@ -123,15 +148,15 @@ function property_lead_normalize(array $in): array {
     'utm_source' => property_lead_trimmed($in['utm_source'] ?? null),
     'utm_medium' => property_lead_trimmed($in['utm_medium'] ?? null),
     'utm_campaign' => property_lead_trimmed($in['utm_campaign'] ?? null),
-    'referrer' => property_lead_trimmed($in['referrer'] ?? null),
-    'ip' => property_lead_trimmed($in['ip'] ?? null),
-    'user_agent' => property_lead_trimmed($in['user_agent'] ?? null),
+    'referrer' => null,
+    'ip' => null,
+    'user_agent' => null,
   ];
 }
 
 function property_lead_validate(array $lead): array {
   $errors = [];
-  foreach (['contact_name', 'contact_phone', 'property_name', 'country', 'region', 'town', 'address'] as $field) {
+  foreach (['contact_name', 'contact_phone', 'property_name', 'country', 'region', 'town'] as $field) {
     if (trim((string)($lead[$field] ?? '')) === '') {
       $errors[$field] = 'required';
     }
@@ -188,10 +213,13 @@ function property_lead_validate(array $lead): array {
     }
   }
 
-  foreach (['number_of_buildings', 'number_of_floors', 'number_of_rooms', 'estimated_residents', 'current_occupancy'] as $field) {
+  foreach (property_lead_integer_bounds() as $field => $max) {
     $value = $lead[$field] ?? null;
-    if ($value !== null && (!is_int($value) || $value < 0)) {
-      $errors[$field] = 'invalid_nonnegative_integer';
+    if ($value === null) continue;
+    if (!is_int($value) || $value < 0) {
+      $errors[$field] = 'invalid_integer';
+    } elseif ($value > $max) {
+      $errors[$field] = 'out_of_range';
     }
   }
 
@@ -298,9 +326,10 @@ function property_lead_create(PDO $pdo, array $in, array $server = []): array {
   owner_schema_bootstrap($pdo);
 
   $lead = property_lead_normalize($in);
-  $lead['referrer'] = property_lead_server_value($server, ['HTTP_REFERER', 'HTTP_REFERRER'], 500) ?? $lead['referrer'];
-  $lead['ip'] = property_lead_client_ip($server) ?? $lead['ip'];
-  $lead['user_agent'] = property_lead_server_value($server, ['HTTP_USER_AGENT'], 255) ?? $lead['user_agent'];
+  $requestServer = $server === [] ? $_SERVER : $server;
+  $lead['referrer'] = property_lead_server_value($requestServer, ['HTTP_REFERER', 'HTTP_REFERRER'], 500);
+  $lead['ip'] = property_lead_client_ip($requestServer);
+  $lead['user_agent'] = property_lead_server_value($requestServer, ['HTTP_USER_AGENT'], 255);
 
   $errors = property_lead_validate($lead);
   if ($errors !== []) {
