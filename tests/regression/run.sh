@@ -1069,5 +1069,14 @@ owner_admin_content="$(cat pay-portal/admin/index.php pay-portal/lib/property_re
 assert_contains "owner_allocation_attempts_show_site_column" "$owner_admin_content" '<th>Site</th>'
 assert_contains "owner_allocation_attempts_render_site_label" "$owner_admin_content" 'allocationAttemptSiteLabel(a)'
 assert_contains "owner_allocation_attempts_join_location_names" "$owner_admin_content" 'LEFT JOIN locations l ON l.id = aa.location_id'
+assert_contains "owner_allocation_admin_summary_function" "$owner_admin_content" 'function property_allocation_admin_summary(PDO $pdo): array'
+assert_contains "owner_allocation_admin_returns_summary" "$owner_admin_content" "'summary' => property_allocation_admin_summary("
+assert_contains "owner_allocation_attempts_failed_only" "$owner_admin_content" "WHERE aa.status = 'failed'"
+assert_contains "owner_allocation_recent_allocations_capped" "$owner_admin_content" 'min($limit, 25)'
+assert_contains "owner_allocation_summary_panel" "$owner_admin_content" 'id="owner_allocation_summary"'
+assert_contains "owner_allocation_action_needed_heading" "$owner_admin_content" '<h3>Action needed</h3>'
+assert_contains "owner_allocation_recent_transactions_heading" "$owner_admin_content" '<h3>Recent allocated transactions</h3>'
+assert_contains "owner_allocation_summary_renderer" "$owner_admin_content" 'function renderOwnerAllocationSummary(summary)'
+assert_contains "owner_allocation_no_failed_default_copy" "$owner_admin_content" 'No failed allocation attempts.'
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

@@ -1315,18 +1315,29 @@ $ADMIN_CSRF = admin_csrf_token();
       </section>
     </div>
 
+    <div class="section-head" style="margin-top:14px">
+      <h3>Allocation health</h3>
+      <div class="muted">Routine resolved history stays in the audit trail. This panel surfaces only financial setup issues and recent reporting output.</div>
+    </div>
+    <div class="grid" id="owner_allocation_summary">
+      <div class="kpi"><div class="label">Action needed</div><div class="value">0</div></div>
+      <div class="kpi"><div class="label">Allocated gross</div><div class="value">GHS 0.00</div></div>
+      <div class="kpi"><div class="label">Owner share</div><div class="value">GHS 0.00</div></div>
+      <div class="kpi"><div class="label">Zero-value skipped</div><div class="value">0</div></div>
+    </div>
+
     <div class="split" style="margin-top:14px">
       <section>
-        <h3>Allocation attempts</h3>
+        <h3>Action needed</h3>
         <div class="table-wrap">
           <table class="table small" id="owner_allocation_attempts_tbl">
             <thead><tr><th>Purchase</th><th>Status</th><th>Reason</th><th>Site</th><th>Attempts</th><th>Last attempt</th></tr></thead>
-            <tbody><tr><td colspan="6" class="muted">Loading allocation attempts...</td></tr></tbody>
+            <tbody><tr><td colspan="6" class="muted">Loading failed allocation attempts...</td></tr></tbody>
           </table>
         </div>
       </section>
       <section>
-        <h3>Allocated transactions</h3>
+        <h3>Recent allocated transactions</h3>
         <div class="table-wrap">
           <table class="table small" id="owner_allocations_tbl">
             <thead><tr><th>Purchase</th><th>Property</th><th>Gross</th><th>Your share</th><th>Status</th></tr></thead>
@@ -1662,15 +1673,34 @@ function allocationAttemptSiteLabel(a){
   return label || 'N/A';
 }
 
+function renderOwnerAllocationSummary(summary){
+  const el = document.getElementById('owner_allocation_summary');
+  if (!el) return;
+  const s = summary && typeof summary === 'object' ? summary : {};
+  const failed = Number(s.failed_count || 0);
+  const allocatedGross = Number(s.allocated_gross_cents || 0);
+  const ownerAmount = Number(s.allocated_owner_amount_cents || 0);
+  const skippedZero = Number(s.zero_gross_skipped_count || 0);
+  const resolved = Number(s.resolved_count || 0);
+  const last = s.last_allocated_at ? safe(s.last_allocated_at) : 'N/A';
+  el.innerHTML = `
+    <div class="kpi"><div class="label">Action needed</div><div class="value">${safe(failed)}</div><div class="muted">failed allocation setup rows</div></div>
+    <div class="kpi"><div class="label">Allocated gross</div><div class="value">${centsToGHS(allocatedGross)}</div><div class="muted">${safe(resolved)} resolved attempts</div></div>
+    <div class="kpi"><div class="label">Owner share</div><div class="value">${centsToGHS(ownerAmount)}</div><div class="muted">read-only reporting</div></div>
+    <div class="kpi"><div class="label">Zero-value skipped</div><div class="value">${safe(skippedZero)}</div><div class="muted">last allocation ${last}</div></div>
+  `;
+}
+
 function renderOwnerAllocations(data){
   const attemptsTb = document.querySelector('#owner_allocation_attempts_tbl tbody');
   const allocTb = document.querySelector('#owner_allocations_tbl tbody');
   const attempts = data && Array.isArray(data.attempts) ? data.attempts : [];
   const allocations = data && Array.isArray(data.allocations) ? data.allocations : [];
+  renderOwnerAllocationSummary(data ? data.summary : null);
   if (attemptsTb) {
     attemptsTb.innerHTML = attempts.length ? attempts.map(a => `<tr>
       <td>${safe(a.purchase_id)}</td><td><span class="badge">${safe(a.status)}</span></td><td>${safe(a.reason)}</td><td>${allocationAttemptSiteLabel(a)}</td><td>${safe(a.attempt_count || 0)}</td><td>${safe(a.last_attempt_at)}</td>
-    </tr>`).join('') : '<tr><td colspan="6" class="muted">No allocation attempts yet.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="6" class="muted">No failed allocation attempts.</td></tr>';
   }
   if (allocTb) {
     allocTb.innerHTML = allocations.length ? allocations.map(a => `<tr>

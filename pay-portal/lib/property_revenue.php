@@ -890,23 +890,93 @@ function property_transactions_for_owner(PDO $pdo, int $ownerId, array $filters 
   return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
+function property_allocation_admin_summary(PDO $pdo): array {
+  owner_schema_bootstrap($pdo);
+  $statusCounts = [
+    'failed' => 0,
+    'resolved' => 0,
+    'skipped' => 0,
+    'total' => 0,
+  ];
+  $zeroGrossSkipped = 0;
+  $reasonCounts = [];
+
+  $attemptRows = $pdo->query(
+    "SELECT status, reason, COUNT(*) AS row_count
+     FROM property_allocation_attempts
+     GROUP BY status, reason
+     ORDER BY status, reason"
+  )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  foreach ($attemptRows as $row) {
+    $status = (string)($row['status'] ?? '');
+    $reason = (string)($row['reason'] ?? '');
+    $count = (int)($row['row_count'] ?? 0);
+    if (array_key_exists($status, $statusCounts)) {
+      $statusCounts[$status] += $count;
+    }
+    $statusCounts['total'] += $count;
+    if ($status === 'skipped' && $reason === 'zero_gross_amount') {
+      $zeroGrossSkipped += $count;
+    }
+    $reasonCounts[] = [
+      'status' => $status,
+      'reason' => $reason,
+      'count' => $count,
+    ];
+  }
+
+  $allocSummary = $pdo->query(
+    "SELECT COUNT(*) AS allocated_count,
+            COALESCE(SUM(gross_cents), 0) AS gross_cents,
+            COALESCE(SUM(owner_amount_cents), 0) AS owner_amount_cents,
+            COALESCE(SUM(nister_amount_cents), 0) AS nister_amount_cents,
+            MAX(allocated_at) AS last_allocated_at
+     FROM property_transaction_allocations
+     WHERE status = 'allocated'"
+  )->fetch(PDO::FETCH_ASSOC) ?: [];
+
+  return [
+    'failed_count' => $statusCounts['failed'],
+    'resolved_count' => $statusCounts['resolved'],
+    'skipped_count' => $statusCounts['skipped'],
+    'attempt_count' => $statusCounts['total'],
+    'zero_gross_skipped_count' => $zeroGrossSkipped,
+    'allocated_count' => (int)($allocSummary['allocated_count'] ?? 0),
+    'allocated_gross_cents' => (int)($allocSummary['gross_cents'] ?? 0),
+    'allocated_owner_amount_cents' => (int)($allocSummary['owner_amount_cents'] ?? 0),
+    'allocated_nister_amount_cents' => (int)($allocSummary['nister_amount_cents'] ?? 0),
+    'last_allocated_at' => $allocSummary['last_allocated_at'] ?? null,
+    'reason_counts' => $reasonCounts,
+  ];
+}
+
 function property_allocations_admin_list(PDO $pdo, int $limit = 200): array {
   owner_schema_bootstrap($pdo);
   $limit = max(1, min(500, $limit));
+  $allocationLimit = min($limit, 25);
+  $attemptLimit = min($limit, 100);
   $alloc = $pdo->query(
     "SELECT a.*, p.name AS property_name
      FROM property_transaction_allocations a
      LEFT JOIN properties p ON p.id = a.property_id
      ORDER BY a.purchased_at DESC, a.id DESC
-     LIMIT {$limit}"
+     LIMIT {$allocationLimit}"
   )->fetchAll(PDO::FETCH_ASSOC) ?: [];
   $attempts = $pdo->query(
     "SELECT aa.*, l.code AS location_code, l.name AS location_name, p.name AS property_name
      FROM property_allocation_attempts aa
      LEFT JOIN locations l ON l.id = aa.location_id
      LEFT JOIN properties p ON p.id = aa.property_id
+     WHERE aa.status = 'failed'
      ORDER BY aa.last_attempt_at DESC, aa.id DESC
-     LIMIT {$limit}"
+     LIMIT {$attemptLimit}"
   )->fetchAll(PDO::FETCH_ASSOC) ?: [];
-  return ['allocations' => $alloc, 'attempts' => $attempts];
+  return [
+    'summary' => property_allocation_admin_summary($pdo),
+    'allocations' => $alloc,
+    'attempts' => $attempts,
+    'attempts_filter' => 'failed',
+    'allocation_limit' => $allocationLimit,
+    'attempt_limit' => $attemptLimit,
+  ];
 }
