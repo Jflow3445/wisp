@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CONNECTIVITY_SOURCES, EXTERNAL_LINKS, homeSections, networkAccessSteps } from "@/lib/content";
 import { SiteFooter } from "@/components/shared/site-footer";
 import { SiteNav } from "@/components/shared/site-nav";
@@ -32,6 +33,19 @@ const serviceCards = [
     title: "Clear Access Path",
     body:
       "Simple public instructions: connect to Nister Wi-Fi, open wifi.nister.org, log in, and use the network after access is approved.",
+  },
+] as const;
+
+const ownerCards = [
+  {
+    title: "A request path for owners",
+    body:
+      "Property owners can share the site layout, current provider, resident need, and preferred deployment model before any owner account is created.",
+  },
+  {
+    title: "Commercial options without guesswork",
+    body:
+      "Nister reviews owner-funded, resident-paid, property-paid, and funding-review paths against the location instead of presenting unsupported package claims.",
   },
 ] as const;
 
@@ -134,6 +148,22 @@ export function NisterWifiHome() {
               </article>
             ))}
           </div>
+          <div className="owner-card-grid">
+            {ownerCards.map((card) => (
+              <article className="owner-card" key={card.title}>
+                <h3>{card.title}</h3>
+                <p>{card.body}</p>
+              </article>
+            ))}
+          </div>
+          <div className="button-row section-actions">
+            <Link className="button button-primary" href="/request-installation">
+              Request Installation
+            </Link>
+            <Link className="button button-secondary" href="/for-hostels">
+              For Hostel Owners
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -205,6 +235,9 @@ export function NisterWifiHome() {
             </p>
           </div>
           <div className="button-row">
+            <Link className="button button-primary" href="/request-installation">
+              Request Installation
+            </Link>
             <a className="button button-primary" href={EXTERNAL_LINKS.coverageRequest}>
               Request Coverage
             </a>

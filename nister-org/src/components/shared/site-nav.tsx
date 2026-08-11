@@ -1,8 +1,29 @@
 import { EXTERNAL_LINKS } from "@/lib/content";
 
+export type SiteNavActive =
+  | "home"
+  | "network"
+  | "for-hostels"
+  | "how-it-works"
+  | "plans"
+  | "request-installation"
+  | "resources"
+  | "faq"
+  | "coverage"
+  | "about";
+
 type SiteNavProps = {
-  active: "home" | "network";
+  active: SiteNavActive;
 };
+
+const mainSiteUrl = (path: string) => `${EXTERNAL_LINKS.main.replace(/\/$/, "")}${path}`;
+
+const acquisitionLinks = [
+  { active: "for-hostels", label: "For Hostels", href: mainSiteUrl("/for-hostels") },
+  { active: "plans", label: "Plans", href: mainSiteUrl("/plans") },
+  { active: "resources", label: "Resources", href: mainSiteUrl("/resources") },
+  { active: "request-installation", label: "Request Installation", href: mainSiteUrl("/request-installation") },
+] as const;
 
 export function SiteNav({ active }: SiteNavProps) {
   return (
@@ -20,10 +41,21 @@ export function SiteNav({ active }: SiteNavProps) {
           <a aria-current={active === "home" ? "page" : undefined} href={EXTERNAL_LINKS.main}>
             Home
           </a>
-          <a aria-current={active === "network" ? "page" : undefined} href={EXTERNAL_LINKS.network}>
+          {acquisitionLinks.map((link) => (
+            <a aria-current={active === link.active ? "page" : undefined} href={link.href} key={link.href}>
+              {link.label}
+            </a>
+          ))}
+          <a
+            aria-current={active === "network" ? "page" : undefined}
+            className="nav-action"
+            href={EXTERNAL_LINKS.network}
+          >
             Get Online
           </a>
-          <a href={EXTERNAL_LINKS.login}>Manage Access</a>
+          <a className="nav-action nav-action-strong" href={EXTERNAL_LINKS.login}>
+            Manage Access
+          </a>
         </nav>
       </div>
     </header>
