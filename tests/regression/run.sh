@@ -821,6 +821,8 @@ assert_contains "admin_api_plan_promo_keeps_canonical_device_limit" "$admin_api_
 assert_not_contains "admin_api_plan_promo_never_sets_per_user_rate_reply" "$admin_api_content" "radius_set_reply(\$r, \$u, 'Mikrotik-Rate-Limit', ':=', \$rateLimit)"
 assert_contains "admin_api_promo_targets_remain_strings" "$admin_api_content" "array_map('strval', array_keys(\$out))"
 assert_contains "admin_api_plan_promo_casts_target_msisdn" "$admin_api_content" "\$msisdn = (string)\$msisdn;"
+assert_contains "admin_api_wallet_account_canon_helper" "$admin_api_content" "function admin_wallet_account_canon_sql(string \$column): string"
+assert_contains "admin_api_wallet_accounts_count_distinct_canonical" "$admin_api_content" "COUNT(DISTINCT {\$walletAccountCanon}) AS cnt FROM accounts"
 
 scope_block="$(awk '/function admin_user_scope_check/,/function admin_emit_scope_error/' pay-portal/admin/api.php)"
 assert_not_contains "admin_scope_check_no_profile_side_effect" "$scope_block" "location_profile_set"
