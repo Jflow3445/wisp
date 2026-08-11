@@ -3,120 +3,116 @@ import { EXTERNAL_LINKS } from "@/lib/content";
 import { SiteFooter } from "@/components/shared/site-footer";
 import { SiteNav } from "@/components/shared/site-nav";
 
-const problemCards = [
+const painPoints = [
   {
-    title: "Residents need Wi-Fi where they actually live.",
-    body:
-      "A connection at reception is not enough when residents spend their time in rooms across multiple floors or buildings.",
+    title: "Wi-Fi does not reach every room.",
+    body: "A connection at reception is not enough when residents live across rooms, floors and separate buildings.",
   },
   {
-    title: "One shared password quickly becomes difficult to control.",
-    body:
-      "Nister gives residents structured access instead of relying on a password that can spread indefinitely.",
+    title: "Shared passwords spread.",
+    body: "One password is easy to pass around. After a while, it is hard to know who should have access.",
   },
   {
-    title: "Collecting internet money should not become another administrative job.",
-    body:
-      "Where residents pay individually, Nister connects eligible purchases with the resident access experience.",
+    title: "Internet payments become manual work.",
+    body: "If residents pay separately, someone has to track who paid, who expired and who needs help.",
   },
   {
-    title: "Owners should know what is happening.",
-    body:
-      "Approved property owners get a clearer view of their property, transactions, network status and applicable revenue information.",
+    title: "Complaints come back to you.",
+    body: "When the internet stops working, residents usually come to the hostel first.",
   },
 ] as const;
 
-const productCards = [
+const serviceCards = [
   {
-    title: "Wi-Fi built around the property",
-    body: "Plan connectivity around your buildings, floors, rooms and expected number of residents.",
+    title: "Better coverage",
+    body: "We help plan Wi-Fi around your rooms, floors and buildings instead of simply putting a router somewhere and hoping for the best.",
   },
   {
-    title: "Resident access you can manage",
-    body: "Give residents structured access instead of depending on one shared Wi-Fi password.",
+    title: "Easier resident access",
+    body: "Residents get their own way to access the service instead of everyone sharing one password.",
   },
   {
-    title: "Payments connected to access",
-    body:
-      "Where residents pay separately, Nister helps turn purchases into a manageable resident internet service.",
+    title: "Easier payments",
+    body: "If residents pay for internet separately, Nister helps manage payments and access without you collecting money manually.",
   },
   {
-    title: "Information owners can actually use",
-    body:
-      "See the property, network status, relevant transactions and your share where revenue sharing applies.",
+    title: "A simple dashboard",
+    body: "See what is happening at your hostel, including resident purchases and what your hostel earns where applicable.",
   },
 ] as const;
 
-const commercialOptions = [
+const hostelOptions = [
   {
-    badge: "Most Flexible",
-    title: "You own the setup. Nister helps you run it.",
-    body:
-      "Purchase the network equipment and connectivity for your property, then let Nister manage the technology around resident access, payments and reporting.",
+    badge: "Residents pay",
+    title: "Residents pay for internet",
+    body: "Your residents buy the internet access they need. Nister handles the access system and helps you keep track of what your hostel earns.",
     bullets: [
-      "Keep ownership of your network equipment.",
-      "Give residents structured access.",
-      "Choose resident-paid internet where appropriate.",
-      "Track eligible property revenue.",
+      "Residents choose the access they need.",
+      "Payments and access work together.",
+      "You avoid manual internet collection.",
+      "You can see your hostel's share.",
     ],
-    cta: "Assess My Property",
+    cta: "I Want Residents to Pay",
   },
   {
     badge: "Included Wi-Fi",
-    title: "Make Wi-Fi part of the accommodation.",
-    body:
-      "Prefer a simpler experience for residents? Include internet with accommodation and let Nister manage the Wi-Fi service for the property.",
+    title: "Wi-Fi is included",
+    body: "Want internet to be part of the accommodation instead? Nister can help you offer managed Wi-Fi as a hostel amenity.",
     bullets: [
-      "No separate internet purchase required from residents.",
-      "Internet becomes a hostel amenity.",
-      "Professional network management.",
-      "Simpler resident experience.",
+      "Internet is part of what residents receive.",
+      "The resident promise is simpler.",
+      "Nister helps manage the Wi-Fi service.",
+      "Your hostel can offer a clearer amenity.",
     ],
-    cta: "Explore Included Wi-Fi",
+    cta: "I Want Wi-Fi Included",
   },
   {
-    badge: "Assessed Individually",
-    title: "For selected properties, Nister can invest too.",
-    body:
-      "Properties with suitable demand and deployment economics may be considered for infrastructure funded by Nister under an agreed commercial arrangement.",
+    badge: "Selected hostels",
+    title: "Nister helps with the investment",
+    body: "For selected hostels, Nister may be willing to help fund the network setup in return for an agreed business arrangement.",
     bullets: [
-      "Reduced upfront infrastructure burden where approved.",
-      "Nister participates directly in the deployment.",
-      "Commercial terms agreed before installation.",
-      "Nister-funded deployments are not guaranteed.",
+      "Useful when upfront setup cost is the blocker.",
+      "We review the hostel before deciding.",
+      "The arrangement is agreed before installation.",
+      "Funding depends on the hostel and is not guaranteed.",
     ],
     cta: "Ask About Nister Funding",
   },
 ] as const;
 
-const reportingCards = [
-  ["Residents Online", "See current connected-user information where available."],
-  ["Network Status", "Get a simple view of whether your property network is operating normally."],
-  ["Resident Purchases", "See purchases attributed to the property."],
-  ["Your Share", "See the property amount calculated under the agreed commercial terms."],
-  ["Request Progress", "Follow your property from assessment through installation and activation."],
+const dashboardRows = [
+  ["Residents Online", "183"],
+  ["Internet Sales", "GHS 2,480"],
+  ["Your Earnings", "GHS 620"],
+  ["Network Status", "Online"],
+  ["Access Points", "12 Online"],
+  ["Recent Transactions", "Live"],
 ] as const;
 
-const ownerSteps = [
+const dashboardDetails = [
+  ["Residents Online", "See how busy your hostel network is."],
+  ["Internet Sales", "See internet purchases at your hostel."],
+  ["Your Earnings", "See your hostel's share where this applies."],
+  ["Network Status", "Know whether the service is running normally."],
+  ["Recent Transactions", "Review recent activity without running the network yourself."],
+] as const;
+
+const steps = [
   {
-    title: "Tell us about the property",
-    body:
-      "Give us the location, approximate rooms and residents, and a little information about the internet you have today.",
+    title: "Tell us about your hostel",
+    body: "Where is it? How many rooms? Roughly how many residents?",
   },
   {
-    title: "We assess what makes sense",
-    body:
-      "Nister reviews the property, expected demand and existing connectivity before recommending an arrangement.",
+    title: "We assess what you need",
+    body: "We look at the hostel, the internet you already have and what you want to achieve.",
   },
   {
-    title: "We set up the service",
-    body:
-      "Once everything is agreed, the network and Nister services are configured for the property.",
+    title: "We agree on the setup",
+    body: "You decide whether residents will pay, Wi-Fi will be included, or another arrangement makes more sense.",
   },
   {
-    title: "Residents connect. You get visibility.",
-    body:
-      "Residents use Nister while approved owners can see relevant information from the property dashboard.",
+    title: "We get your hostel connected",
+    body: "Nister helps deploy and manage the service so residents can get online.",
   },
 ] as const;
 
@@ -124,17 +120,17 @@ const faqs = [
   {
     question: "Can I use Nister if my hostel already has fibre?",
     answer:
-      "Yes, potentially. Nister does not necessarily need to replace a suitable existing internet connection. We can manage the resident Wi-Fi, access and payment layer around it.",
+      "Yes, potentially. You may not need to replace a suitable connection. Nister can help manage the Wi-Fi service around it.",
   },
   {
     question: "Can my hostel earn from Wi-Fi?",
     answer:
-      "Yes, where the agreed arrangement allows residents to purchase access individually. Eligible purchases can be attributed to the property and divided according to its commercial terms with Nister.",
+      "Yes, where residents pay for their own internet and the arrangement makes sense for your hostel. We discuss this before anything is installed.",
   },
   {
-    question: "Does Nister give owners access to the routers?",
+    question: "Do I have to run the network myself?",
     answer:
-      "No. The owner portal shows approved property information, request progress and read-only reporting. Router, firewall, plan and resident-account controls stay with Nister administrators.",
+      "No. That is the point of Nister. You run the hostel while we help manage the Wi-Fi service around it.",
   },
 ] as const;
 
@@ -147,59 +143,41 @@ export function NisterWifiHome() {
         <div className="shell hero-grid">
           <div className="hero-copy">
             <p className="eyebrow">Managed Wi-Fi for Hostels</p>
-            <h1>Make your hostel internet easier to run - and more valuable to your property.</h1>
+            <h1>Better Wi-Fi for your residents. Less work for you.</h1>
             <p className="hero-lede">
-              Nister helps you manage Wi-Fi, resident access and payments across your property. Give residents a better
-              way to connect while choosing whether internet is included, pays for itself or becomes an additional
-              revenue stream.
+              Your residents expect internet that works in their rooms. Nister helps you set up and manage your hostel
+              Wi-Fi, control resident access, handle internet payments and see what the service is earning without
+              making you run the network yourself.
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Assess My Property
+                Assess My Hostel
               </Link>
               <Link className="button button-secondary" href="/how-it-works">
                 See How Nister Works
               </Link>
             </div>
             <p className="hero-assurance">
-              No commitment. Tell us about your property and we&apos;ll recommend the setup that makes sense.
+              No commitment. Tell us about your hostel and we&apos;ll help you figure out what makes sense.
             </p>
           </div>
 
           <div className="network-visual dashboard-preview" aria-label="Dashboard Preview">
             <div className="visual-topline">
               <span>Dashboard Preview</span>
-              <strong>Owner view</strong>
+              <strong>Hostel view</strong>
             </div>
             <div className="preview-title">
-              <span>NISTER PROPERTY</span>
-              <strong>Your property at a glance</strong>
+              <span>VOLTA VIEW HOSTEL</span>
+              <strong>Your hostel at a glance</strong>
             </div>
             <div className="dashboard-preview-grid">
-              <div>
-                <span>Network</span>
-                <strong>Online</strong>
-              </div>
-              <div>
-                <span>Residents Online</span>
-                <strong>Available after approval</strong>
-              </div>
-              <div>
-                <span>Gross Resident Purchases</span>
-                <strong>Read-only reporting</strong>
-              </div>
-              <div>
-                <span>Your Share</span>
-                <strong>Based on agreed terms</strong>
-              </div>
-              <div>
-                <span>Requests</span>
-                <strong>Assessment</strong>
-              </div>
-              <div>
-                <span>Transactions</span>
-                <strong>Read-only</strong>
-              </div>
+              {dashboardRows.map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -209,7 +187,7 @@ export function NisterWifiHome() {
         <div className="shell utility-grid">
           <div>
             <strong>Already using Nister?</strong>
-            <span>Use the existing resident routes. These services have not moved.</span>
+            <span>Get online or manage your existing access.</span>
           </div>
           <div className="button-row">
             <a className="button button-secondary button-on-light" href={EXTERNAL_LINKS.network}>
@@ -225,18 +203,18 @@ export function NisterWifiHome() {
       <section className="section section-light">
         <div className="shell section-grid">
           <div>
-            <p className="eyebrow">The property problem</p>
-            <h2>Getting internet into the building is the easy part.</h2>
+            <h2>You have a hostel to run. Wi-Fi should not become another full-time job.</h2>
             <p>
-              Fibre, routers and access points can give a hostel internet. Running that internet well for dozens or
-              hundreds of residents is where things become difficult.
+              Your residents complain when the Wi-Fi does not reach their rooms. Shared passwords spread. Someone has to
+              keep track of who has paid. Someone has to deal with access when a resident&apos;s package expires.
             </p>
+            <p>Nister helps take that work off your plate.</p>
           </div>
           <div className="check-list">
-            {problemCards.map((card) => (
-              <p key={card.title}>
-                <strong>{card.title}</strong>
-                <span>{card.body}</span>
+            {painPoints.map((point) => (
+              <p key={point.title}>
+                <strong>{point.title}</strong>
+                <span>{point.body}</span>
               </p>
             ))}
           </div>
@@ -246,15 +224,13 @@ export function NisterWifiHome() {
       <section className="section">
         <div className="shell section-grid">
           <div>
-            <p className="eyebrow">What Nister manages</p>
-            <h2>Nister manages what happens after the internet reaches your property.</h2>
+            <h2>You run the hostel. We help run the Wi-Fi.</h2>
           </div>
           <div className="section-copy">
-            <p>You focus on running the hostel. Nister helps run the connectivity service around it.</p>
+            <p>Getting internet into the building is usually the easy part.</p>
             <p>
-              Already have fibre? Good. You do not necessarily need another internet provider. If your property already
-              has a suitable connection, Nister can work around it and manage the systems residents interact with,
-              including access, payments and the wider Wi-Fi service.
+              Running that internet well for 100, 200 or 500 residents is where things become difficult. Nister manages
+              what happens after the internet reaches your hostel.
             </p>
           </div>
         </div>
@@ -263,15 +239,11 @@ export function NisterWifiHome() {
       <section className="section section-light">
         <div className="shell">
           <div className="section-heading">
-            <p className="eyebrow">Managed resident service</p>
             <h2>Everything around the connection, managed.</h2>
-            <p>
-              Nister helps properties set up and manage resident Wi-Fi, access, payments and reporting without
-              requiring the property owner to operate all of the technology themselves.
-            </p>
+            <p>Give your residents a better way to connect while you get a clearer way to manage the service.</p>
           </div>
           <div className="public-card-grid">
-            {productCards.map((card) => (
+            {serviceCards.map((card) => (
               <article className="public-card" key={card.title}>
                 <h3>{card.title}</h3>
                 <p>{card.body}</p>
@@ -281,18 +253,44 @@ export function NisterWifiHome() {
         </div>
       </section>
 
+      <section className="section section-light">
+        <div className="shell section-grid">
+          <div>
+            <h2>Already have fibre? Great.</h2>
+            <p>
+              You may not need to replace it. If your current internet connection is suitable, Nister can help you
+              manage the Wi-Fi around it.
+            </p>
+            <p>
+              Your provider brings internet to the building. Nister helps you turn that connection into a service your
+              residents can actually use.
+            </p>
+          </div>
+          <div className="flow-list">
+            <span>Internet reaches your hostel</span>
+            <span>Nister helps plan coverage</span>
+            <span>Residents get structured access</span>
+            <span>Payments can connect to access</span>
+            <span>You see what is happening</span>
+          </div>
+        </div>
+      </section>
+
       <section className="section commercial-section">
         <div className="shell">
           <div className="section-heading">
-            <p className="eyebrow">Commercial options</p>
-            <h2>Your internet does not have to be just another monthly bill.</h2>
+            <h2>Your internet can do more than cost you money every month.</h2>
             <p>
-              Once internet is properly managed, a hostel has choices. You can let residents pay for access, include
-              Wi-Fi with accommodation or, for selected properties, explore a Nister-funded deployment.
+              If you want residents to pay for their own internet, Nister can help you run that service and track your
+              hostel&apos;s share.
+            </p>
+            <p>
+              The internet you already need can help recover its own cost or create an additional source of income for
+              your hostel.
             </p>
           </div>
           <div className="service-grid">
-            {commercialOptions.map((option) => (
+            {hostelOptions.map((option) => (
               <article className="service-card commercial-card" key={option.title}>
                 <span className="panel-label">{option.badge}</span>
                 <h3>{option.title}</h3>
@@ -311,46 +309,19 @@ export function NisterWifiHome() {
         </div>
       </section>
 
-      <section className="section section-light">
-        <div className="shell section-grid">
-          <div>
-            <p className="eyebrow">Cost recovery</p>
-            <h2>If residents pay for internet, your property can share in the value it creates.</h2>
-            <p>
-              With a resident-paid Nister setup, eligible resident purchases can be attributed to the property and
-              divided according to the commercial terms agreed with Nister.
-            </p>
-            <p>
-              Revenue is optional, not the entire Nister model. Properties that prefer to include internet with
-              accommodation can do that too.
-            </p>
-          </div>
-          <div className="flow-list">
-            <span>Resident buys access</span>
-            <span>Payment confirmed</span>
-            <span>Internet access applied</span>
-            <span>Purchase attributed to property</span>
-            <span>Property share recorded</span>
-            <span>Owner sees reporting</span>
-          </div>
-        </div>
-      </section>
-
       <section className="section">
         <div className="shell section-grid">
           <div>
-            <p className="eyebrow">Owner dashboard</p>
-            <h2>See what matters without becoming the network engineer.</h2>
+            <h2>See what&apos;s happening at your hostel from your Nister dashboard.</h2>
             <p>
-              Approved owners can view linked property details, high-level network state, read-only revenue, owner share
-              and transactions without router or payment-approval controls.
+              See residents online, internet sales, your earnings, network status and recent transactions in one place.
             </p>
             <Link className="inline-link inline-link-bright" href="/how-it-works">
               See How Nister Works
             </Link>
           </div>
           <div className="public-list-panel">
-            {reportingCards.map(([title, body]) => (
+            {dashboardDetails.map(([title, body]) => (
               <p key={title}>
                 <strong>{title}</strong>
                 <span>{body}</span>
@@ -363,11 +334,10 @@ export function NisterWifiHome() {
       <section className="section section-light">
         <div className="shell">
           <div className="section-heading compact">
-            <p className="eyebrow">How it works</p>
-            <h2>From hostel to connected residents.</h2>
+            <h2>Getting started is simple.</h2>
           </div>
           <div className="steps-grid steps-grid-four">
-            {ownerSteps.map((step, index) => (
+            {steps.map((step, index) => (
               <article className="step-card" key={step.title}>
                 <span>{index + 1}</span>
                 <h3>{step.title}</h3>
@@ -377,7 +347,7 @@ export function NisterWifiHome() {
           </div>
           <div className="button-row section-actions">
             <Link className="button button-primary" href="/request-installation">
-              Assess My Property
+              Assess My Hostel
             </Link>
           </div>
         </div>
@@ -386,16 +356,15 @@ export function NisterWifiHome() {
       <section className="section">
         <div className="shell section-grid">
           <div>
-            <p className="eyebrow">Honest fit</p>
-            <h2>Could you install some routers yourself? Absolutely.</h2>
+            <h2>Can&apos;t I just buy some routers myself?</h2>
           </div>
           <div className="section-copy">
+            <p>You can. The routers are not the hard part.</p>
             <p>
-              Nister is not built on pretending that Wi-Fi equipment is difficult to buy. The value comes after
-              installation: managing coverage, resident access, packages, payments, reporting and the day-to-day service
-              around the connection.
+              The real work starts afterwards: who gets access, who has paid, how long access should last, what happens
+              when passwords spread, and who keeps track of what the service is earning.
             </p>
-            <p>Nister is for hostel owners who would rather run their property than run all of that themselves.</p>
+            <p>That is where Nister comes in.</p>
           </div>
         </div>
       </section>
@@ -403,13 +372,8 @@ export function NisterWifiHome() {
       <section className="section section-light">
         <div className="shell">
           <div className="section-heading">
-            <p className="eyebrow">Product proof</p>
-            <h2>Built around a working resident access platform.</h2>
-            <p>
-              Nister&apos;s owner platform sits around the existing Nister Wi-Fi service residents use to get online,
-              manage access and purchase eligible service. Public claims stay practical until real property case studies
-              can be published with permission.
-            </p>
+            <h2>Questions hostel owners usually ask.</h2>
+            <p>These are the practical questions that usually come up before a hostel asks for an assessment.</p>
           </div>
           <div className="faq-list home-faq-list">
             {faqs.map((faq) => (
@@ -426,17 +390,16 @@ export function NisterWifiHome() {
         <div className="shell cta-panel">
           <div>
             <p className="eyebrow">Request Nister</p>
-            <h2>What could better-managed internet do for your property?</h2>
+            <h2>Tell us about your hostel and we&apos;ll figure out what makes sense.</h2>
             <p>
-              Tell us where your hostel is, roughly how many rooms and residents it has, and what your internet
-              situation looks like today. We&apos;ll use that information to understand what kind of Nister setup could
-              make sense.
+              Share the location, room count, resident count and what your internet looks like today. We&apos;ll review it
+              and recommend the setup that makes sense.
             </p>
-            <p>No account required to send your property details. No commitment to install.</p>
+            <p>No commitment to install.</p>
           </div>
           <div className="button-row">
             <Link className="button button-primary" href="/request-installation">
-              Request My Property Assessment
+              Assess My Hostel
             </Link>
             <Link className="button button-secondary" href="/how-it-works">
               See How Nister Works

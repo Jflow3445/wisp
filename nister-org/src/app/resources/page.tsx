@@ -8,14 +8,13 @@ import { SiteNav } from "@/components/shared/site-nav";
 export const metadata: Metadata = {
   title: "Resources",
   description:
-    "Nister Wi-Fi resources for hostel owners and operators planning installation, coverage, resident access, billing, and support.",
+    "Practical guides for hostel owners thinking about Wi-Fi coverage, access, payments and installation decisions.",
   alternates: {
     canonical: canonical("/resources"),
   },
   openGraph: {
     title: "Resources | Nister Wi-Fi",
-    description:
-      "Guides for property owners planning managed Wi-Fi access for hostels and shared accommodation.",
+    description: "Practical guides for getting hostel Wi-Fi right.",
     url: canonical("/resources"),
     siteName: "Nister Wi-Fi",
     type: "website",
@@ -41,15 +40,15 @@ export default function ResourcesPage() {
       <section className="public-hero">
         <div className="shell public-hero-grid">
           <div>
-            <p className="eyebrow">Resources</p>
-            <h1>Resources for hostel Wi-Fi owners and operators.</h1>
+            <p className="eyebrow">Guides</p>
+            <h1>Practical guides for getting hostel Wi-Fi right.</h1>
             <p className="hero-lede">
-              Use these resources to think through installation readiness, coverage issues, resident internet access,
-              payment responsibility, and support before requesting a Nister Wi-Fi review.
+              Whether you already have fibre or are starting from scratch, these guides will help you understand
+              coverage, access, payments and what to consider before installing Wi-Fi at your hostel.
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Assess My Property
+                Assess My Hostel
               </Link>
               <Link className="button button-secondary" href="/faq">
                 Read FAQ
@@ -57,11 +56,11 @@ export default function ResourcesPage() {
             </div>
           </div>
           <aside className="public-summary-panel" aria-label="Resource topics">
-            <strong>Topics</strong>
-            <span>Hostel installation planning</span>
-            <span>Coverage and room layout</span>
-            <span>Resident access and billing</span>
-            <span>Supportable internet operations</span>
+            <strong>Useful when you are thinking about</strong>
+            <span>Coverage inside rooms</span>
+            <span>Resident payments</span>
+            <span>Shared password problems</span>
+            <span>Installation questions</span>
           </aside>
         </div>
       </section>
@@ -69,12 +68,8 @@ export default function ResourcesPage() {
       <section className="section section-light">
         <div className="shell">
           <div className="section-heading">
-            <p className="eyebrow">Owner reading</p>
-            <h2>Start with the operational problem you are trying to solve.</h2>
-            <p>
-              Nister resources are written for real property decisions: what information to collect, how to compare
-              billing models, and why managed access can matter as much as raw internet speed.
-            </p>
+            <h2>Start with the question closest to your hostel.</h2>
+            <p>These articles are written for practical decisions before you spend money or promise residents Wi-Fi.</p>
           </div>
           <div className="resource-grid">
             {resourceArticles.map((article) => (

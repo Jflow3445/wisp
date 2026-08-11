@@ -1,7 +1,6 @@
 import {
   EXTERNAL_LINKS,
   networkAccessSteps,
-  networkExperiencePanels,
   networkPreLoginChecks,
   networkTroubleshootingSteps,
 } from "@/lib/content";
@@ -16,44 +15,28 @@ export function NetworkAccessGuide() {
       <section className="network-hero">
         <div className="shell network-hero-grid network-hero-grid-premium">
           <div className="network-hero-copy">
-            <p className="eyebrow">Nister Wi-Fi access help</p>
-            <h1>Get online at your hostel or community location.</h1>
+            <p className="eyebrow">Get Online</p>
+            <h1>Need to get online?</h1>
             <p className="network-hero-lede">
-              Need internet for study, work, calls, payments, or everyday browsing? If you can see Nister Wi-Fi on your
-              device, start there. Connect to the network, open wifi.nister.org, log in, and use the internet after your
-              access is approved.
+              Connect to Nister Wi-Fi and we&apos;ll take it from there. Stay on the Wi-Fi while you log in, buy access or
+              check your connection.
             </p>
             <div className="button-row">
               <a className="button button-primary" href={EXTERNAL_LINKS.login}>
                 Log In / Manage Access
               </a>
-              <a className="button button-secondary" href={EXTERNAL_LINKS.coverageRequest}>
-                Request Coverage
+              <a className="button button-secondary" href={EXTERNAL_LINKS.support}>
+                Get Help on WhatsApp
               </a>
-            </div>
-            <div className="network-hero-assurance" aria-label="Access context">
-              <span>Hostels</span>
-              <span>Remote areas</span>
-              <span>Community access points</span>
             </div>
           </div>
 
-          <div className="network-console" aria-label="Nister Wi-Fi access console">
+          <div className="network-console" aria-label="Nister Wi-Fi access steps">
             <div className="console-top">
               <span className="console-dot"></span>
               <span className="console-dot"></span>
               <span className="console-dot"></span>
               <strong>wifi.nister.org</strong>
-            </div>
-            <div className="console-status-grid">
-              <div>
-                <span>Network</span>
-                <strong>Nister Wi-Fi</strong>
-              </div>
-              <div>
-                <span>Use case</span>
-                <strong>On-site access</strong>
-              </div>
             </div>
             <div className="access-card access-card-premium" aria-label="Network access steps">
               {networkAccessSteps.map((step, index) => (
@@ -71,61 +54,31 @@ export function NetworkAccessGuide() {
       </section>
 
       <section className="section section-light">
-        <div className="shell">
-          <div className="section-heading">
-            <p className="eyebrow">Start here</p>
+        <div className="shell section-grid">
+          <div>
             <h2>Start here if you need internet now.</h2>
             <p>
-              This page is for the moment when you are trying to get online. It shows what to connect to, what to open,
-              what to expect, and what to try if the login page does not appear.
+              This page is for the moment when you are trying to connect. It keeps the steps simple so you can get back
+              online quickly.
             </p>
           </div>
-          <div className="network-experience-grid">
-            {networkExperiencePanels.map((panel) => (
-              <article className="network-experience-card" key={panel.title}>
-                <p className="eyebrow">{panel.eyebrow}</p>
-                <h3>{panel.title}</h3>
-                <p>{panel.body}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="section network-check-section">
-        <div className="shell network-check-grid">
-          <div>
-            <p className="eyebrow">Quick check</p>
-            <h2>Check these before you log in.</h2>
-            <p>
-              If the page does not move forward, the issue is often connection order. Make sure your device is already
-              on Nister Wi-Fi before you try to log in, pay, or check your access.
-            </p>
-          </div>
-          <div className="network-check-card">
+          <div className="public-list-panel">
             {networkPreLoginChecks.map((check) => (
-              <div className="network-check-item" key={check}>
-                <span aria-hidden="true"></span>
-                <p>{check}</p>
-              </div>
+              <p key={check}>{check}</p>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="section section-light">
+      <section className="section">
         <div className="shell">
           <div className="network-support-head">
             <div>
-              <p className="eyebrow">Trouble logging in?</p>
-              <h2>If the login page does not open.</h2>
-              <p>
-                Try these steps before asking for help. They cover the common moment when a device can see Wi-Fi but has
-                not reached the login page yet.
-              </p>
+              <h2>If it does not work.</h2>
+              <p>Try these quick checks before asking for help.</p>
             </div>
             <a className="button button-primary button-on-light" href={EXTERNAL_LINKS.support}>
-              WhatsApp support
+              Get Help on WhatsApp
             </a>
           </div>
           <div className="network-troubleshooting-grid">
@@ -142,15 +95,14 @@ export function NetworkAccessGuide() {
       <section className="network-final-band">
         <div className="shell network-final-grid">
           <div>
-            <p className="eyebrow">Seeing this page?</p>
-            <h2>You may be outside a Nister Wi-Fi location.</h2>
+            <h2>Stay connected to Nister Wi-Fi while using this page.</h2>
           </div>
           <div className="network-final-card">
-            <strong>On-site flow</strong>
-            <span>Connect to Nister Wi-Fi</span>
+            <strong>Get online</strong>
+            <span>Join Nister Wi-Fi</span>
             <span>Open wifi.nister.org</span>
-            <span>Log in</span>
-            <span>Use the internet</span>
+            <span>Log in or buy access</span>
+            <span>You&apos;re connected</span>
           </div>
         </div>
       </section>

@@ -24,7 +24,7 @@ export function organizationJsonLd(): Record<string, unknown> {
     name: "Nister Wi-Fi",
     url: canonical("/"),
     logo: canonical("/nister-browser-icon.png"),
-    description: "Shared internet access for hostels and remote communities.",
+    description: "Managed Wi-Fi for hostels and student accommodation.",
     contactPoint: {
       "@type": "ContactPoint",
       contactType: "customer support",

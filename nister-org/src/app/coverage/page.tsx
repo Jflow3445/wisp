@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EXTERNAL_LINKS, coverageAreas } from "@/lib/content";
+import { EXTERNAL_LINKS } from "@/lib/content";
 import { breadcrumbJsonLd, canonical, organizationJsonLd } from "@/lib/seo";
 import { SiteFooter } from "@/components/shared/site-footer";
 import { SiteNav } from "@/components/shared/site-nav";
@@ -8,19 +8,27 @@ import { SiteNav } from "@/components/shared/site-nav";
 export const metadata: Metadata = {
   title: "Coverage",
   description:
-    "Nister Wi-Fi coverage request information for hostels, campus-area properties, towns, regions, and remote community access points.",
+    "Tell Nister where your hostel is so the team can review whether managed Wi-Fi can be assessed for your property.",
   alternates: {
     canonical: canonical("/coverage"),
   },
   openGraph: {
     title: "Coverage | Nister Wi-Fi",
-    description:
-      "Request Nister Wi-Fi review for hostel, community, campus-area, town, and regional coverage needs.",
+    description: "Want Nister at your hostel? Tell us where you are.",
     url: canonical("/coverage"),
     siteName: "Nister Wi-Fi",
     type: "website",
   },
 };
+
+const requestDetails = [
+  "Your hostel name.",
+  "Town and region.",
+  "Address, directions or map pin.",
+  "Number of rooms.",
+  "Approximate number of residents.",
+  "What internet problem you want solved.",
+] as const;
 
 export default function CoveragePage() {
   const breadcrumb = breadcrumbJsonLd([
@@ -41,52 +49,42 @@ export default function CoveragePage() {
       <section className="public-hero">
         <div className="shell public-hero-grid">
           <div>
-            <p className="eyebrow">Coverage review</p>
-            <h1>Request Nister Wi-Fi coverage for a hostel, town, campus area, or community.</h1>
+            <p className="eyebrow">Coverage</p>
+            <h1>Want Nister at your hostel? Tell us where you are.</h1>
             <p className="hero-lede">
-              Coverage starts with location clarity. Share the region, town, address, map link, nearby campus or
-              landmark, and the buildings that need resident internet access.
+              Nister is expanding hostel by hostel. Send the location and a few practical details and we&apos;ll tell you
+              whether we can assess your hostel.
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Assess My Property
+                Assess My Hostel
               </Link>
               <a className="button button-secondary" href={EXTERNAL_LINKS.coverageRequest}>
                 WhatsApp Coverage Request
               </a>
             </div>
           </div>
-          <aside className="public-summary-panel" aria-label="Coverage request summary">
-            <strong>Best request details</strong>
-            <span>Region and town</span>
-            <span>Digital address or map pin</span>
-            <span>Nearby campus or landmark</span>
-            <span>Building, floor, and room context</span>
+          <aside className="public-summary-panel" aria-label="Coverage request details">
+            <strong>Send us</strong>
+            {requestDetails.slice(0, 4).map((detail) => (
+              <span key={detail}>{detail}</span>
+            ))}
           </aside>
         </div>
       </section>
 
       <section className="section section-light">
-        <div className="shell">
-          <div className="section-heading">
-            <p className="eyebrow">Priority review contexts</p>
-            <h2>Areas Nister can review when location details are specific.</h2>
+        <div className="shell section-grid">
+          <div>
+            <h2>Good location details make the first review useful.</h2>
             <p>
-              This page does not claim live availability for every listed town. It explains the kinds of Ghanaian
-              regions, hostel clusters, campus areas, and remote community requests that can be assessed.
+              We do not want to pretend Nister is available everywhere. A clear address, map pin and room count help us
+              decide whether a hostel assessment is practical.
             </p>
           </div>
-          <div className="coverage-grid">
-            {coverageAreas.map((area) => (
-              <article className="coverage-card" key={area.region}>
-                <h3>{area.region}</h3>
-                <p>{area.focus}</p>
-                <div className="tag-row">
-                  {area.towns.map((town) => (
-                    <span key={town}>{town}</span>
-                  ))}
-                </div>
-              </article>
+          <div className="public-list-panel">
+            {requestDetails.map((detail) => (
+              <p key={detail}>{detail}</p>
             ))}
           </div>
         </div>
@@ -95,13 +93,17 @@ export default function CoveragePage() {
       <section className="section">
         <div className="shell section-grid">
           <div>
-            <p className="eyebrow">Outside the listed towns?</p>
-            <h2>Send the location anyway if the need is real and the site is identifiable.</h2>
+            <h2>If your town is not listed anywhere, still send the request.</h2>
           </div>
-          <div className="public-list-panel">
-            <p>Include the property name, town, region, road directions, and a map link if possible.</p>
-            <p>Explain whether the request is for a hostel, shared property, school-area residence, or community point.</p>
-            <p>Describe the internet problem residents face today: coverage, speed, downtime, payment, or user access.</p>
+          <div className="section-copy">
+            <p>
+              What matters most is whether the hostel has a real need, enough location detail and a service model that
+              can make sense.
+            </p>
+            <p>
+              Tell us whether you already have fibre, whether coverage is weak in rooms, whether residents pay
+              separately and whether you want Wi-Fi included with accommodation.
+            </p>
           </div>
         </div>
       </section>

@@ -124,18 +124,18 @@ export default async function ResourceArticlePage({ params }: ResourceArticlePag
         <div className="shell cta-panel">
           <div>
             <p className="eyebrow">Next step</p>
-            <h2>Ready to request a site review?</h2>
+            <h2>Ready to ask Nister about your hostel?</h2>
             <p>
-              Send the property details, current internet situation, and deployment preference so Nister can start with
-              the right context.
+              Send your hostel details, current internet situation and preferred Wi-Fi setup so Nister can start with
+              the right picture.
             </p>
           </div>
           <div className="button-row">
             <Link className="button button-primary" href="/request-installation">
-              Assess My Property
+              Assess My Hostel
             </Link>
             <Link className="button button-secondary" href="/plans">
-              Compare Models
+              Explore My Options
             </Link>
           </div>
         </div>

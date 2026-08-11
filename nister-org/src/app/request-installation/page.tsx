@@ -5,16 +5,16 @@ import { breadcrumbJsonLd, canonical, organizationJsonLd } from "@/lib/seo";
 import { SiteFooter } from "@/components/shared/site-footer";
 
 export const metadata: Metadata = {
-  title: "Request a Property Assessment",
+  title: "Request a Hostel Assessment",
   description:
-    "Tell Nister about your hostel, rooms, residents, current internet, and preferred setup so the property can be assessed.",
+    "Tell Nister about your hostel, rooms, residents, current internet, and preferred setup so your hostel can be assessed.",
   alternates: {
     canonical: canonical("/request-installation"),
   },
   openGraph: {
-    title: "Request a Property Assessment | Nister Wi-Fi",
+    title: "Request a Hostel Assessment | Nister Wi-Fi",
     description:
-      "Start the lead-first owner flow by sending practical property details before OTP, password, or account creation.",
+      "Tell Nister about your hostel and we will help you figure out the Wi-Fi setup that makes sense.",
     url: canonical("/request-installation"),
     siteName: "Nister Wi-Fi",
     type: "website",
@@ -95,7 +95,7 @@ function LeadFormControl({ field }: { field: LeadFormField }) {
 function HasWifiControl() {
   return (
     <div className="form-field">
-      <label htmlFor="lead-has_wifi">Does the property currently provide Wi-Fi? *</label>
+      <label htmlFor="lead-has_wifi">Does the hostel currently provide Wi-Fi? *</label>
       <select id="lead-has_wifi" name="has_wifi" required defaultValue="">
         <option disabled value="">
           Select one
@@ -146,7 +146,7 @@ function RequestHeader() {
 export default function RequestInstallationPage() {
   const breadcrumb = breadcrumbJsonLd([
     { name: "Home", path: "/" },
-    { name: "Request a Property Assessment", path: "/request-installation" },
+    { name: "Request a Hostel Assessment", path: "/request-installation" },
   ]);
 
   return (
@@ -163,18 +163,18 @@ export default function RequestInstallationPage() {
         <div className="shell public-hero-grid">
           <div>
             <p className="eyebrow">Request Nister</p>
-            <h1>Tell us about your hostel. We&apos;ll handle the technical part.</h1>
+            <h1>Tell us about your hostel. We&apos;ll figure out what makes sense.</h1>
             <p className="hero-lede">
-              We need a few practical details about the property to understand where to start. Estimates are fine.
+              Share the location, room count, resident count and current internet situation. Estimates are fine.
             </p>
             <p className="hero-assurance">No commitment to install.</p>
           </div>
           <aside className="public-summary-panel" aria-label="What happens next">
             <strong>After you send this</strong>
-            <span>Your property details are saved first</span>
-            <span>You verify your phone number</span>
-            <span>You create or confirm your owner account</span>
-            <span>Nister reviews what setup makes sense</span>
+            <span>We review your hostel details</span>
+            <span>We may contact you with questions</span>
+            <span>We look at your current internet</span>
+            <span>We recommend a practical setup</span>
           </aside>
         </div>
       </section>
@@ -183,10 +183,10 @@ export default function RequestInstallationPage() {
         <div className="shell lead-layout">
           <div className="lead-intro">
             <p className="eyebrow">Property assessment</p>
-            <h2>Start with what Nister needs to assess the property.</h2>
+            <h2>Start with what we need to understand your hostel.</h2>
             <p>
-              No account is required to send your property details. After the request is saved, pay.nister.org will ask
-              you to verify your phone number so you can track the request.
+              Tell us where the hostel is, how many residents may need internet and what you want to improve. We&apos;ll use
+              the details to decide the next step.
             </p>
             <Link className="inline-link" href="/how-it-works">
               See how Nister works
@@ -259,7 +259,7 @@ export default function RequestInstallationPage() {
 
             <section className="lead-form-section">
               <h2>How would you prefer to set this up?</h2>
-              <p>Choose recommend what makes sense if you want Nister to review the property before suggesting a model.</p>
+              <p>Choose recommend what makes sense if you want Nister to suggest the best starting point.</p>
               <div className="form-grid">
                 <LeadControls names={["deployment_preference"]} />
               </div>
@@ -267,9 +267,9 @@ export default function RequestInstallationPage() {
 
             <div className="form-actions">
               <button className="button button-primary" type="submit">
-                Request My Property Assessment
+                Request My Hostel Assessment
               </button>
-              <p>Your property details are saved before OTP, password, or owner dashboard access.</p>
+              <p>Your details help us assess the hostel. No commitment to install.</p>
             </div>
           </form>
         </div>

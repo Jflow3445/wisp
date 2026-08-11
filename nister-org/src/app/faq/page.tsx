@@ -8,14 +8,13 @@ import { SiteNav } from "@/components/shared/site-nav";
 export const metadata: Metadata = {
   title: "FAQ",
   description:
-    "Frequently asked questions about Nister Wi-Fi installation, coverage, payment models, resident access, and support.",
+    "Frequently asked questions about Nister Wi-Fi for hostels, resident access, payments, coverage and support.",
   alternates: {
     canonical: canonical("/faq"),
   },
   openGraph: {
     title: "FAQ | Nister Wi-Fi",
-    description:
-      "Answers for hostel owners, operators, and residents considering Nister Wi-Fi access.",
+    description: "Answers for hostel owners and residents considering Nister Wi-Fi.",
     url: canonical("/faq"),
     siteName: "Nister Wi-Fi",
     type: "website",
@@ -42,14 +41,14 @@ export default function FaqPage() {
         <div className="shell public-hero-grid">
           <div>
             <p className="eyebrow">FAQ</p>
-            <h1>Frequently asked questions about Nister Wi-Fi.</h1>
+            <h1>Questions hostel owners usually ask before bringing in Nister.</h1>
             <p className="hero-lede">
-              These answers cover the public acquisition flow: property assessment requests, coverage review, payment models,
-              resident access, owner onboarding, and support routing.
+              Here are plain answers about coverage, resident access, payments, support and what happens after you ask
+              for an assessment.
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Assess My Property
+                Assess My Hostel
               </Link>
               <a className="button button-secondary" href={EXTERNAL_LINKS.support}>
                 WhatsApp Support
@@ -57,11 +56,11 @@ export default function FaqPage() {
             </div>
           </div>
           <aside className="public-summary-panel" aria-label="FAQ topics">
-            <strong>Common topics</strong>
-            <span>Installation review</span>
-            <span>Coverage requests</span>
-            <span>Payment and access</span>
-            <span>Support for owners and residents</span>
+            <strong>Common questions</strong>
+            <span>Can you use our fibre?</span>
+            <span>Can residents pay?</span>
+            <span>Who handles Wi-Fi problems?</span>
+            <span>How do residents get online?</span>
           </aside>
         </div>
       </section>

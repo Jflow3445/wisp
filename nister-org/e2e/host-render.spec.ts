@@ -61,18 +61,18 @@ const releaseOneLeadFieldNames = [
 const nisterPublicRouteAssertions = [
   {
     path: "/faq",
-    heading: /frequently asked questions|faq/i,
+    heading: /Questions hostel owners usually ask/i,
     body: /installation|coverage|payment|support|hostel/i,
   },
   {
     path: "/coverage",
-    heading: /coverage/i,
-    body: /hostel|community|campus|region|town/i,
+    heading: /Want Nister at your hostel/i,
+    body: /hostel|town|location|rooms|residents/i,
   },
   {
     path: "/about",
-    heading: /about nister|about/i,
-    body: /Nister Wi-Fi|hostel|remote communit|internet access/i,
+    heading: /We help hostels make internet easier/i,
+    body: /Nister Wi-Fi|hostel|resident|internet/i,
   },
 ] as const;
 
@@ -157,7 +157,7 @@ test("nister.org homepage keeps Get Online and Manage Access visible", async ({ 
 
   await page.goto("/");
   const primaryNav = page.getByLabel("Primary navigation");
-  await expect(page.getByRole("heading", { level: 1, name: /Make your hostel internet easier/i })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /Better Wi-Fi for your residents/i })).toBeVisible();
   await expect(primaryNav.getByRole("link", { name: "Get Online" })).toHaveAttribute(
     "href",
     "https://wifi.nister.org/",
@@ -167,7 +167,7 @@ test("nister.org homepage keeps Get Online and Manage Access visible", async ({ 
     "https://pay.nister.org/",
   );
   await expect(page.getByText("Dashboard Preview")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Assess My Property" }).first()).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Assess My Hostel" }).first()).toHaveAttribute(
     "href",
     "/request-installation",
   );
@@ -193,7 +193,7 @@ test("nister.org renders the request installation lead form", async ({ browser }
   const form = page.locator('form[action="https://pay.nister.org/owner/lead.php"]').first();
   await expect(form).toBeVisible();
   await expect(form).toHaveAttribute("method", /post/i);
-  await expect(form.getByRole("button", { name: "Request My Property Assessment" })).toBeVisible();
+  await expect(form.getByRole("button", { name: "Request My Hostel Assessment" })).toBeVisible();
 
   for (const fieldName of releaseOneLeadFieldNames) {
     expect(await form.locator(`[name="${fieldName}"]`).count(), fieldName).toBeGreaterThan(0);
@@ -213,7 +213,7 @@ test("nister.org renders public SEO resource routes", async ({ browser }) => {
   const resourcesResponse = await page.goto("/resources");
   expect(resourcesResponse?.status(), "/resources").toBe(200);
   const resourcesMain = page.locator("main");
-  await expect(page.getByRole("heading", { name: /resources/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Practical guides for getting hostel Wi-Fi right/i })).toBeVisible();
   await expect(resourcesMain).toContainText(/hostel|coverage|installation|internet/i);
 
   const resourceLinks = page.locator('main a[href*="/resources/"]');
@@ -271,17 +271,16 @@ test("wifi.nister.org renders the public network access guide", async ({ browser
   const page = await context.newPage();
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /get online at your hostel or community location/i })).toBeVisible();
-  await expect(page.getByLabel("Network access steps").getByText("Connect to Nister Wi-Fi")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Need to get online/i })).toBeVisible();
+  await expect(page.getByLabel("Network access steps").getByText("Join Nister Wi-Fi")).toBeVisible();
   await expect(page.getByRole("heading", { name: /start here if you need internet now/i })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /check these before you log in/i })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /if the login page does not open/i })).toBeVisible();
-  await expect(page.getByText(/you may be outside a Nister Wi-Fi location/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /if it does not work/i })).toBeVisible();
+  await expect(page.getByText(/Stay connected to Nister Wi-Fi/i)).toBeVisible();
   await expect(page.getByRole("link", { name: /log in \/ manage access/i })).toHaveAttribute(
     "href",
     "https://pay.nister.org/",
   );
-  await expect(page.getByRole("link", { name: "WhatsApp support" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Get Help on WhatsApp" }).first()).toHaveAttribute(
     "href",
     "https://wa.me/233530488905",
   );

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { EXTERNAL_LINKS } from "@/lib/content";
 import { breadcrumbJsonLd, canonical, organizationJsonLd } from "@/lib/seo";
 import { SiteFooter } from "@/components/shared/site-footer";
 import { SiteNav } from "@/components/shared/site-nav";
@@ -8,48 +7,50 @@ import { SiteNav } from "@/components/shared/site-nav";
 export const metadata: Metadata = {
   title: "Plans",
   description:
-    "Owner-facing Nister Wi-Fi commercial models for resident-paid access, property-paid Wi-Fi, owner-funded deployment, and funding review.",
+    "Choose whether residents pay for internet, Wi-Fi is included with accommodation, or Nister reviews a funded setup for your hostel.",
   alternates: {
     canonical: canonical("/plans"),
   },
   openGraph: {
     title: "Plans | Nister Wi-Fi",
-    description:
-      "Compare property Wi-Fi commercial models without unsupported live metrics or generic package claims.",
+    description: "Compare the simple ways Nister Wi-Fi can work at your hostel.",
     url: canonical("/plans"),
     siteName: "Nister Wi-Fi",
     type: "website",
   },
 };
 
-const commercialModels = [
+const choices = [
   {
-    title: "Resident-paid Wi-Fi",
-    body:
-      "Residents buy and manage their own access through the approved Nister payment and login flow. This can fit hostels where internet usage varies by resident and the owner wants less manual collection.",
+    title: "Residents pay for internet",
+    body: "Best if you want residents to choose and pay for their own access.",
+    details: [
+      "Residents buy what they need.",
+      "Nister connects payment and access.",
+      "You can see what your hostel earns where this applies.",
+    ],
+    cta: "I Want Residents to Pay",
   },
   {
-    title: "Property-paid Wi-Fi",
-    body:
-      "The property pays for internet as part of the resident experience. This can fit owners who want a simpler resident promise and a clear operating agreement for support.",
+    title: "Wi-Fi is included with accommodation",
+    body: "Best if you want internet to be part of what residents receive when they stay at your hostel.",
+    details: [
+      "The resident promise is simpler.",
+      "Internet becomes part of the hostel experience.",
+      "Nister helps manage the service around it.",
+    ],
+    cta: "I Want Wi-Fi Included",
   },
   {
-    title: "Owner-funded deployment",
-    body:
-      "The owner funds the rollout directly after the site, equipment needs, access model, and operating responsibilities are reviewed.",
+    title: "Nister-funded setup",
+    body: "Available only for selected hostels where Nister decides the investment makes business sense.",
+    details: [
+      "Useful when setup cost is the main barrier.",
+      "We review the hostel before deciding.",
+      "Funding is not guaranteed.",
+    ],
+    cta: "Ask About Nister Funding",
   },
-  {
-    title: "Nister funding review",
-    body:
-      "The property asks Nister to review whether a funded deployment path is appropriate. This is a review path, not an automatic approval or a live availability promise.",
-  },
-] as const;
-
-const comparisonPoints = [
-  "Who pays for access: resident, owner, or a reviewed deployment arrangement.",
-  "Who communicates resident rules before and after installation.",
-  "Whether existing provider issues are mostly coverage, speed, downtime, billing, or access control.",
-  "How clearly the property can support residents when they need to log in, top up, or report a problem.",
 ] as const;
 
 export default function PlansPage() {
@@ -71,28 +72,26 @@ export default function PlansPage() {
       <section className="public-hero">
         <div className="shell public-hero-grid">
           <div>
-            <p className="eyebrow">Commercial models</p>
-            <h1>Choose a Wi-Fi model after the property reality is clear.</h1>
+            <p className="eyebrow">Your Wi-Fi options</p>
+            <h1>How do you want Wi-Fi to work at your hostel?</h1>
             <p className="hero-lede">
-              Nister Wi-Fi does not publish unsupported package metrics on the public site. Owners start with a request,
-              then the team reviews location, building layout, resident need, current internet, and the preferred
-              commercial direction.
+              You do not need to choose perfectly before talking to us. Tell us about your hostel and we&apos;ll recommend
+              what makes sense.
             </p>
             <div className="button-row">
               <Link className="button button-primary" href="/request-installation">
-                Assess My Property
+                Assess My Hostel
               </Link>
-              <a className="button button-secondary" href={EXTERNAL_LINKS.login}>
-                Manage Access
-              </a>
+              <Link className="button button-secondary" href="/how-it-works">
+                See How Nister Works
+              </Link>
             </div>
           </div>
-          <aside className="public-summary-panel" aria-label="Plan selection summary">
-            <strong>Plans are model-led</strong>
-            <span>Resident-paid access</span>
-            <span>Property-paid Wi-Fi</span>
-            <span>Owner-funded rollout</span>
-            <span>Nister funding review</span>
+          <aside className="public-summary-panel" aria-label="Wi-Fi choices">
+            <strong>Three simple choices</strong>
+            <span>Residents pay for internet</span>
+            <span>Wi-Fi is included</span>
+            <span>Nister may help with setup cost</span>
           </aside>
         </div>
       </section>
@@ -100,38 +99,23 @@ export default function PlansPage() {
       <section className="section section-light">
         <div className="shell">
           <div className="section-heading">
-            <p className="eyebrow">Options</p>
-            <h2>Owner-facing models Nister can review.</h2>
-            <p>
-              These are commercial directions for conversation and review. Final terms depend on the property, coverage
-              needs, service responsibilities, and agreed rollout path.
-            </p>
+            <h2>Start with the model that feels closest.</h2>
+            <p>We can help you refine it after we understand your hostel, residents and current internet situation.</p>
           </div>
-          <div className="public-card-grid">
-            {commercialModels.map((model) => (
-              <article className="public-card" key={model.title}>
-                <span className="panel-label">Commercial model</span>
-                <h3>{model.title}</h3>
-                <p>{model.body}</p>
+          <div className="service-grid">
+            {choices.map((choice) => (
+              <article className="service-card" key={choice.title}>
+                <h3>{choice.title}</h3>
+                <p>{choice.body}</p>
+                <ul>
+                  {choice.details.map((detail) => (
+                    <li key={detail}>{detail}</li>
+                  ))}
+                </ul>
+                <Link className="inline-link inline-link-bright" href="/request-installation">
+                  {choice.cta}
+                </Link>
               </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="shell section-grid">
-          <div>
-            <p className="eyebrow">How to compare</p>
-            <h2>The right model is about responsibility, not just price.</h2>
-            <p>
-              A good plan makes it clear who pays, who explains access, who receives resident complaints, and how
-              support information reaches the Nister team when something needs review.
-            </p>
-          </div>
-          <div className="public-list-panel">
-            {comparisonPoints.map((point) => (
-              <p key={point}>{point}</p>
             ))}
           </div>
         </div>
@@ -140,18 +124,15 @@ export default function PlansPage() {
       <section className="cta-section">
         <div className="shell cta-panel">
           <div>
-            <p className="eyebrow">Start with details</p>
-            <h2>Send the request with the model you prefer today.</h2>
-            <p>
-              Choose recommend for me if you want Nister to review the site before suggesting the most practical model.
-            </p>
+            <h2>Not sure? That&apos;s fine.</h2>
+            <p>Tell us about your hostel and we&apos;ll recommend what makes sense.</p>
           </div>
           <div className="button-row">
             <Link className="button button-primary" href="/request-installation">
-              Assess My Property
+              Assess My Hostel
             </Link>
             <Link className="button button-secondary" href="/resources">
-              Read Resources
+              Read Practical Guides
             </Link>
           </div>
         </div>

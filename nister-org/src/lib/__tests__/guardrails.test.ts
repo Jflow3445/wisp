@@ -26,6 +26,46 @@ const unsupportedMetricPatterns = [
   /\b\d+\s+users?\b/i,
   /\b\d+% uptime\b/i,
 ];
+const forbiddenPublicSalesCopyPatterns = [
+  /owner lead endpoint/i,
+  /pay\.nister\.org/i,
+  /cross-origin/i,
+  /\bOTP\b/i,
+  /owner session/i,
+  /public acquisition/i,
+  /approved property owners/i,
+  /eligible purchases/i,
+  /eligible resident purchases/i,
+  /\ballocation\b/i,
+  /location linking/i,
+  /owner-facing commercial model/i,
+  /owner portal boundaries/i,
+  /production routes/i,
+  /resident access platform/i,
+  /\bAPI\b/,
+  /\bRADIUS\b/,
+  /\bMikroTik\b/,
+  /internal enum/i,
+  /database status/i,
+  /funding review path/i,
+  /read-only reporting/i,
+  /read-only revenue/i,
+  /Based on agreed terms/i,
+  /unsupported package metrics/i,
+  /commercial directions/i,
+  /reviewed deployment arrangement/i,
+  /The property problem/i,
+  /What Nister manages/i,
+  /Managed resident service/i,
+  /Commercial options/i,
+  /Cost recovery/i,
+  /Honest fit/i,
+  /Product proof/i,
+  /Owner dashboard/i,
+  /Billing model/i,
+  /Priority review contexts/i,
+  /Start with details/i,
+];
 const releaseOneLeadFieldNames = [
   "contact_name",
   "contact_phone",
@@ -169,7 +209,7 @@ test("support actions use WhatsApp instead of email", () => {
 test("network access steps explain the required public flow", () => {
   assert.deepEqual(
     networkAccessSteps.map((step) => step.title),
-    ["Connect to Nister Wi-Fi", "Open wifi.nister.org", "Log in", "Browse"],
+    ["Join Nister Wi-Fi", "Open wifi.nister.org", "Log in or buy access", "You're connected"],
   );
 });
 
@@ -208,10 +248,11 @@ test("homepage content stays focused on managed hostel Wi-Fi and owner outcomes"
   const allHomeCopy = homeSections.map((section) => `${section.eyebrow} ${section.title} ${section.body}`).join(" ");
 
   assert.match(allHomeCopy, /managed Wi-Fi/i);
-  assert.match(allHomeCopy, /hostel owners/i);
+  assert.match(allHomeCopy, /your hostel/i);
+  assert.match(allHomeCopy, /your residents/i);
   assert.match(allHomeCopy, /resident access/i);
   assert.match(allHomeCopy, /payments/i);
-  assert.match(allHomeCopy, /owner share/i);
+  assert.match(allHomeCopy, /your earnings/i);
   assert.doesNotMatch(allHomeCopy, /2\.2 billion|83%|48%/i);
 });
 
@@ -302,6 +343,35 @@ test("source files avoid unsupported Nister-specific impact metrics", () => {
     return unsupportedMetricPatterns
       .filter((pattern) => pattern.test(text))
       .map((pattern) => `${relative(projectRoot, filePath)} matched ${pattern}`);
+  });
+
+  assert.deepEqual(offenders, []);
+});
+
+test("public acquisition copy does not expose internal product architecture", () => {
+  const allowedImplementationLiterals = [
+    /https:\/\/pay\.nister\.org\/owner\/lead\.php/g,
+    /https:\/\/pay\.nister\.org\//g,
+    /ownerLead/g,
+  ];
+  const offenders = sourceFiles(sourceRoot).flatMap((filePath) => {
+    const relativePath = relative(projectRoot, filePath);
+    if (
+      !relativePath.startsWith("src\\app") &&
+      !relativePath.startsWith("src\\components") &&
+      relativePath !== "src\\lib\\content.ts"
+    ) {
+      return [];
+    }
+
+    const scrubbedText = allowedImplementationLiterals.reduce(
+      (text, pattern) => text.replace(pattern, ""),
+      readFileSync(filePath, "utf8"),
+    );
+
+    return forbiddenPublicSalesCopyPatterns
+      .filter((pattern) => pattern.test(scrubbedText))
+      .map((pattern) => `${relativePath} matched ${pattern}`);
   });
 
   assert.deepEqual(offenders, []);
