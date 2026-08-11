@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import test from "node:test";
+import * as content from "../content";
 import {
   EXTERNAL_LINKS,
   homeSections,
@@ -14,6 +15,7 @@ import {
 const projectRoot = process.cwd();
 const sourceRoot = join(projectRoot, "src");
 const capportApiPath = join(projectRoot, "public", "api.json");
+const contentExports = content as Record<string, unknown>;
 const legacyProductDomain = ["nister", "ai", ".com"].join("");
 const legacyProductName = ["Nister", " ", "AI"].join("");
 const forbiddenPatterns = [new RegExp(legacyProductDomain, "i"), new RegExp(`\\b${legacyProductName}\\b`, "i")];
@@ -23,6 +25,49 @@ const unsupportedMetricPatterns = [
   /\b\d+\s+users?\b/i,
   /\b\d+% uptime\b/i,
 ];
+const releaseOneLeadFieldNames = [
+  "contact_name",
+  "contact_phone",
+  "contact_whatsapp",
+  "contact_email",
+  "property_name",
+  "country",
+  "region",
+  "town",
+  "address",
+  "digital_address",
+  "google_maps_url",
+  "nearby_campus",
+  "number_of_buildings",
+  "number_of_floors",
+  "number_of_rooms",
+  "estimated_residents",
+  "current_occupancy",
+  "has_wifi",
+  "current_provider",
+  "connection_type",
+  "current_monthly_cost",
+  "current_speed",
+  "poor_coverage",
+  "slow_internet",
+  "downtime",
+  "payment_problem",
+  "user_management_problem",
+  "shared_password_problem",
+  "starting_from_scratch",
+  "deployment_preference",
+] as const;
+const publicRouteSourceSpecs = [
+  { route: "/for-hostels", file: "src/app/for-hostels/page.tsx", breadcrumb: true, article: false },
+  { route: "/how-it-works", file: "src/app/how-it-works/page.tsx", breadcrumb: true, article: false },
+  { route: "/plans", file: "src/app/plans/page.tsx", breadcrumb: true, article: false },
+  { route: "/request-installation", file: "src/app/request-installation/page.tsx", breadcrumb: true, article: false },
+  { route: "/resources", file: "src/app/resources/page.tsx", breadcrumb: true, article: false },
+  { route: "/resources/[slug]", file: "src/app/resources/[slug]/page.tsx", breadcrumb: true, article: true },
+  { route: "/faq", file: "src/app/faq/page.tsx", breadcrumb: true, article: false },
+  { route: "/coverage", file: "src/app/coverage/page.tsx", breadcrumb: true, article: false },
+  { route: "/about", file: "src/app/about/page.tsx", breadcrumb: true, article: false },
+] as const;
 
 function sourceFiles(dir: string): string[] {
   if (!existsSync(dir)) {
@@ -41,6 +86,12 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+function sourceTextFor(relativePath: string): string {
+  const fullPath = join(projectRoot, relativePath);
+  assert.equal(existsSync(fullPath), true, `${relativePath} must exist`);
+  return readFileSync(fullPath, "utf8");
+}
+
 test("external links point to the approved Nister Wi-Fi destinations", () => {
   assert.equal(EXTERNAL_LINKS.main, "https://nister.org/");
   assert.equal(EXTERNAL_LINKS.network, "https://wifi.nister.org/");
@@ -48,6 +99,16 @@ test("external links point to the approved Nister Wi-Fi destinations", () => {
   assert.equal(EXTERNAL_LINKS.support, "https://wa.me/233530488905");
   assert.match(EXTERNAL_LINKS.coverageRequest, /^https:\/\/wa\.me\/233530488905\?text=/);
   assert.match(EXTERNAL_LINKS.partnershipRequest, /^https:\/\/wa\.me\/233530488905\?text=/);
+  assert.equal((EXTERNAL_LINKS as Record<string, string | undefined>).ownerLead, "https://pay.nister.org/owner/lead.php");
+});
+
+test("Release 1 lead form fields stay in the approved browser POST order", () => {
+  const leadFormFields = contentExports.leadFormFields as Array<{ name: string }> | undefined;
+
+  assert.deepEqual(
+    leadFormFields?.map((field) => field.name),
+    releaseOneLeadFieldNames,
+  );
 });
 
 test("public CAPPORT API is static compatibility JSON", () => {
@@ -117,6 +178,60 @@ test("homepage content stays focused on Wi-Fi access for hostels and remote comm
   assert.match(allHomeCopy, /2\.2 billion/i);
   assert.match(allHomeCopy, /83%/i);
   assert.match(allHomeCopy, /48%/i);
+});
+
+test("public SEO content exports planned routes and resource articles without unsupported Nister impact metrics", () => {
+  const publicRoutes = contentExports.publicRoutes as Array<{ path: string }> | undefined;
+  const resourceArticles = contentExports.resourceArticles as Array<Record<string, unknown>> | undefined;
+
+  assert.ok(Array.isArray(publicRoutes), "publicRoutes must be exported from content.ts");
+  assert.ok(Array.isArray(resourceArticles), "resourceArticles must be exported from content.ts");
+  assert.deepEqual(
+    publicRoutes.map((route) => route.path),
+    ["/for-hostels", "/how-it-works", "/plans", "/request-installation", "/resources", "/faq", "/coverage", "/about"],
+  );
+  assert.ok(resourceArticles.length > 0, "resourceArticles must include at least one public resource article");
+
+  const publicSeoText = JSON.stringify({ publicRoutes, resourceArticles });
+  for (const pattern of unsupportedMetricPatterns) {
+    assert.doesNotMatch(publicSeoText, pattern);
+  }
+});
+
+test("SEO helpers expose canonical and structured data builders", () => {
+  const sourceText = sourceTextFor("src/lib/seo.ts");
+
+  assert.match(sourceText, /export const SITE_ORIGIN = ["']https:\/\/nister\.org["']/);
+  assert.match(sourceText, /export function canonical\(/);
+  assert.match(sourceText, /export function organizationJsonLd\(/);
+  assert.match(sourceText, /export function breadcrumbJsonLd\(/);
+  assert.match(sourceText, /export function articleJsonLd\(/);
+});
+
+test("public route sources declare canonical OpenGraph metadata and JSON-LD", () => {
+  for (const spec of publicRouteSourceSpecs) {
+    const sourceText = sourceTextFor(spec.file);
+
+    assert.match(sourceText, /canonical\(/, `${spec.route} must use canonical metadata`);
+    assert.match(sourceText, /openGraph/, `${spec.route} must define OpenGraph metadata`);
+    assert.match(sourceText, /organizationJsonLd|@type["']?\s*:\s*["']Organization/, `${spec.route} must include Organization JSON-LD`);
+
+    if (spec.breadcrumb) {
+      assert.match(
+        sourceText,
+        /breadcrumbJsonLd|@type["']?\s*:\s*["']BreadcrumbList/,
+        `${spec.route} must include BreadcrumbList JSON-LD`,
+      );
+    }
+
+    if (spec.article) {
+      assert.match(
+        sourceText,
+        /articleJsonLd|@type["']?\s*:\s*["']Article/,
+        `${spec.route} must include Article JSON-LD`,
+      );
+    }
+  }
 });
 
 test("source files do not contain forbidden legacy product references", () => {

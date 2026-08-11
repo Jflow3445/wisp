@@ -278,6 +278,21 @@ assert_contains "autopost_preserves_router_login_action" "$autopost_router_conte
 hotspot_fallback_sources="$(cat api/hotspot/change_password.php api/hotspot/reset_password.php api/hotspot/signup.php api/hotspot/autopost.php pay-portal/cron/auto_renew.php pay-portal/purchase.php)"
 assert_not_contains "fallback_sources_no_public_login_html_default" "$hotspot_fallback_sources" "https://wifi.nister.org/login.html"
 
+owner_schema_content="$(cat pay-portal/lib/owner_schema.php 2>/dev/null || true)"
+owner_auth_content="$(cat pay-portal/lib/owner_auth.php 2>/dev/null || true)"
+property_revenue_content="$(cat pay-portal/lib/property_revenue.php 2>/dev/null || true)"
+owner_pages_content="$(cat pay-portal/owner/*.php 2>/dev/null || true)"
+purchase_content="$(cat pay-portal/purchase.php)"
+
+assert_contains "owner_schema_defines_leads" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_leads"
+assert_contains "owner_schema_no_rejected_owner_status" "$owner_schema_content" "ENUM('pending','approved','suspended')"
+assert_not_contains "owner_schema_never_defines_rejected_owner" "$owner_schema_content" "ENUM('pending','approved','rejected','suspended')"
+assert_contains "owner_auth_uses_owner_session" "$owner_auth_content" "session_name('nister_owner')"
+assert_contains "owner_pages_are_noindex" "$owner_auth_content$owner_pages_content" "noindex, nofollow"
+assert_contains "property_revenue_has_reconciler_entrypoint" "$property_revenue_content" "property_allocation_reconcile"
+assert_not_contains "purchase_has_no_owner_allocation_hook" "$purchase_content" "property_allocation"
+assert_not_contains "purchase_has_no_owner_revenue_include" "$purchase_content" "property_revenue.php"
+
 plans_radius_content="$(cat pay-portal/lib/plans_radius.php)"
 purchase_content="$(cat pay-portal/purchase.php)"
 auto_renew_content="$(cat pay-portal/auto_renew.php)"

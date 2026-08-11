@@ -26,6 +26,39 @@ const routerSyncFiles = [
   "status.html",
   "error.html",
 ];
+const releaseOneLeadFieldNames = [
+  "contact_name",
+  "contact_phone",
+  "contact_whatsapp",
+  "contact_email",
+  "property_name",
+  "country",
+  "region",
+  "town",
+  "address",
+  "digital_address",
+  "google_maps_url",
+  "nearby_campus",
+  "number_of_buildings",
+  "number_of_floors",
+  "number_of_rooms",
+  "estimated_residents",
+  "current_occupancy",
+  "has_wifi",
+  "current_provider",
+  "connection_type",
+  "current_monthly_cost",
+  "current_speed",
+  "poor_coverage",
+  "slow_internet",
+  "downtime",
+  "payment_problem",
+  "user_management_problem",
+  "shared_password_problem",
+  "starting_from_scratch",
+  "deployment_preference",
+] as const;
+const nisterPublicRoutes = ["/faq", "/coverage", "/about"] as const;
 
 for (const path of ["/api.json", "/api.json?v=20260601-remote-refresh"]) {
   test(`${path} returns static CAPPORT JSON`, async ({ request }) => {
@@ -98,7 +131,7 @@ test("router-sync serves the router hotspot source files", async ({ request }) =
   expect(capportBody).toContain("$(if logged-in == 'yes')");
 });
 
-test("nister.org renders the grant-ready Wi-Fi homepage", async ({ browser }, testInfo) => {
+test("nister.org homepage keeps Get Online and Manage Access visible", async ({ browser }, testInfo) => {
   const context = await browser.newContext({
     extraHTTPHeaders: {
       "x-forwarded-host": "nister.org",
@@ -108,15 +141,92 @@ test("nister.org renders the grant-ready Wi-Fi homepage", async ({ browser }, te
 
   await page.goto("/");
   const primaryNav = page.getByLabel("Primary navigation");
-  await expect(page.getByRole("heading", { level: 1, name: /internet access should not depend/i })).toBeVisible();
-  await expect(primaryNav.getByRole("link", { name: "Network" })).toHaveAttribute("href", "https://wifi.nister.org/");
-  await expect(primaryNav.getByRole("link", { name: "Login" })).toHaveAttribute("href", "https://pay.nister.org/");
+  await expect(page.getByRole("heading", { level: 1, name: /dependable internet closer/i })).toBeVisible();
+  await expect(primaryNav.getByRole("link", { name: "Get Online" })).toHaveAttribute(
+    "href",
+    "https://wifi.nister.org/",
+  );
+  await expect(primaryNav.getByRole("link", { name: "Manage Access" })).toHaveAttribute(
+    "href",
+    "https://pay.nister.org/",
+  );
   await expect(page.getByText("2.2B")).toBeVisible();
   await expect(page.getByRole("link", { name: "Request Coverage" }).first()).toHaveAttribute(
     "href",
     /https:\/\/wa\.me\/233530488905/,
   );
   await page.screenshot({ path: testInfo.outputPath("nister-org-home.png"), fullPage: true });
+
+  await context.close();
+});
+
+test("nister.org renders the request installation lead form", async ({ browser }) => {
+  const context = await browser.newContext({
+    extraHTTPHeaders: {
+      "x-forwarded-host": "nister.org",
+    },
+  });
+  const page = await context.newPage();
+
+  const response = await page.goto("/request-installation");
+  expect(response?.status()).toBe(200);
+
+  const form = page.locator('form[action="https://pay.nister.org/owner/lead.php"]').first();
+  await expect(form).toBeVisible();
+  await expect(form).toHaveAttribute("method", /post/i);
+
+  for (const fieldName of releaseOneLeadFieldNames) {
+    expect(await form.locator(`[name="${fieldName}"]`).count(), fieldName).toBeGreaterThan(0);
+  }
+
+  await context.close();
+});
+
+test("nister.org renders public SEO resource routes", async ({ browser }) => {
+  const context = await browser.newContext({
+    extraHTTPHeaders: {
+      "x-forwarded-host": "nister.org",
+    },
+  });
+  const page = await context.newPage();
+
+  const resourcesResponse = await page.goto("/resources");
+  expect(resourcesResponse?.status(), "/resources").toBe(200);
+  await expect(page.locator("main")).toBeVisible();
+
+  const resourceHrefs = await page.locator('main a[href*="/resources/"]').evaluateAll((anchors) =>
+    anchors
+      .map((anchor) => anchor.getAttribute("href"))
+      .filter((href): href is string => Boolean(href) && href !== "/resources"),
+  );
+  expect(resourceHrefs.length).toBeGreaterThan(0);
+
+  const articleHref = resourceHrefs[0];
+  if (!articleHref) {
+    throw new Error("resources page must link to at least one resource article");
+  }
+
+  const articlePath = new URL(articleHref, "https://nister.org").pathname;
+  const articleResponse = await page.goto(articlePath);
+  expect(articleResponse?.status(), articlePath).toBe(200);
+  await expect(page.locator("main")).toBeVisible();
+
+  await context.close();
+});
+
+test("nister.org renders public support and company routes", async ({ browser }) => {
+  const context = await browser.newContext({
+    extraHTTPHeaders: {
+      "x-forwarded-host": "nister.org",
+    },
+  });
+  const page = await context.newPage();
+
+  for (const route of nisterPublicRoutes) {
+    const response = await page.goto(route);
+    expect(response?.status(), route).toBe(200);
+    await expect(page.locator("main")).toBeVisible();
+  }
 
   await context.close();
 });
@@ -130,13 +240,16 @@ test("wifi.nister.org renders the public network access guide", async ({ browser
   const page = await context.newPage();
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /get online where you are/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /get online at your hostel or community location/i })).toBeVisible();
   await expect(page.getByLabel("Network access steps").getByText("Connect to Nister Wi-Fi")).toBeVisible();
   await expect(page.getByRole("heading", { name: /start here if you need internet now/i })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /check these before you login/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /check these before you log in/i })).toBeVisible();
   await expect(page.getByRole("heading", { name: /if the login page does not open/i })).toBeVisible();
-  await expect(page.getByText(/you are close/i)).toBeVisible();
-  await expect(page.getByRole("link", { name: "Login / Manage Access" })).toHaveAttribute("href", "https://pay.nister.org/");
+  await expect(page.getByText(/you may be outside a Nister Wi-Fi location/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: /log in \/ manage access/i })).toHaveAttribute(
+    "href",
+    "https://pay.nister.org/",
+  );
   await expect(page.getByRole("link", { name: "WhatsApp support" })).toHaveAttribute(
     "href",
     "https://wa.me/233530488905",
