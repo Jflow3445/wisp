@@ -58,7 +58,23 @@ const releaseOneLeadFieldNames = [
   "starting_from_scratch",
   "deployment_preference",
 ] as const;
-const nisterPublicRoutes = ["/faq", "/coverage", "/about"] as const;
+const nisterPublicRouteAssertions = [
+  {
+    path: "/faq",
+    heading: /frequently asked questions|faq/i,
+    body: /installation|coverage|payment|support|hostel/i,
+  },
+  {
+    path: "/coverage",
+    heading: /coverage/i,
+    body: /hostel|community|campus|region|town/i,
+  },
+  {
+    path: "/about",
+    heading: /about nister|about/i,
+    body: /Nister Wi-Fi|hostel|remote communit|internet access/i,
+  },
+] as const;
 
 for (const path of ["/api.json", "/api.json?v=20260601-remote-refresh"]) {
   test(`${path} returns static CAPPORT JSON`, async ({ request }) => {
@@ -171,6 +187,9 @@ test("nister.org renders the request installation lead form", async ({ browser }
   const response = await page.goto("/request-installation");
   expect(response?.status()).toBe(200);
 
+  await expect(page.getByRole("heading", { name: /request.*installation|request nister/i })).toBeVisible();
+  await expect(page.locator("main")).toContainText(/property|hostel|coverage/i);
+
   const form = page.locator('form[action="https://pay.nister.org/owner/lead.php"]').first();
   await expect(form).toBeVisible();
   await expect(form).toHaveAttribute("method", /post/i);
@@ -192,9 +211,13 @@ test("nister.org renders public SEO resource routes", async ({ browser }) => {
 
   const resourcesResponse = await page.goto("/resources");
   expect(resourcesResponse?.status(), "/resources").toBe(200);
-  await expect(page.locator("main")).toBeVisible();
+  const resourcesMain = page.locator("main");
+  await expect(page.getByRole("heading", { name: /resources/i })).toBeVisible();
+  await expect(resourcesMain).toContainText(/hostel|coverage|installation|internet/i);
 
-  const resourceHrefs = await page.locator('main a[href*="/resources/"]').evaluateAll((anchors) =>
+  const resourceLinks = page.locator('main a[href*="/resources/"]');
+  await expect(resourceLinks.first()).toBeVisible();
+  const resourceHrefs = await resourceLinks.evaluateAll((anchors) =>
     anchors
       .map((anchor) => anchor.getAttribute("href"))
       .filter((href): href is string => Boolean(href) && href !== "/resources"),
@@ -209,27 +232,34 @@ test("nister.org renders public SEO resource routes", async ({ browser }) => {
   const articlePath = new URL(articleHref, "https://nister.org").pathname;
   const articleResponse = await page.goto(articlePath);
   expect(articleResponse?.status(), articlePath).toBe(200);
-  await expect(page.locator("main")).toBeVisible();
+  const article = page.locator("article");
+  await expect(article).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).not.toHaveText(/^resources$/i);
+  await expect(article).toContainText(/Nister|Wi-Fi|hostel|coverage|internet/i);
+  expect((await article.innerText()).length, "resource article must contain substantive article copy").toBeGreaterThan(
+    400,
+  );
 
   await context.close();
 });
 
-test("nister.org renders public support and company routes", async ({ browser }) => {
-  const context = await browser.newContext({
-    extraHTTPHeaders: {
-      "x-forwarded-host": "nister.org",
-    },
+for (const route of nisterPublicRouteAssertions) {
+  test(`nister.org renders ${route.path} with route-specific content`, async ({ browser }) => {
+    const context = await browser.newContext({
+      extraHTTPHeaders: {
+        "x-forwarded-host": "nister.org",
+      },
+    });
+    const page = await context.newPage();
+
+    const response = await page.goto(route.path);
+    expect(response?.status(), route.path).toBe(200);
+    await expect(page.getByRole("heading", { name: route.heading })).toBeVisible();
+    await expect(page.locator("main")).toContainText(route.body);
+
+    await context.close();
   });
-  const page = await context.newPage();
-
-  for (const route of nisterPublicRoutes) {
-    const response = await page.goto(route);
-    expect(response?.status(), route).toBe(200);
-    await expect(page.locator("main")).toBeVisible();
-  }
-
-  await context.close();
-});
+}
 
 test("wifi.nister.org renders the public network access guide", async ({ browser }, testInfo) => {
   const context = await browser.newContext({

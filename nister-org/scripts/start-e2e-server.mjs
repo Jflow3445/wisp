@@ -36,7 +36,7 @@ try {
 
 const serverEnv = {
   ...process.env,
-  HOSTNAME: process.env.HOSTNAME || "127.0.0.1",
+  HOSTNAME: process.env.E2E_HOSTNAME ?? "127.0.0.1",
   PORT: process.env.PORT || "3020",
 };
 const server = spawn(process.execPath, [join(projectRoot, ".next", "standalone", "server.js")], {

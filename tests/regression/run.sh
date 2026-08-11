@@ -63,6 +63,26 @@ assert_no_owner_rejected_status_enum() {
   pass "$name"
 }
 
+assert_owner_pages_each_noindex() {
+  local name="$1"
+  local files=()
+  local file
+  local content
+  while IFS= read -r -d '' file; do
+    files+=("$file")
+  done < <(find pay-portal/owner -maxdepth 1 -type f -name '*.php' -print0 2>/dev/null || true)
+  if [[ "${#files[@]}" -eq 0 ]]; then
+    fail "$name" "no pay-portal/owner/*.php files found"
+  fi
+  for file in "${files[@]}"; do
+    content="$(cat "$file")"
+    if [[ "$content" != *"noindex, nofollow"* && "$content" != *"owner_noindex_headers"* ]]; then
+      fail "$name" "$file missing noindex protection"
+    fi
+  done
+  pass "$name"
+}
+
 php_run() {
   php -d error_reporting=E_ERROR -d display_errors=0 "$@"
 }
@@ -295,7 +315,6 @@ assert_not_contains "fallback_sources_no_public_login_html_default" "$hotspot_fa
 owner_schema_content="$(cat pay-portal/lib/owner_schema.php 2>/dev/null || true)"
 owner_auth_content="$(cat pay-portal/lib/owner_auth.php 2>/dev/null || true)"
 property_revenue_content="$(cat pay-portal/lib/property_revenue.php 2>/dev/null || true)"
-owner_pages_content="$(cat pay-portal/owner/*.php 2>/dev/null || true)"
 purchase_content="$(cat pay-portal/purchase.php)"
 
 assert_contains "owner_schema_defines_leads" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_leads"
@@ -303,7 +322,7 @@ assert_contains "owner_schema_no_rejected_owner_status" "$owner_schema_content" 
 assert_no_owner_rejected_status_enum "owner_schema_never_defines_rejected_owner_status_enum" "$owner_schema_content"
 assert_contains "owner_auth_uses_owner_session" "$owner_auth_content" "session_name('nister_owner')"
 assert_contains "owner_auth_sets_noindex" "$owner_auth_content" "noindex, nofollow"
-assert_contains "owner_pages_are_noindex" "$owner_pages_content" "noindex, nofollow"
+assert_owner_pages_each_noindex "owner_pages_are_noindex"
 assert_contains "property_revenue_has_reconciler_entrypoint" "$property_revenue_content" "property_allocation_reconcile"
 assert_not_contains "purchase_has_no_owner_allocation_hook" "$purchase_content" "property_allocation"
 assert_not_contains "purchase_has_no_owner_revenue_include" "$purchase_content" "property_revenue.php"
