@@ -333,6 +333,8 @@ owner_register_content="$(cat pay-portal/owner/register.php 2>/dev/null || true)
 owner_login_content="$(cat pay-portal/owner/login.php 2>/dev/null || true)"
 owner_logout_content="$(cat pay-portal/owner/logout.php 2>/dev/null || true)"
 owner_dashboard_content="$(cat pay-portal/owner/dashboard.php 2>/dev/null || true)"
+owner_requests_content="$(cat pay-portal/owner/requests.php 2>/dev/null || true)"
+owner_api_content="$(cat pay-portal/owner/api.php 2>/dev/null || true)"
 owner_start_session_block="$(awk '/function owner_start_session_for_owner/,/^}/' pay-portal/lib/owner_auth.php 2>/dev/null || true)"
 owner_do_login_block="$(awk '/function owner_do_login/,/^}/' pay-portal/lib/owner_auth.php 2>/dev/null || true)"
 property_request_owner_statuses_block="$(awk '/function property_request_statuses/,/^}/' pay-portal/lib/property_requests.php 2>/dev/null || true)"
@@ -553,9 +555,39 @@ assert_contains "owner_dashboard_route_exists" "$owner_dashboard_content" "owner
 assert_contains "owner_dashboard_noindex_helper" "$owner_dashboard_content" "owner_noindex_headers()"
 assert_contains "owner_dashboard_uses_current_owner" "$owner_dashboard_content" "owner_current()"
 assert_contains "owner_dashboard_lists_service_requests" "$owner_dashboard_content" "property_request_list_for_owner("
-assert_contains "owner_dashboard_pending_state_content" "$owner_dashboard_content" "Your owner account is pending review"
-assert_contains "owner_dashboard_approved_state_content" "$owner_dashboard_content" "Your owner account is approved"
+assert_contains "owner_dashboard_pending_state_content" "$owner_dashboard_content" "Your request is with Nister"
+assert_contains "owner_dashboard_approved_state_content" "$owner_dashboard_content" "Your property at a glance"
 assert_contains "owner_dashboard_suspended_state_content" "$owner_dashboard_content" "Your owner account is suspended"
+assert_contains "owner_dashboard_has_pending_branch" "$owner_dashboard_content" "ownerStatus === 'pending'"
+assert_contains "owner_dashboard_has_approved_branch" "$owner_dashboard_content" "ownerStatus === 'approved'"
+assert_contains "owner_dashboard_pending_request_list_label" "$owner_dashboard_content" "Request list"
+assert_contains "owner_dashboard_approved_my_hostel" "$owner_dashboard_content" "My Hostel"
+assert_contains "owner_dashboard_approved_network_online" "$owner_dashboard_content" "Network online"
+assert_contains "owner_dashboard_approved_connected_users" "$owner_dashboard_content" "Connected Users"
+assert_contains "owner_dashboard_approved_revenue_this_month" "$owner_dashboard_content" "Revenue This Month"
+assert_contains "owner_dashboard_approved_owner_share" "$owner_dashboard_content" "Your Share"
+assert_contains "owner_dashboard_approved_transactions" "$owner_dashboard_content" "Transactions"
+assert_contains "owner_requests_route_requires_owner" "$owner_requests_content" "owner_require_login()"
+assert_contains "owner_requests_uses_create_for_owner" "$owner_requests_content" "property_request_create_for_owner("
+assert_contains "owner_requests_uses_update_by_owner" "$owner_requests_content" "property_request_update_by_owner("
+assert_contains "owner_requests_uses_editable_status_gate" "$owner_requests_content" "property_request_owner_editable_statuses()"
+assert_contains "owner_api_requires_json_owner_session" "$owner_api_content" "owner_require_login(true)"
+assert_contains "owner_api_rejects_non_post_mutations" "$owner_api_content" "owner_api_require_post()"
+assert_contains "owner_api_requires_same_origin_post" "$owner_api_content" "owner_require_same_origin_post()"
+assert_contains "owner_api_requires_owner_csrf" "$owner_api_content" "owner_require_csrf_post()"
+assert_contains "owner_api_profile_update_action" "$owner_api_content" "profile_update"
+assert_contains "owner_api_request_create_action" "$owner_api_content" "request_create"
+assert_contains "owner_api_request_update_action" "$owner_api_content" "request_update"
+assert_contains "owner_profile_update_field_helper" "$property_requests_content" "function property_owner_profile_update_fields(): array"
+assert_contains "owner_profile_update_only_display_name" "$property_requests_content" "return ['display_name'];"
+assert_contains "owner_request_mutation_field_helper" "$property_requests_content" "function property_request_owner_mutation_fields(): array"
+assert_contains "owner_request_rejects_forbidden_fields_helper" "$property_requests_content" "function property_request_reject_forbidden_owner_fields"
+assert_contains "owner_request_forbidden_status" "$property_requests_content" "'status'"
+assert_contains "owner_request_forbidden_admin_notes" "$property_requests_content" "'admin_notes'"
+assert_contains "owner_request_forbidden_owner_id" "$property_requests_content" "'owner_id'"
+assert_contains "owner_request_forbidden_property_id" "$property_requests_content" "'converted_property_id'"
+assert_contains "owner_request_forbidden_financial_terms" "$property_requests_content" "'financial_terms_id'"
+assert_contains "owner_request_forbidden_allocation" "$property_requests_content" "'allocation_id'"
 assert_not_contains "owner_login_no_future_task_copy" "$owner_login_content" "Task 5"
 assert_not_contains "owner_login_no_after_approval_placeholder_copy" "$owner_login_content" "after approval features are added"
 assert_owner_pages_each_noindex "owner_pages_are_noindex"
@@ -603,6 +635,62 @@ echo $ok ? 'OK' : 'BAD';
 PHP
 )"
 assert_eq "property_requests_runtime_status_contracts" "$property_requests_runtime" "OK"
+
+property_requests_owner_mutation_contracts="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/property_requests.php';
+$profile = property_owner_profile_update_fields();
+$request = property_request_owner_mutation_fields();
+$forbidden = property_request_forbidden_owner_fields();
+$expected = [
+  'property_name',
+  'country',
+  'region',
+  'town',
+  'address',
+  'digital_address',
+  'google_maps_url',
+  'nearby_campus',
+  'contact_name',
+  'contact_phone',
+  'contact_whatsapp',
+  'contact_email',
+  'number_of_buildings',
+  'number_of_floors',
+  'number_of_rooms',
+  'estimated_residents',
+  'current_occupancy',
+  'has_wifi',
+  'current_provider',
+  'connection_type',
+  'current_monthly_cost',
+  'current_speed',
+  'poor_coverage',
+  'slow_internet',
+  'downtime',
+  'payment_problem',
+  'user_management_problem',
+  'shared_password_problem',
+  'starting_from_scratch',
+  'deployment_preference',
+  'notes',
+];
+$ok = $profile === ['display_name']
+  && $request === $expected
+  && !in_array('status', $request, true)
+  && !in_array('admin_notes', $request, true)
+  && !in_array('owner_id', $request, true)
+  && !in_array('converted_property_id', $request, true)
+  && in_array('status', $forbidden, true)
+  && in_array('admin_notes', $forbidden, true)
+  && in_array('owner_id', $forbidden, true)
+  && in_array('converted_property_id', $forbidden, true)
+  && in_array('financial_terms_id', $forbidden, true)
+  && in_array('allocation_id', $forbidden, true);
+echo $ok ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "property_requests_owner_mutation_contracts" "$property_requests_owner_mutation_contracts" "OK"
 assert_contains "property_revenue_has_reconciler_entrypoint" "$property_revenue_content" "property_allocation_reconcile"
 assert_not_contains "purchase_has_no_owner_allocation_hook" "$purchase_content" "property_allocation"
 assert_not_contains "purchase_has_no_owner_revenue_include" "$purchase_content" "property_revenue.php"

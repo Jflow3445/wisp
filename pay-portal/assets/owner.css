@@ -139,6 +139,11 @@ body.owner-page::before {
   align-items: start;
 }
 
+.owner-stack {
+  display: grid;
+  gap: 20px;
+}
+
 .owner-panel,
 .owner-card {
   border-radius: 8px;
@@ -202,6 +207,43 @@ body.owner-page::before {
 .owner-form {
   display: grid;
   gap: 14px;
+}
+
+.owner-compact-form {
+  margin: 18px 0;
+}
+
+.owner-request-form {
+  gap: 18px;
+}
+
+.owner-form-section {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--owner-line);
+  padding-top: 16px;
+}
+
+.owner-form-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.owner-card h1,
+.owner-card h2 {
+  margin: 0 0 10px;
+  font-family: var(--owner-display);
+  letter-spacing: 0;
+}
+
+.owner-card h1 {
+  font-size: 1.8rem;
+  line-height: 1.1;
+}
+
+.owner-card h2 {
+  font-size: 1.25rem;
+  line-height: 1.2;
 }
 
 .owner-form-grid {
@@ -345,6 +387,68 @@ body.owner-page::before {
   line-height: 1.45;
 }
 
+.owner-progress {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  list-style: none;
+  margin: 18px 0;
+  padding: 0;
+}
+
+.owner-progress li {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  border: 1px solid var(--owner-line);
+  background: #ffffff;
+  color: var(--owner-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.35;
+  padding: 10px;
+}
+
+.owner-progress .is-complete,
+.owner-progress .is-current {
+  border-color: rgba(15, 118, 110, 0.28);
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--owner-green-dark);
+}
+
+.owner-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.owner-metric {
+  min-height: 132px;
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--owner-line);
+  background: #ffffff;
+  padding: 14px;
+}
+
+.owner-metric span,
+.owner-metric small {
+  color: var(--owner-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.owner-metric strong {
+  color: var(--owner-ink);
+  font-size: 1.35rem;
+  line-height: 1.1;
+}
+
 .owner-request-list {
   display: grid;
   gap: 10px;
@@ -384,6 +488,21 @@ body.owner-page::before {
   text-align: right;
 }
 
+.owner-request-card-wide {
+  align-items: start;
+}
+
+.owner-request-card-wide > div:last-child {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.owner-inline-edit {
+  margin: 4px 0 12px;
+  box-shadow: none;
+}
+
 .owner-pill {
   width: fit-content;
   margin-left: auto;
@@ -398,7 +517,12 @@ body.owner-page::before {
 
 @media (max-width: 900px) {
   .owner-layout,
-  .owner-form-grid {
+  .owner-form-grid,
+  .owner-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .owner-progress {
     grid-template-columns: 1fr;
   }
 

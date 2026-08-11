@@ -41,6 +41,89 @@ function property_request_owner_editable_statuses(): array {
   return ['submitted'];
 }
 
+function property_owner_profile_update_fields(): array {
+  return ['display_name'];
+}
+
+function property_request_owner_mutation_fields(): array {
+  return [
+    'property_name',
+    'country',
+    'region',
+    'town',
+    'address',
+    'digital_address',
+    'google_maps_url',
+    'nearby_campus',
+    'contact_name',
+    'contact_phone',
+    'contact_whatsapp',
+    'contact_email',
+    'number_of_buildings',
+    'number_of_floors',
+    'number_of_rooms',
+    'estimated_residents',
+    'current_occupancy',
+    'has_wifi',
+    'current_provider',
+    'connection_type',
+    'current_monthly_cost',
+    'current_speed',
+    'poor_coverage',
+    'slow_internet',
+    'downtime',
+    'payment_problem',
+    'user_management_problem',
+    'shared_password_problem',
+    'starting_from_scratch',
+    'deployment_preference',
+    'notes',
+  ];
+}
+
+function property_request_forbidden_owner_fields(): array {
+  return [
+    'id',
+    'owner_id',
+    'lead_id',
+    'status',
+    'deployment_model',
+    'billing_model',
+    'reviewed_at',
+    'reviewed_by',
+    'converted_at',
+    'converted_by',
+    'converted_property_id',
+    'property_id',
+    'location_id',
+    'property_location_link_id',
+    'property_financial_terms_id',
+    'financial_terms_id',
+    'owner_share_bps',
+    'allocation_id',
+    'purchase_id',
+    'gross_cents',
+    'owner_amount_cents',
+    'nister_amount_cents',
+    'admin_notes',
+  ];
+}
+
+function property_request_control_fields(): array {
+  return ['_csrf', 'csrf', 'fn', 'request_id', 'action'];
+}
+
+function property_request_reject_forbidden_owner_fields(array $in, array $allowedFields = []): void {
+  $allowed = array_fill_keys($allowedFields !== [] ? $allowedFields : property_request_owner_mutation_fields(), true);
+  $control = array_fill_keys(property_request_control_fields(), true);
+  foreach ($in as $field => $_value) {
+    $name = (string)$field;
+    if (isset($control[$name])) continue;
+    if (isset($allowed[$name])) continue;
+    throw new InvalidArgumentException('owner_field_not_allowed: ' . $name);
+  }
+}
+
 function property_request_insert_columns(): array {
   return [
     'owner_id',
@@ -149,6 +232,38 @@ function property_request_owner(PDO $pdo, int $ownerId): array {
   return $owner;
 }
 
+function property_owner_update_profile(PDO $pdo, int $ownerId, array $in): array {
+  owner_schema_bootstrap($pdo);
+  if ($ownerId <= 0) {
+    throw new InvalidArgumentException('owner_id is required');
+  }
+  property_request_reject_forbidden_owner_fields($in, property_owner_profile_update_fields());
+  $owner = property_request_owner($pdo, $ownerId);
+  if ((string)($owner['status'] ?? '') === 'suspended') {
+    throw new RuntimeException('owner_suspended');
+  }
+
+  $displayName = trim((string)($in['display_name'] ?? ''));
+  if ($displayName === '' || strlen($displayName) > 120) {
+    throw new InvalidArgumentException('display_name_invalid');
+  }
+
+  $st = $pdo->prepare(
+    "UPDATE property_owners
+     SET display_name = :display_name, updated_at = UTC_TIMESTAMP()
+     WHERE id = :id"
+  );
+  $st->execute([':display_name' => $displayName, ':id' => $ownerId]);
+  $updated = owner_find_by_id($pdo, $ownerId);
+  if (!is_array($updated)) {
+    throw new RuntimeException('owner_update_failed');
+  }
+  if (session_status() === PHP_SESSION_ACTIVE && (int)($_SESSION['owner_id'] ?? 0) === $ownerId) {
+    $_SESSION['owner_display_name'] = (string)($updated['display_name'] ?? '');
+  }
+  return $updated;
+}
+
 function property_request_input_from_row(array $row): array {
   $out = [];
   foreach (property_lead_public_fields() as $field) {
@@ -227,6 +342,7 @@ function property_request_create_for_owner(PDO $pdo, int $ownerId, array $in): a
   if ($ownerId <= 0) {
     throw new InvalidArgumentException('owner_id is required');
   }
+  property_request_reject_forbidden_owner_fields($in, property_request_owner_mutation_fields());
   $owner = property_request_owner($pdo, $ownerId);
   if ((string)($owner['status'] ?? '') === 'suspended') {
     throw new RuntimeException('owner_suspended');
@@ -248,6 +364,7 @@ function property_request_update_by_owner(PDO $pdo, int $ownerId, int $requestId
   if ($ownerId <= 0 || $requestId <= 0) {
     throw new InvalidArgumentException('owner_id and request_id are required');
   }
+  property_request_reject_forbidden_owner_fields($in, property_request_owner_mutation_fields());
   $owner = property_request_owner($pdo, $ownerId);
   if ((string)($owner['status'] ?? '') === 'suspended') {
     throw new RuntimeException('owner_suspended');
