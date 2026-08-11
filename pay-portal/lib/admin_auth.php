@@ -9,8 +9,15 @@ function admin_request_is_secure(): bool {
   return false;
 }
 
+function admin_noindex_headers(): void {
+  if (!headers_sent()) {
+    header('X-Robots-Tag: noindex, nofollow', false);
+  }
+}
+
 function admin_boot(): array {
   $env = app_boot();
+  admin_noindex_headers();
   if (session_status() !== PHP_SESSION_ACTIVE) {
     if (session_name() !== 'nister_admin') {
       session_name('nister_admin');

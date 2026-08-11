@@ -412,6 +412,402 @@ function property_request_list_for_owner(PDO $pdo, int $ownerId): array {
   return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
+function property_request_admin_note(?string $existing, string $note, string $adminUser): ?string {
+  $note = trim($note);
+  if ($note === '') return $existing;
+  $prefix = '[' . gmdate('Y-m-d H:i:s') . ' UTC ' . $adminUser . '] ';
+  $base = trim((string)$existing);
+  return $base === '' ? $prefix . $note : $base . "\n" . $prefix . $note;
+}
+
+function property_owner_list(PDO $pdo): array {
+  owner_schema_bootstrap($pdo);
+  $st = $pdo->query(
+    "SELECT o.*,
+            COALESCE(r.request_count, 0) AS request_count,
+            COALESCE(m.property_count, 0) AS property_count
+     FROM property_owners o
+     LEFT JOIN (
+       SELECT owner_id, COUNT(*) AS request_count
+       FROM property_service_requests
+       GROUP BY owner_id
+     ) r ON r.owner_id = o.id
+     LEFT JOIN (
+       SELECT owner_id, COUNT(DISTINCT property_id) AS property_count
+       FROM property_memberships
+       WHERE status = 'active'
+       GROUP BY owner_id
+     ) m ON m.owner_id = o.id
+     ORDER BY FIELD(o.status, 'pending', 'approved', 'suspended'), o.created_at DESC, o.id DESC"
+  );
+  return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+function property_owner_status_action(string $previous, string $new): string {
+  if ($previous === 'pending' && $new === 'approved') return 'approve';
+  if ($previous === 'pending' && $new === 'suspended') return 'suspend';
+  if ($previous === 'approved' && $new === 'suspended') return 'suspend';
+  if ($previous === 'suspended' && $new === 'approved') return 'reactivate';
+  throw new InvalidArgumentException('invalid_owner_status_transition');
+}
+
+function property_owner_set_status(PDO $pdo, int $ownerId, string $newStatus, string $adminUser, string $note, string $ip = ''): array {
+  owner_schema_bootstrap($pdo);
+  if ($ownerId <= 0) throw new InvalidArgumentException('owner_id_required');
+  if (!in_array($newStatus, property_request_statuses(), true)) {
+    throw new InvalidArgumentException('invalid_owner_status');
+  }
+  if ($pdo->inTransaction()) {
+    throw new RuntimeException('owner status transition must own its transaction');
+  }
+
+  $pdo->beginTransaction();
+  try {
+    $st = $pdo->prepare("SELECT * FROM property_owners WHERE id = :id LIMIT 1 FOR UPDATE");
+    $st->execute([':id' => $ownerId]);
+    $owner = $st->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($owner)) throw new RuntimeException('owner_not_found');
+    $previous = (string)($owner['status'] ?? '');
+    $action = property_owner_status_action($previous, $newStatus);
+
+    if ($action === 'approve' || $action === 'reactivate') {
+      $up = $pdo->prepare(
+        "UPDATE property_owners
+         SET status = 'approved',
+             approved_at = UTC_TIMESTAMP(),
+             approved_by = :admin_user,
+             suspended_at = NULL,
+             suspended_by = NULL,
+             suspended_reason = NULL,
+             admin_notes = :admin_notes,
+             updated_at = UTC_TIMESTAMP()
+         WHERE id = :id"
+      );
+      $adminNotes = property_request_admin_note($owner['admin_notes'] ?? null, $note, $adminUser);
+      $up->execute([':admin_user' => $adminUser, ':admin_notes' => $adminNotes, ':id' => $ownerId]);
+    } else {
+      $up = $pdo->prepare(
+        "UPDATE property_owners
+         SET status = 'suspended',
+             suspended_at = UTC_TIMESTAMP(),
+             suspended_by = :admin_user,
+             suspended_reason = :reason,
+             admin_notes = :admin_notes,
+             updated_at = UTC_TIMESTAMP()
+         WHERE id = :id"
+      );
+      $adminNotes = property_request_admin_note($owner['admin_notes'] ?? null, $note, $adminUser);
+      $up->execute([':admin_user' => $adminUser, ':reason' => $note, ':admin_notes' => $adminNotes, ':id' => $ownerId]);
+    }
+
+    $ev = $pdo->prepare(
+      "INSERT INTO property_owner_status_events
+       (owner_id, action, previous_status, new_status, note, created_by, request_ip)
+       VALUES (:owner_id, :action, :previous_status, :new_status, :note, :created_by, :request_ip)"
+    );
+    $ev->execute([
+      ':owner_id' => $ownerId,
+      ':action' => $action,
+      ':previous_status' => $previous,
+      ':new_status' => $newStatus,
+      ':note' => $note !== '' ? $note : null,
+      ':created_by' => $adminUser,
+      ':request_ip' => $ip !== '' ? $ip : null,
+    ]);
+
+    $updated = owner_find_by_id($pdo, $ownerId);
+    $pdo->commit();
+    return [
+      'ok' => true,
+      'action' => $action,
+      'owner' => is_array($updated) ? $updated : [],
+    ];
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+}
+
+function property_lead_admin_list(PDO $pdo, array $filters = []): array {
+  owner_schema_bootstrap($pdo);
+  $where = [];
+  $bind = [];
+  $status = trim((string)($filters['status'] ?? ''));
+  if ($status !== '') {
+    $where[] = 'status = :status';
+    $bind[':status'] = $status;
+  }
+  $phone = normalize_msisdn((string)($filters['contact_phone'] ?? $filters['msisdn'] ?? ''));
+  if ($phone !== '') {
+    $where[] = 'contact_phone = :phone';
+    $bind[':phone'] = $phone;
+  }
+  $sql = 'SELECT * FROM property_leads';
+  if ($where !== []) $sql .= ' WHERE ' . implode(' AND ', $where);
+  $sql .= ' ORDER BY created_at DESC, id DESC LIMIT 250';
+  $st = $pdo->prepare($sql);
+  $st->execute($bind);
+  return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+function property_lead_admin_update(PDO $pdo, int $leadId, array $in, string $adminUser): array {
+  owner_schema_bootstrap($pdo);
+  if ($leadId <= 0) throw new InvalidArgumentException('lead_id_required');
+  $allowedStatuses = ['new', 'otp_pending', 'verified', 'converted', 'closed', 'spam'];
+  $status = trim((string)($in['status'] ?? ''));
+  $note = trim((string)($in['admin_notes'] ?? $in['note'] ?? ''));
+  if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
+    throw new InvalidArgumentException('invalid_lead_status');
+  }
+  $lead = property_lead_find($pdo, $leadId);
+  if (!is_array($lead)) throw new RuntimeException('lead_not_found');
+  $newStatus = $status !== '' ? $status : (string)($lead['status'] ?? 'new');
+  $adminNotes = property_request_admin_note($lead['admin_notes'] ?? null, $note, $adminUser);
+  $st = $pdo->prepare(
+    "UPDATE property_leads
+     SET status = :status,
+         admin_notes = :admin_notes,
+         updated_at = UTC_TIMESTAMP()
+     WHERE id = :id"
+  );
+  $st->execute([
+    ':status' => $newStatus,
+    ':admin_notes' => $adminNotes,
+    ':id' => $leadId,
+  ]);
+  $updated = property_lead_find($pdo, $leadId);
+  if (!is_array($updated)) throw new RuntimeException('lead_update_failed');
+  return $updated;
+}
+
+function property_request_admin_list(PDO $pdo, array $filters = []): array {
+  owner_schema_bootstrap($pdo);
+  $where = [];
+  $bind = [];
+  $status = trim((string)($filters['status'] ?? ''));
+  if ($status !== '') {
+    $where[] = 'r.status = :status';
+    $bind[':status'] = $status;
+  }
+  $ownerId = (int)($filters['owner_id'] ?? 0);
+  if ($ownerId > 0) {
+    $where[] = 'r.owner_id = :owner_id';
+    $bind[':owner_id'] = $ownerId;
+  }
+  $sql = "SELECT r.*, o.display_name AS owner_display_name, o.msisdn AS owner_msisdn, o.status AS owner_status
+          FROM property_service_requests r
+          JOIN property_owners o ON o.id = r.owner_id";
+  if ($where !== []) $sql .= ' WHERE ' . implode(' AND ', $where);
+  $sql .= ' ORDER BY r.created_at DESC, r.id DESC LIMIT 250';
+  $st = $pdo->prepare($sql);
+  $st->execute($bind);
+  return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+function property_request_admin_transition_action(string $newStatus): string {
+  if ($newStatus === 'rejected') return 'reject';
+  if ($newStatus === 'lost') return 'lose';
+  return 'advance';
+}
+
+function property_request_admin_transition(PDO $pdo, int $requestId, string $newStatus, string $adminUser, string $note, string $ip = ''): array {
+  owner_schema_bootstrap($pdo);
+  if ($requestId <= 0) throw new InvalidArgumentException('request_id_required');
+  if (!in_array($newStatus, property_service_request_statuses(), true)) {
+    throw new InvalidArgumentException('invalid_request_status');
+  }
+  if ($pdo->inTransaction()) {
+    throw new RuntimeException('service request transition must own its transaction');
+  }
+
+  $pdo->beginTransaction();
+  try {
+    $st = $pdo->prepare("SELECT * FROM property_service_requests WHERE id = :id LIMIT 1 FOR UPDATE");
+    $st->execute([':id' => $requestId]);
+    $request = $st->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($request)) throw new RuntimeException('property_request_not_found');
+    $previous = (string)($request['status'] ?? 'submitted');
+    $allowed = property_request_allowed_transitions();
+    if (!in_array($newStatus, $allowed[$previous] ?? [], true)) {
+      throw new InvalidArgumentException('invalid_service_request_transition');
+    }
+    $adminNotes = property_request_admin_note($request['admin_notes'] ?? null, $note, $adminUser);
+    $up = $pdo->prepare(
+      "UPDATE property_service_requests
+       SET status = :status,
+           reviewed_at = UTC_TIMESTAMP(),
+           reviewed_by = :admin_user,
+           admin_notes = :admin_notes,
+           updated_at = UTC_TIMESTAMP()
+       WHERE id = :id"
+    );
+    $up->execute([
+      ':status' => $newStatus,
+      ':admin_user' => $adminUser,
+      ':admin_notes' => $adminNotes,
+      ':id' => $requestId,
+    ]);
+
+    $ev = $pdo->prepare(
+      "INSERT INTO property_service_request_events
+       (service_request_id, action, previous_status, new_status, note, created_by, request_ip)
+       VALUES (:service_request_id, :action, :previous_status, :new_status, :note, :created_by, :request_ip)"
+    );
+    $ev->execute([
+      ':service_request_id' => $requestId,
+      ':action' => property_request_admin_transition_action($newStatus),
+      ':previous_status' => $previous,
+      ':new_status' => $newStatus,
+      ':note' => $note !== '' ? $note : null,
+      ':created_by' => $adminUser,
+      ':request_ip' => $ip !== '' ? $ip : null,
+    ]);
+
+    $updated = property_request_find($pdo, $requestId);
+    $pdo->commit();
+    return [
+      'ok' => true,
+      'request' => is_array($updated) ? $updated : [],
+    ];
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+}
+
+function property_request_convertible_statuses(): array {
+  return ['approved', 'agreement_signed', 'equipment_pending', 'installation_scheduled', 'installing', 'testing', 'active'];
+}
+
+function property_request_convert_to_property(PDO $pdo, int $requestId, array $propertyInput, string $adminUser, string $note = '', string $ip = ''): array {
+  owner_schema_bootstrap($pdo);
+  if ($requestId <= 0) throw new InvalidArgumentException('request_id_required');
+  if ($pdo->inTransaction()) {
+    throw new RuntimeException('property conversion must own its transaction');
+  }
+
+  $pdo->beginTransaction();
+  try {
+    $st = $pdo->prepare("SELECT * FROM property_service_requests WHERE id = :id LIMIT 1 FOR UPDATE");
+    $st->execute([':id' => $requestId]);
+    $request = $st->fetch(PDO::FETCH_ASSOC);
+    if (!is_array($request)) throw new RuntimeException('property_request_not_found');
+    $status = (string)($request['status'] ?? 'submitted');
+    if (!in_array($status, property_request_convertible_statuses(), true)) {
+      throw new InvalidArgumentException('service_request_not_convertible');
+    }
+
+    $existingPropertyId = (int)($request['converted_property_id'] ?? 0);
+    if ($existingPropertyId > 0) {
+      $property = null;
+      $ps = $pdo->prepare("SELECT * FROM properties WHERE id = :id LIMIT 1");
+      $ps->execute([':id' => $existingPropertyId]);
+      $row = $ps->fetch(PDO::FETCH_ASSOC);
+      $property = is_array($row) ? $row : null;
+      $pdo->commit();
+      return [
+        'ok' => true,
+        'property' => $property,
+        'property_id' => $existingPropertyId,
+        'request' => $request,
+        'idempotent' => true,
+      ];
+    }
+
+    $deploymentModel = (string)($propertyInput['deployment_model'] ?? $request['deployment_model'] ?? 'owner_funded');
+    if (!in_array($deploymentModel, ['owner_funded', 'nister_funded'], true)) $deploymentModel = 'owner_funded';
+    $billingModel = (string)($propertyInput['billing_model'] ?? $request['billing_model'] ?? 'resident_pays');
+    if (!in_array($billingModel, ['resident_pays', 'property_pays'], true)) $billingModel = 'resident_pays';
+    $propertyStatus = (string)($propertyInput['status'] ?? 'prospect');
+    if (!in_array($propertyStatus, ['prospect', 'active', 'paused', 'closed'], true)) $propertyStatus = 'prospect';
+
+    $property = [
+      'name' => trim((string)($propertyInput['name'] ?? $request['property_name'] ?? '')),
+      'country' => property_lead_trimmed($propertyInput['country'] ?? $request['country'] ?? null),
+      'region' => property_lead_trimmed($propertyInput['region'] ?? $request['region'] ?? null),
+      'town' => property_lead_trimmed($propertyInput['town'] ?? $request['town'] ?? null),
+      'address' => property_lead_trimmed($propertyInput['address'] ?? $request['address'] ?? null),
+      'digital_address' => property_lead_trimmed($propertyInput['digital_address'] ?? $request['digital_address'] ?? null),
+      'google_maps_url' => property_lead_trimmed($propertyInput['google_maps_url'] ?? $request['google_maps_url'] ?? null),
+      'nearby_campus' => property_lead_trimmed($propertyInput['nearby_campus'] ?? $request['nearby_campus'] ?? null),
+      'number_of_buildings' => property_lead_optional_int($propertyInput + $request, 'number_of_buildings'),
+      'number_of_floors' => property_lead_optional_int($propertyInput + $request, 'number_of_floors'),
+      'number_of_rooms' => property_lead_optional_int($propertyInput + $request, 'number_of_rooms'),
+      'estimated_residents' => property_lead_optional_int($propertyInput + $request, 'estimated_residents'),
+      'deployment_model' => $deploymentModel,
+      'billing_model' => $billingModel,
+      'status' => $propertyStatus,
+      'created_from_request_id' => $requestId,
+      'admin_notes' => property_request_admin_note(null, $note, $adminUser),
+    ];
+    if ($property['name'] === '') throw new InvalidArgumentException('property_name_required');
+
+    $columns = array_keys($property);
+    $quoted = implode(', ', array_map(static fn(string $c): string => "`{$c}`", $columns));
+    $placeholders = implode(', ', array_map(static fn(string $c): string => ':' . $c, $columns));
+    $ins = $pdo->prepare("INSERT INTO properties ({$quoted}) VALUES ({$placeholders})");
+    $bind = [];
+    foreach ($property as $k => $v) $bind[':' . $k] = $v;
+    $ins->execute($bind);
+    $propertyId = (int)$pdo->lastInsertId();
+
+    $mem = $pdo->prepare(
+      "INSERT INTO property_memberships (property_id, owner_id, role, status)
+       VALUES (:property_id, :owner_id, 'owner', 'active')
+       ON DUPLICATE KEY UPDATE status = 'active'"
+    );
+    $mem->execute([':property_id' => $propertyId, ':owner_id' => (int)$request['owner_id']]);
+
+    $adminNotes = property_request_admin_note($request['admin_notes'] ?? null, $note, $adminUser);
+    $up = $pdo->prepare(
+      "UPDATE property_service_requests
+       SET converted_property_id = :property_id,
+           converted_at = UTC_TIMESTAMP(),
+           converted_by = :admin_user,
+           admin_notes = :admin_notes,
+           updated_at = UTC_TIMESTAMP()
+       WHERE id = :request_id"
+    );
+    $up->execute([
+      ':property_id' => $propertyId,
+      ':admin_user' => $adminUser,
+      ':admin_notes' => $adminNotes,
+      ':request_id' => $requestId,
+    ]);
+
+    $eventNote = trim($note . "\ncreated_property_id=" . $propertyId);
+    $ev = $pdo->prepare(
+      "INSERT INTO property_service_request_events
+       (service_request_id, action, previous_status, new_status, note, created_by, request_ip)
+       VALUES (:service_request_id, 'convert_property', :previous_status, :new_status, :note, :created_by, :request_ip)"
+    );
+    $ev->execute([
+      ':service_request_id' => $requestId,
+      ':previous_status' => $status,
+      ':new_status' => $status,
+      ':note' => $eventNote,
+      ':created_by' => $adminUser,
+      ':request_ip' => $ip !== '' ? $ip : null,
+    ]);
+
+    $ps = $pdo->prepare("SELECT * FROM properties WHERE id = :id LIMIT 1");
+    $ps->execute([':id' => $propertyId]);
+    $created = $ps->fetch(PDO::FETCH_ASSOC);
+    $updatedRequest = property_request_find($pdo, $requestId);
+    $pdo->commit();
+    return [
+      'ok' => true,
+      'property' => is_array($created) ? $created : [],
+      'property_id' => $propertyId,
+      'request' => is_array($updatedRequest) ? $updatedRequest : [],
+      'idempotent' => false,
+    ];
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+}
+
 function property_owner_password_acceptable(string $password): bool {
   return strlen($password) >= 8;
 }

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/../lib/admin_auth.php';
 $ENV = admin_boot();
+admin_noindex_headers();
 
 if (admin_logged_in()) { header('Location: /admin/index.php'); exit; }
 
@@ -33,6 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
   <title>Nister Admin - Login</title>
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">

@@ -15,8 +15,11 @@ require_once __DIR__.'/../lib/location.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 require_once __DIR__.'/../lib/sms.php';
 require_once __DIR__.'/../lib/referrals.php';
+require_once __DIR__.'/../lib/property_requests.php';
+require_once __DIR__.'/../lib/property_revenue.php';
 
 $ENV = admin_boot();
+admin_noindex_headers();
 header('Content-Type: application/json; charset=utf-8');
 
 if (!admin_logged_in()) {
@@ -879,8 +882,222 @@ function admin_dedupe_user_state_rows(array $rows): array {
   return $rows;
 }
 
+function admin_actor(): string {
+  return trim((string)($_SESSION['admin_user'] ?? 'admin')) ?: 'admin';
+}
+
+function admin_request_ip(): string {
+  if (function_exists('nister_client_ip')) {
+    $env = (isset($GLOBALS['ENV']) && is_array($GLOBALS['ENV'])) ? $GLOBALS['ENV'] : [];
+    $ip = trim((string)nister_client_ip($env));
+    if ($ip !== '') return $ip;
+  }
+  return trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+}
+
+function admin_owner_api_error(Throwable $e): void {
+  $message = $e->getMessage();
+  $clientErrors = [
+    'owner_id_required',
+    'lead_id_required',
+    'request_id_required',
+    'property_id_required',
+    'property_name_required',
+    'property_id_owner_id_required',
+    'property_id_location_id_required',
+    'invalid_owner_status',
+    'invalid_owner_status_transition',
+    'invalid_lead_status',
+    'invalid_request_status',
+    'invalid_service_request_transition',
+    'service_request_not_convertible',
+    'invalid_deployment_model',
+    'invalid_billing_model',
+    'invalid_currency',
+    'invalid_property_status',
+    'invalid_location_link_status',
+    'invalid_terms_status',
+    'invalid_effective_window',
+    'invalid_recurring_fee_period',
+    "recurring_fee_period='none' requires recurring_fee_cents=0",
+    'integer_required',
+    'integer_below_min',
+    'owner_share_bps_out_of_range',
+    'property_location_link_overlap',
+    'property_terms_overlap',
+  ];
+  if (in_array($message, $clientErrors, true)) {
+    http_response_code(400);
+    echo json_encode(['ok'=>false,'error'=>$message]);
+    return;
+  }
+  if (in_array($message, ['owner_not_found', 'lead_not_found', 'property_request_not_found'], true)) {
+    http_response_code(404);
+    echo json_encode(['ok'=>false,'error'=>$message]);
+    return;
+  }
+  http_response_code(500);
+  echo json_encode(['ok'=>false,'error'=>'owner_admin_error']);
+}
+
 try {
   switch ($fn) {
+
+    case 'property_lead_list': {
+      try {
+        echo json_encode(['ok'=>true, 'leads'=>property_lead_admin_list($PDO, $in)]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'property_lead_update': {
+      try {
+        $lead = property_lead_admin_update($PDO, (int)($in['id'] ?? $in['lead_id'] ?? 0), $in, admin_actor());
+        echo json_encode(['ok'=>true, 'lead'=>$lead]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'owner_list': {
+      try {
+        echo json_encode(['ok'=>true, 'owners'=>property_owner_list($PDO)]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'owner_decision': {
+      try {
+        $result = property_owner_set_status(
+          $PDO,
+          (int)($in['owner_id'] ?? $in['id'] ?? 0),
+          (string)($in['status'] ?? $in['new_status'] ?? ''),
+          admin_actor(),
+          (string)($in['note'] ?? $in['admin_notes'] ?? ''),
+          admin_request_ip()
+        );
+        echo json_encode($result);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'service_request_list': {
+      try {
+        echo json_encode(['ok'=>true, 'requests'=>property_request_admin_list($PDO, $in)]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'service_request_decision': {
+      try {
+        $result = property_request_admin_transition(
+          $PDO,
+          (int)($in['request_id'] ?? $in['id'] ?? 0),
+          (string)($in['status'] ?? $in['new_status'] ?? ''),
+          admin_actor(),
+          (string)($in['note'] ?? $in['admin_notes'] ?? ''),
+          admin_request_ip()
+        );
+        echo json_encode($result);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'service_request_convert_property': {
+      try {
+        $result = property_request_convert_to_property(
+          $PDO,
+          (int)($in['request_id'] ?? $in['id'] ?? 0),
+          $in,
+          admin_actor(),
+          (string)($in['note'] ?? $in['admin_notes'] ?? ''),
+          admin_request_ip()
+        );
+        echo json_encode($result);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'property_save': {
+      try {
+        echo json_encode(['ok'=>true, 'property'=>property_save($PDO, $in, admin_actor())]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'property_list': {
+      try {
+        echo json_encode(['ok'=>true, 'properties'=>property_list_for_admin($PDO)]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'property_membership_save': {
+      try {
+        echo json_encode(['ok'=>true, 'membership'=>property_membership_save($PDO, $in, admin_actor())]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'property_location_link_save': {
+      try {
+        echo json_encode(['ok'=>true, 'link'=>property_location_link_save($PDO, $in, admin_actor())]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'property_terms_save': {
+      try {
+        echo json_encode(['ok'=>true, 'terms'=>property_terms_save($PDO, $in, admin_actor())]);
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'property_allocations_list': {
+      try {
+        echo json_encode(['ok'=>true] + property_allocations_admin_list($PDO, (int)($in['limit'] ?? 200)));
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
+
+    case 'property_allocations_run': {
+      try {
+        if (!function_exists('property_allocation_reconcile')) {
+          http_response_code(409);
+          echo json_encode(['ok'=>false,'error'=>'allocation_engine_unavailable']);
+          break;
+        }
+        echo json_encode(property_allocation_reconcile($PDO, (int)($in['limit'] ?? 100)));
+      } catch (Throwable $e) {
+        admin_owner_api_error($e);
+      }
+      break;
+    }
 
     case 'whoami': {
       echo json_encode([

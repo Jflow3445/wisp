@@ -2,12 +2,14 @@
 declare(strict_types=1);
 require_once __DIR__.'/../lib/admin_auth.php';
 $ENV = admin_boot();
+admin_noindex_headers();
 admin_require_login();
 $ADMIN_CSRF = admin_csrf_token();
 ?><!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>Nister Admin</title>
 <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="/favicon.ico">
@@ -247,6 +249,7 @@ $ADMIN_CSRF = admin_csrf_token();
           <button class="btn" data-section="settings" type="button" onclick="setSection('settings')">Settings</button>
           <button class="btn" data-section="alerts" type="button" onclick="setSection('alerts')">Alerts</button>
           <button class="btn" data-section="users" type="button" onclick="setSection('users')">Users</button>
+          <button class="btn" data-section="owners" type="button" onclick="setSection('owners')">Owners</button>
           <button class="btn" data-section="forensics" type="button" onclick="setSection('forensics')">Forensics</button>
           <button class="btn" data-section="all" type="button" onclick="setSection('all')">All</button>
         </div>
@@ -1226,6 +1229,113 @@ $ADMIN_CSRF = admin_csrf_token();
     </div>
     <div class="note" id="sms_status">Messages use the SMS gateway settings saved in Portal settings.</div>
   </div>
+
+  <div class="card" id="section-owners" data-section="owners">
+    <div class="section-head">
+      <h2>Owner Platform</h2>
+      <div class="muted">Review property leads, approve owner accounts, move requests through CRM, link properties to sites, and configure financial terms.</div>
+    </div>
+    <div class="tool-actions">
+      <button class="btn" id="owner_platform_reload" type="button">Reload owner platform</button>
+      <button class="btn" id="owner_allocations_run" type="button">Run allocation retry</button>
+    </div>
+    <div class="note" id="owner_platform_status">Owner actions use admin CSRF and never mutate resident access or purchase flow.</div>
+
+    <div class="split" style="margin-top:14px">
+      <section>
+        <h3>Captured property leads</h3>
+        <div class="table-wrap">
+          <table class="table small" id="owner_leads_tbl">
+            <thead><tr><th>Lead</th><th>Phone</th><th>Property</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody><tr><td colspan="5" class="muted">Loading property leads...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section>
+        <h3>Owner accounts</h3>
+        <div class="table-wrap">
+          <table class="table small" id="owners_tbl">
+            <thead><tr><th>Owner</th><th>Phone</th><th>Status</th><th>Requests</th><th>Action</th></tr></thead>
+            <tbody><tr><td colspan="5" class="muted">Loading owners...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="split" style="margin-top:14px">
+      <section>
+        <h3>Service requests</h3>
+        <div class="table-wrap">
+          <table class="table" id="service_requests_tbl">
+            <thead><tr><th>Request</th><th>Owner</th><th>Property</th><th>Status</th><th>Next action</th></tr></thead>
+            <tbody><tr><td colspan="5" class="muted">Loading service requests...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section>
+        <h3>Convert request to property</h3>
+        <div class="form-grid">
+          <div class="field"><label for="owner_convert_request_id">Request ID</label><input id="owner_convert_request_id" type="number" min="1"></div>
+          <div class="field"><label for="owner_convert_name">Property name override</label><input id="owner_convert_name" type="text"></div>
+          <div class="field"><label for="owner_convert_deployment">Deployment model</label><select id="owner_convert_deployment"><option value="owner_funded">Owner funded</option><option value="nister_funded">Nister funded</option></select></div>
+          <div class="field"><label for="owner_convert_billing">Billing model</label><select id="owner_convert_billing"><option value="resident_pays">Resident pays</option><option value="property_pays">Property pays</option></select></div>
+        </div>
+        <div class="tool-actions"><button class="btn approve" id="owner_convert_btn" type="button">Convert to property</button></div>
+      </section>
+    </div>
+
+    <div class="split" style="margin-top:14px">
+      <section>
+        <h3>Properties</h3>
+        <div class="table-wrap">
+          <table class="table small" id="owner_properties_tbl">
+            <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Owners</th><th>Links</th></tr></thead>
+            <tbody><tr><td colspan="5" class="muted">Loading properties...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section>
+        <h3>Property setup</h3>
+        <div class="form-grid">
+          <div class="field"><label for="owner_property_id">Property ID</label><input id="owner_property_id" type="number" min="1"></div>
+          <div class="field"><label for="owner_property_name">Property name</label><input id="owner_property_name" type="text"></div>
+          <div class="field"><label for="owner_membership_owner_id">Owner ID</label><input id="owner_membership_owner_id" type="number" min="1"></div>
+          <div class="field"><label for="owner_link_location_id">Location ID</label><input id="owner_link_location_id" type="number" min="1"></div>
+          <div class="field"><label for="owner_link_effective_from">Link effective from UTC</label><input id="owner_link_effective_from" type="text" placeholder="YYYY-MM-DD HH:MM:SS"></div>
+          <div class="field"><label for="owner_terms_share_bps">Owner share bps</label><input id="owner_terms_share_bps" type="number" min="0" max="10000" value="0"></div>
+          <div class="field"><label for="owner_terms_deployment">Terms deployment model</label><select id="owner_terms_deployment"><option value="owner_funded">Owner funded</option><option value="nister_funded">Nister funded</option></select></div>
+          <div class="field"><label for="owner_terms_billing">Terms billing model</label><select id="owner_terms_billing"><option value="resident_pays">Resident pays</option><option value="property_pays">Property pays</option></select></div>
+        </div>
+        <div class="tool-actions">
+          <button class="btn" id="owner_property_save_btn" type="button">Save property</button>
+          <button class="btn" id="owner_membership_save_btn" type="button">Add owner membership</button>
+          <button class="btn" id="owner_location_link_save_btn" type="button">Link property to site</button>
+          <button class="btn" id="owner_terms_save_btn" type="button">Save financial terms</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="split" style="margin-top:14px">
+      <section>
+        <h3>Allocation attempts</h3>
+        <div class="table-wrap">
+          <table class="table small" id="owner_allocation_attempts_tbl">
+            <thead><tr><th>Purchase</th><th>Status</th><th>Reason</th><th>Attempts</th><th>Last attempt</th></tr></thead>
+            <tbody><tr><td colspan="5" class="muted">Loading allocation attempts...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section>
+        <h3>Allocated transactions</h3>
+        <div class="table-wrap">
+          <table class="table small" id="owner_allocations_tbl">
+            <thead><tr><th>Purchase</th><th>Property</th><th>Gross</th><th>Your share</th><th>Status</th></tr></thead>
+            <tbody><tr><td colspan="5" class="muted">Loading allocations...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
     </main>
   </div>
 </div>
@@ -1410,6 +1520,281 @@ function fmtAgeSec(v){
   if (n < 3600) return `${Math.round(n / 60)}m ago`;
   if (n < 86400) return `${Math.round(n / 3600)}h ago`;
   return `${(n / 86400).toFixed(1)}d ago`;
+}
+
+function setOwnerPlatformStatus(msg, state){
+  const el = document.getElementById('owner_platform_status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('error', state === 'error');
+  el.classList.toggle('success', state === 'success');
+}
+
+function ownerStatusLabel(status){
+  const map = {
+    submitted: 'Request received',
+    contacted: "We're in touch",
+    qualified: 'Property assessment',
+    site_survey_required: 'Site visit needed',
+    site_survey_scheduled: 'Site visit scheduled',
+    site_survey_completed: 'Assessment complete',
+    quote_prepared: 'Preparing your proposal',
+    quote_sent: 'Proposal sent',
+    negotiating: 'Finalising the arrangement',
+    approved: 'Approved',
+    agreement_signed: 'Agreement complete',
+    equipment_pending: 'Preparing equipment',
+    installation_scheduled: 'Installation scheduled',
+    installing: 'Installation underway',
+    testing: 'Final testing',
+    active: 'Nister is active',
+    rejected: 'Not a fit right now',
+    lost: 'Request closed'
+  };
+  return map[status] || status || '-';
+}
+
+function ownerNextStatuses(status){
+  const map = {
+    submitted: ['contacted','rejected','lost'],
+    contacted: ['qualified','rejected','lost'],
+    qualified: ['site_survey_required','quote_prepared','rejected','lost'],
+    site_survey_required: ['site_survey_scheduled','rejected','lost'],
+    site_survey_scheduled: ['site_survey_completed','rejected','lost'],
+    site_survey_completed: ['quote_prepared','rejected','lost'],
+    quote_prepared: ['quote_sent','rejected','lost'],
+    quote_sent: ['negotiating','approved','rejected','lost'],
+    negotiating: ['approved','rejected','lost'],
+    approved: ['agreement_signed','lost'],
+    agreement_signed: ['equipment_pending','installation_scheduled','lost'],
+    equipment_pending: ['installation_scheduled','lost'],
+    installation_scheduled: ['installing','lost'],
+    installing: ['testing','lost'],
+    testing: ['active','lost']
+  };
+  return map[status] || [];
+}
+
+function renderOwnerLeads(rows){
+  const tb = document.querySelector('#owner_leads_tbl tbody');
+  if (!tb) return;
+  if (!Array.isArray(rows) || rows.length === 0){
+    tb.innerHTML = '<tr><td colspan="5" class="muted">No property leads captured yet.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(r => `
+    <tr>
+      <td>#${safe(r.id)}<div class="muted">${safe(r.created_at)}</div></td>
+      <td>${safe(r.contact_phone)}</td>
+      <td>${safe(r.property_name)}<div class="muted">${safe(r.town)} ${safe(r.region)}</div></td>
+      <td><span class="badge">${safe(r.status)}</span></td>
+      <td><button class="btn small" data-lead-id="${safe(r.id)}" data-lead-status="closed" type="button">Close</button>
+          <button class="btn small decline" data-lead-id="${safe(r.id)}" data-lead-status="spam" type="button">Spam</button></td>
+    </tr>`).join('');
+}
+
+function renderOwners(rows){
+  const tb = document.querySelector('#owners_tbl tbody');
+  if (!tb) return;
+  if (!Array.isArray(rows) || rows.length === 0){
+    tb.innerHTML = '<tr><td colspan="5" class="muted">No owner accounts yet.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(o => {
+    const status = String(o.status || '');
+    const actions = status === 'pending'
+      ? `<button class="btn small approve" data-owner-id="${safe(o.id)}" data-owner-status="approved" type="button">Approve</button><button class="btn small decline" data-owner-id="${safe(o.id)}" data-owner-status="suspended" type="button">Suspend</button>`
+      : status === 'approved'
+        ? `<button class="btn small decline" data-owner-id="${safe(o.id)}" data-owner-status="suspended" type="button">Suspend</button>`
+        : `<button class="btn small approve" data-owner-id="${safe(o.id)}" data-owner-status="approved" type="button">Reactivate</button>`;
+    return `<tr>
+      <td>#${safe(o.id)} ${safe(o.display_name)}</td>
+      <td>${safe(o.msisdn)}</td>
+      <td><span class="badge">${safe(status)}</span></td>
+      <td>${safe(o.request_count || 0)}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderServiceRequests(rows){
+  const tb = document.querySelector('#service_requests_tbl tbody');
+  if (!tb) return;
+  if (!Array.isArray(rows) || rows.length === 0){
+    tb.innerHTML = '<tr><td colspan="5" class="muted">No service requests yet.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(r => {
+    const next = ownerNextStatuses(String(r.status || ''));
+    const action = next.length
+      ? `<select data-request-next="${safe(r.id)}">${next.map(s=>`<option value="${safe(s)}">${safe(ownerStatusLabel(s))}</option>`).join('')}</select><button class="btn small" data-request-id="${safe(r.id)}" type="button">Save</button>`
+      : '<span class="muted">Terminal</span>';
+    return `<tr>
+      <td>#${safe(r.id)}<div class="muted">${safe(r.created_at)}</div></td>
+      <td>${safe(r.owner_display_name)}<div class="muted">${safe(r.owner_msisdn)}</div></td>
+      <td>${safe(r.property_name)}<div class="muted">${safe(r.town)} ${safe(r.region)}</div></td>
+      <td><span class="badge">${safe(ownerStatusLabel(r.status))}</span></td>
+      <td>${action}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderOwnerProperties(rows){
+  const tb = document.querySelector('#owner_properties_tbl tbody');
+  if (!tb) return;
+  if (!Array.isArray(rows) || rows.length === 0){
+    tb.innerHTML = '<tr><td colspan="5" class="muted">No properties created yet.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(p => `<tr>
+    <td>${safe(p.id)}</td>
+    <td>${safe(p.name)}<div class="muted">${safe(p.town)} ${safe(p.region)}</div></td>
+    <td><span class="badge">${safe(p.status)}</span></td>
+    <td>${safe(p.owner_count || 0)}</td>
+    <td>${safe(p.location_count || 0)}</td>
+  </tr>`).join('');
+}
+
+function renderOwnerAllocations(data){
+  const attemptsTb = document.querySelector('#owner_allocation_attempts_tbl tbody');
+  const allocTb = document.querySelector('#owner_allocations_tbl tbody');
+  const attempts = data && Array.isArray(data.attempts) ? data.attempts : [];
+  const allocations = data && Array.isArray(data.allocations) ? data.allocations : [];
+  if (attemptsTb) {
+    attemptsTb.innerHTML = attempts.length ? attempts.map(a => `<tr>
+      <td>${safe(a.purchase_id)}</td><td><span class="badge">${safe(a.status)}</span></td><td>${safe(a.reason)}</td><td>${safe(a.attempt_count || 0)}</td><td>${safe(a.last_attempt_at)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="muted">No allocation attempts yet.</td></tr>';
+  }
+  if (allocTb) {
+    allocTb.innerHTML = allocations.length ? allocations.map(a => `<tr>
+      <td>${safe(a.purchase_id)}</td><td>${safe(a.property_name || a.property_id)}</td><td>${centsToGHS(Number(a.gross_cents || 0))}</td><td>${centsToGHS(Number(a.owner_amount_cents || 0))}</td><td>${safe(a.status)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="muted">No allocated transactions yet.</td></tr>';
+  }
+}
+
+async function loadOwnerPlatform(){
+  setOwnerPlatformStatus('Loading owner platform...');
+  const [leads, owners, requests, properties, allocations] = await Promise.all([
+    api('property_lead_list'),
+    api('owner_list'),
+    api('service_request_list'),
+    api('property_list'),
+    api('property_allocations_list')
+  ]);
+  if (!leads.ok || !owners.ok || !requests.ok || !properties.ok || !allocations.ok){
+    setOwnerPlatformStatus('Owner platform data could not be fully loaded.', 'error');
+  } else {
+    setOwnerPlatformStatus('Owner platform loaded.', 'success');
+  }
+  renderOwnerLeads(leads.leads || []);
+  renderOwners(owners.owners || []);
+  renderServiceRequests(requests.requests || []);
+  renderOwnerProperties(properties.properties || []);
+  renderOwnerAllocations(allocations);
+}
+
+async function ownerDecision(ownerId, status){
+  const note = window.prompt('Admin note for this owner decision:', '') || '';
+  const j = await api('owner_decision', { owner_id: ownerId, status, note });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Owner decision failed.', 'error'); return; }
+  setOwnerPlatformStatus('Owner decision saved.', 'success');
+  await loadOwnerPlatform();
+}
+
+async function serviceRequestDecision(requestId, status){
+  const note = window.prompt('Admin note for this service request:', '') || '';
+  const j = await api('service_request_decision', { request_id: requestId, status, note });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Service request decision failed.', 'error'); return; }
+  setOwnerPlatformStatus('Service request updated.', 'success');
+  await loadOwnerPlatform();
+}
+
+async function updatePropertyLead(leadId, status){
+  const note = window.prompt('Lead note:', '') || '';
+  const j = await api('property_lead_update', { lead_id: leadId, status, note });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Lead update failed.', 'error'); return; }
+  setOwnerPlatformStatus('Lead updated.', 'success');
+  await loadOwnerPlatform();
+}
+
+async function convertOwnerRequest(){
+  const requestId = Number(toolValue('owner_convert_request_id'));
+  if (!requestId){ setOwnerPlatformStatus('Request ID is required.', 'error'); return; }
+  const j = await api('service_request_convert_property', {
+    request_id: requestId,
+    name: toolValue('owner_convert_name'),
+    deployment_model: toolValue('owner_convert_deployment'),
+    billing_model: toolValue('owner_convert_billing'),
+    note: 'Converted from owner CRM.'
+  });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Conversion failed.', 'error'); return; }
+  if (j.property_id) setValue('owner_property_id', j.property_id);
+  setOwnerPlatformStatus(`Request converted to property #${j.property_id || '-'}.`, 'success');
+  await loadOwnerPlatform();
+}
+
+async function saveOwnerProperty(){
+  const j = await api('property_save', {
+    id: toolValue('owner_property_id'),
+    name: toolValue('owner_property_name'),
+    deployment_model: toolValue('owner_terms_deployment'),
+    billing_model: toolValue('owner_terms_billing'),
+    status: 'prospect'
+  });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Property save failed.', 'error'); return; }
+  setValue('owner_property_id', j.property && j.property.id ? j.property.id : '');
+  setOwnerPlatformStatus('Property saved.', 'success');
+  await loadOwnerPlatform();
+}
+
+async function saveOwnerMembership(){
+  const j = await api('property_membership_save', {
+    property_id: toolValue('owner_property_id'),
+    owner_id: toolValue('owner_membership_owner_id'),
+    role: 'owner',
+    status: 'active'
+  });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Membership save failed.', 'error'); return; }
+  setOwnerPlatformStatus('Owner membership saved.', 'success');
+  await loadOwnerPlatform();
+}
+
+async function saveOwnerLocationLink(){
+  const j = await api('property_location_link_save', {
+    property_id: toolValue('owner_property_id'),
+    location_id: toolValue('owner_link_location_id'),
+    effective_from: toolValue('owner_link_effective_from'),
+    close_prior: 1,
+    status: 'active'
+  });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Location link failed.', 'error'); return; }
+  setOwnerPlatformStatus('Property linked to site.', 'success');
+  await loadOwnerPlatform();
+}
+
+async function saveOwnerTerms(){
+  const j = await api('property_terms_save', {
+    property_id: toolValue('owner_property_id'),
+    deployment_model: toolValue('owner_terms_deployment'),
+    billing_model: toolValue('owner_terms_billing'),
+    currency: 'GHS',
+    owner_share_bps: toolValue('owner_terms_share_bps'),
+    setup_fee_cents: 0,
+    recurring_fee_cents: 0,
+    recurring_fee_period: 'none',
+    effective_from: toolValue('owner_link_effective_from'),
+    status: 'active'
+  });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Financial terms save failed.', 'error'); return; }
+  setOwnerPlatformStatus('Financial terms saved.', 'success');
+  await loadOwnerPlatform();
+}
+
+async function runOwnerAllocations(){
+  const j = await api('property_allocations_run', { limit: 100, location_id: 'all' });
+  if (!j.ok){ setOwnerPlatformStatus(j.error || 'Allocation retry could not run.', 'error'); await loadOwnerPlatform(); return; }
+  setOwnerPlatformStatus('Allocation retry completed.', 'success');
+  await loadOwnerPlatform();
 }
 
 function setFlowStatusNote(msg, state){
@@ -2921,6 +3306,11 @@ function toolValue(id){
   return el ? el.value.trim() : '';
 }
 
+function setValue(id, value){
+  const el = document.getElementById(id);
+  if (el) el.value = value === null || value === undefined ? '' : String(value);
+}
+
 function digitsOnly(v){
   return String(v || '').replace(/\D+/g, '');
 }
@@ -3665,6 +4055,7 @@ async function refreshAll(){
   await loadDriveStatus();
   await loadAlerts();
   await loadUserStates();
+  await loadOwnerPlatform();
   if (btn) btn.disabled = false;
 }
 
@@ -3833,6 +4224,50 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   updateSmsAudience();
   const smsSendBtn = document.getElementById('sms_send');
   if (smsSendBtn) smsSendBtn.addEventListener('click', sendSms);
+
+  const ownerReloadBtn = document.getElementById('owner_platform_reload');
+  if (ownerReloadBtn) ownerReloadBtn.addEventListener('click', loadOwnerPlatform);
+  const ownerAllocRunBtn = document.getElementById('owner_allocations_run');
+  if (ownerAllocRunBtn) ownerAllocRunBtn.addEventListener('click', runOwnerAllocations);
+  const ownerConvertBtn = document.getElementById('owner_convert_btn');
+  if (ownerConvertBtn) ownerConvertBtn.addEventListener('click', convertOwnerRequest);
+  const ownerPropertySaveBtn = document.getElementById('owner_property_save_btn');
+  if (ownerPropertySaveBtn) ownerPropertySaveBtn.addEventListener('click', saveOwnerProperty);
+  const ownerMembershipSaveBtn = document.getElementById('owner_membership_save_btn');
+  if (ownerMembershipSaveBtn) ownerMembershipSaveBtn.addEventListener('click', saveOwnerMembership);
+  const ownerLocationLinkSaveBtn = document.getElementById('owner_location_link_save_btn');
+  if (ownerLocationLinkSaveBtn) ownerLocationLinkSaveBtn.addEventListener('click', saveOwnerLocationLink);
+  const ownerTermsSaveBtn = document.getElementById('owner_terms_save_btn');
+  if (ownerTermsSaveBtn) ownerTermsSaveBtn.addEventListener('click', saveOwnerTerms);
+
+  const ownerSection = document.getElementById('section-owners');
+  if (ownerSection && ownerSection.dataset.bound !== '1') {
+    ownerSection.addEventListener('click', async (e)=>{
+      const leadBtn = e.target.closest('[data-lead-id][data-lead-status]');
+      if (leadBtn) {
+        await updatePropertyLead(
+          Number(leadBtn.getAttribute('data-lead-id') || 0),
+          leadBtn.getAttribute('data-lead-status') || ''
+        );
+        return;
+      }
+      const ownerBtn = e.target.closest('[data-owner-id][data-owner-status]');
+      if (ownerBtn) {
+        await ownerDecision(
+          Number(ownerBtn.getAttribute('data-owner-id') || 0),
+          ownerBtn.getAttribute('data-owner-status') || ''
+        );
+        return;
+      }
+      const requestBtn = e.target.closest('[data-request-id]');
+      if (requestBtn) {
+        const requestId = Number(requestBtn.getAttribute('data-request-id') || 0);
+        const select = ownerSection.querySelector(`[data-request-next="${requestId}"]`);
+        await serviceRequestDecision(requestId, select ? select.value : '');
+      }
+    });
+    ownerSection.dataset.bound = '1';
+  }
 
   const planTable = document.getElementById('plans_tbl');
   if (planTable && planTable.dataset.bound !== '1') {
