@@ -901,9 +901,11 @@ function property_allocations_admin_list(PDO $pdo, int $limit = 200): array {
      LIMIT {$limit}"
   )->fetchAll(PDO::FETCH_ASSOC) ?: [];
   $attempts = $pdo->query(
-    "SELECT *
-     FROM property_allocation_attempts
-     ORDER BY last_attempt_at DESC, id DESC
+    "SELECT aa.*, l.code AS location_code, l.name AS location_name, p.name AS property_name
+     FROM property_allocation_attempts aa
+     LEFT JOIN locations l ON l.id = aa.location_id
+     LEFT JOIN properties p ON p.id = aa.property_id
+     ORDER BY aa.last_attempt_at DESC, aa.id DESC
      LIMIT {$limit}"
   )->fetchAll(PDO::FETCH_ASSOC) ?: [];
   return ['allocations' => $alloc, 'attempts' => $attempts];

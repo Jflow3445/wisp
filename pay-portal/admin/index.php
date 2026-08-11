@@ -1320,8 +1320,8 @@ $ADMIN_CSRF = admin_csrf_token();
         <h3>Allocation attempts</h3>
         <div class="table-wrap">
           <table class="table small" id="owner_allocation_attempts_tbl">
-            <thead><tr><th>Purchase</th><th>Status</th><th>Reason</th><th>Attempts</th><th>Last attempt</th></tr></thead>
-            <tbody><tr><td colspan="5" class="muted">Loading allocation attempts...</td></tr></tbody>
+            <thead><tr><th>Purchase</th><th>Status</th><th>Reason</th><th>Site</th><th>Attempts</th><th>Last attempt</th></tr></thead>
+            <tbody><tr><td colspan="6" class="muted">Loading allocation attempts...</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -1655,6 +1655,13 @@ function renderOwnerProperties(rows){
   </tr>`).join('');
 }
 
+function allocationAttemptSiteLabel(a){
+  const id = a && a.location_id ? `#${safe(a.location_id)}` : '';
+  const name = a && (a.location_name || a.location_code) ? safe(a.location_name || a.location_code) : '';
+  const label = `${id} ${name}`.trim();
+  return label || 'N/A';
+}
+
 function renderOwnerAllocations(data){
   const attemptsTb = document.querySelector('#owner_allocation_attempts_tbl tbody');
   const allocTb = document.querySelector('#owner_allocations_tbl tbody');
@@ -1662,8 +1669,8 @@ function renderOwnerAllocations(data){
   const allocations = data && Array.isArray(data.allocations) ? data.allocations : [];
   if (attemptsTb) {
     attemptsTb.innerHTML = attempts.length ? attempts.map(a => `<tr>
-      <td>${safe(a.purchase_id)}</td><td><span class="badge">${safe(a.status)}</span></td><td>${safe(a.reason)}</td><td>${safe(a.attempt_count || 0)}</td><td>${safe(a.last_attempt_at)}</td>
-    </tr>`).join('') : '<tr><td colspan="5" class="muted">No allocation attempts yet.</td></tr>';
+      <td>${safe(a.purchase_id)}</td><td><span class="badge">${safe(a.status)}</span></td><td>${safe(a.reason)}</td><td>${allocationAttemptSiteLabel(a)}</td><td>${safe(a.attempt_count || 0)}</td><td>${safe(a.last_attempt_at)}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="muted">No allocation attempts yet.</td></tr>';
   }
   if (allocTb) {
     allocTb.innerHTML = allocations.length ? allocations.map(a => `<tr>

@@ -1065,4 +1065,9 @@ assert_not_contains "radius_never_marks_zero_quota_exhausted" "$radius_content" 
 assert_contains "radius_usage_dedupes_duplicate_acct_sessions" "$radius_content" 'GROUP BY q.session_key, q.mac_key, q.ip_key'
 assert_contains "radius_usage_counts_largest_duplicate_session_counter" "$radius_content" 'MAX(q.sess_bytes) AS sess_bytes'
 
+owner_admin_content="$(cat pay-portal/admin/index.php pay-portal/lib/property_revenue.php)"
+assert_contains "owner_allocation_attempts_show_site_column" "$owner_admin_content" '<th>Site</th>'
+assert_contains "owner_allocation_attempts_render_site_label" "$owner_admin_content" 'allocationAttemptSiteLabel(a)'
+assert_contains "owner_allocation_attempts_join_location_names" "$owner_admin_content" 'LEFT JOIN locations l ON l.id = aa.location_id'
+
 printf 'All regression tests passed (%d).\n' "$pass_count"
