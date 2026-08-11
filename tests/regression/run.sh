@@ -313,13 +313,86 @@ hotspot_fallback_sources="$(cat api/hotspot/change_password.php api/hotspot/rese
 assert_not_contains "fallback_sources_no_public_login_html_default" "$hotspot_fallback_sources" "https://wifi.nister.org/login.html"
 
 owner_schema_content="$(cat pay-portal/lib/owner_schema.php 2>/dev/null || true)"
+property_leads_content="$(cat pay-portal/lib/property_leads.php 2>/dev/null || true)"
 owner_auth_content="$(cat pay-portal/lib/owner_auth.php 2>/dev/null || true)"
 property_revenue_content="$(cat pay-portal/lib/property_revenue.php 2>/dev/null || true)"
 purchase_content="$(cat pay-portal/purchase.php)"
 
 assert_contains "owner_schema_defines_leads" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_leads"
+assert_contains "owner_schema_defines_owners" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_owners"
+assert_contains "owner_schema_defines_owner_status_events" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_owner_status_events"
+assert_contains "owner_schema_defines_owner_otp_challenges" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS owner_otp_challenges"
+assert_contains "owner_schema_defines_service_requests" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_service_requests"
+assert_contains "owner_schema_defines_service_request_events" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_service_request_events"
+assert_contains "owner_schema_defines_properties" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS properties"
+assert_contains "owner_schema_defines_property_memberships" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_memberships"
+assert_contains "owner_schema_defines_property_location_links" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_location_links"
+assert_contains "owner_schema_defines_property_financial_terms" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_financial_terms"
+assert_contains "owner_schema_defines_property_transaction_allocations" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_transaction_allocations"
+assert_contains "owner_schema_defines_property_allocation_attempts" "$owner_schema_content" "CREATE TABLE IF NOT EXISTS property_allocation_attempts"
 assert_contains "owner_schema_no_rejected_owner_status" "$owner_schema_content" "ENUM('pending','approved','suspended')"
+assert_contains "owner_schema_supports_owner_status_events" "$owner_schema_content" "ENUM('approve','suspend','reactivate')"
+assert_contains "owner_schema_supports_deployment_model" "$owner_schema_content" "deployment_model"
+assert_contains "owner_schema_supports_billing_model" "$owner_schema_content" "billing_model"
+assert_contains "owner_schema_supports_setup_fee_cents" "$owner_schema_content" "setup_fee_cents"
+assert_contains "owner_schema_supports_recurring_fee_cents" "$owner_schema_content" "recurring_fee_cents"
+assert_contains "owner_schema_supports_current_cost_cents" "$owner_schema_content" "current_monthly_cost_cents"
+assert_contains "owner_schema_supports_resident_pays" "$owner_schema_content" "ENUM('resident_pays','property_pays')"
+assert_contains "owner_schema_supports_nister_funded" "$owner_schema_content" "ENUM('owner_funded','nister_funded')"
+assert_contains "owner_schema_supports_expanded_crm_statuses" "$owner_schema_content" "site_survey_required','site_survey_scheduled','site_survey_completed','quote_prepared','quote_sent','negotiating','approved','agreement_signed','equipment_pending','installation_scheduled','installing','testing','active','rejected','lost"
+assert_contains "owner_schema_supports_location_effective_windows" "$owner_schema_content" "effective_from DATETIME NOT NULL"
+assert_contains "owner_schema_supports_financial_terms_windows" "$owner_schema_content" "effective_to DATETIME NULL"
+assert_contains "owner_schema_unique_purchase_allocations" "$owner_schema_content" "UNIQUE KEY uq_property_transaction_allocations_purchase"
+assert_contains "owner_schema_unique_allocation_attempts" "$owner_schema_content" "UNIQUE KEY uq_property_allocation_attempts_purchase"
+assert_contains "owner_schema_calls_location_bootstrap" "$owner_schema_content" "location_bootstrap()"
+assert_contains "owner_schema_defines_table_exists_helper" "$owner_schema_content" "function owner_schema_table_exists(PDO \$pdo, string \$table): bool"
+assert_contains "owner_schema_defines_column_exists_helper" "$owner_schema_content" "function owner_schema_column_exists(PDO \$pdo, string \$table, string \$column): bool"
+assert_contains "owner_schema_defines_bootstrap" "$owner_schema_content" "function owner_schema_bootstrap(PDO \$pdo): void"
+assert_contains "owner_schema_requires_purchase_location" "$owner_schema_content" "function owner_schema_require_purchase_location(PDO \$pdo): array"
 assert_no_owner_rejected_status_enum "owner_schema_never_defines_rejected_owner_status_enum" "$owner_schema_content"
+assert_contains "property_leads_defines_public_fields" "$property_leads_content" "function property_lead_public_fields(): array"
+assert_contains "property_leads_defines_normalize" "$property_leads_content" "function property_lead_normalize(array \$in): array"
+assert_contains "property_leads_defines_validate" "$property_leads_content" "function property_lead_validate(array \$lead): array"
+assert_contains "property_leads_defines_create" "$property_leads_content" "function property_lead_create(PDO \$pdo, array \$in, array \$server = []): array"
+assert_contains "property_leads_defines_find" "$property_leads_content" "function property_lead_find(PDO \$pdo, int \$id): ?array"
+assert_contains "property_leads_defines_mark_otp_pending" "$property_leads_content" "function property_lead_mark_otp_pending(PDO \$pdo, int \$leadId): void"
+assert_contains "property_leads_normalizes_msisdn" "$property_leads_content" "normalize_msisdn("
+assert_contains "property_leads_rounds_decimal_costs_to_cents" "$property_leads_content" "round(\$amount * 100, 0, PHP_ROUND_HALF_UP)"
+
+property_lead_validation="$(php_run <<'PHP'
+<?php
+require getcwd() . '/pay-portal/lib/property_leads.php';
+$fields = property_lead_public_fields();
+$lead = property_lead_normalize([
+  'contact_name' => '  Ama Owner  ',
+  'contact_phone' => '024 123 4567',
+  'contact_whatsapp' => '+233 24 765 4321',
+  'contact_email' => 'owner@example.com',
+  'property_name' => 'North Gate Hostel',
+  'country' => 'Ghana',
+  'region' => 'Ashanti',
+  'town' => 'Kumasi',
+  'address' => 'Near campus gate',
+  'has_wifi' => '0',
+  'current_monthly_cost' => '1234.565',
+  'poor_coverage' => 'yes',
+  'deployment_preference' => 'property_paid_wifi',
+]);
+$errors = property_lead_validate($lead);
+$ok = in_array('current_monthly_cost', $fields, true)
+  && $lead['contact_name'] === 'Ama Owner'
+  && $lead['contact_phone'] === '233241234567'
+  && $lead['contact_whatsapp'] === '233247654321'
+  && $lead['current_monthly_cost_cents'] === 123457
+  && $lead['current_monthly_cost_currency'] === 'GHS'
+  && $lead['poor_coverage'] === 1
+  && $lead['has_wifi'] === 0
+  && $lead['deployment_preference'] === 'property_paid_wifi'
+  && $errors === [];
+echo $ok ? 'OK' : 'BAD';
+PHP
+)"
+assert_eq "property_lead_normalize_validate_release1_fields" "$property_lead_validation" "OK"
 assert_contains "owner_auth_uses_owner_session" "$owner_auth_content" "session_name('nister_owner')"
 assert_contains "owner_auth_sets_noindex" "$owner_auth_content" "noindex, nofollow"
 assert_owner_pages_each_noindex "owner_pages_are_noindex"
