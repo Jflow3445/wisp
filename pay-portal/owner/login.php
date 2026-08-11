@@ -88,9 +88,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         <h1>Open your owner workspace.</h1>
         <p>Use the phone number verified during owner onboarding and the owner password you created or confirmed.</p>
         <div class="owner-status-list" aria-label="Owner access notes">
-          <span>Pending owners can track submitted requests after approval features are added.</span>
-          <span>Approved owners can use the dashboard when Task 5 adds authenticated request pages.</span>
-          <span>Suspended owner accounts must contact Nister support or an administrator.</span>
+          <span>Pending owners can see submitted service requests and account status.</span>
+          <span>Approved owners can submit and track property service requests from the dashboard.</span>
+          <span>Suspended owner accounts show an administrator-review state.</span>
         </div>
       </div>
 
