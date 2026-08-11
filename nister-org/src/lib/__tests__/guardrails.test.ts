@@ -247,6 +247,8 @@ test("canonical helper keeps absolute and protocol-relative input site-local", (
   assert.equal(canonical("plans"), "https://nister.org/plans");
   assert.equal(canonical("//evil.example/plans"), "https://nister.org/plans");
   assert.equal(canonical("https://evil.example/coverage?x=1#frag"), "https://nister.org/coverage");
+  assert.equal(canonical("\\\\evil.example\\plans"), "https://nister.org/plans");
+  assert.equal(canonical("/\\\\evil.example\\plans"), "https://nister.org/plans");
 });
 
 test("public route sources declare canonical OpenGraph metadata and JSON-LD", () => {
