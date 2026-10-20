@@ -1,0 +1,119 @@
+NISTER WISP production recovery - 20 October 2026
+Final validation: approximately 13:23 UTC
+
+Outcome
+The operating hotspot path is restored. Seven real devices completed HTTPS
+logins, seven current accounting sessions were present, and accounting records
+showed fresh interim updates and nonzero traffic. The originally affected
+phone's individual retry has not yet been confirmed by the user.
+
+Captive HTTPS repair
+The current Wi-Fi leaf certificate and the YR2 intermediate shared the name
+wifi_nister_org_hotspot_auto_leaf. The intermediate was renamed to
+letsencrypt_yr2_intermediate and the existing HotSpot certificate binding was
+refreshed. Real HTTPS logins subsequently resumed. The existing leaf certificate
+and private key were retained; the leaf still matches the server and expires
+on 23 November 2026 at 11:46:49 UTC.
+
+The existing certificate push script now selects the imported leaf by its
+server certificate fingerprint and gives intermediate certificates unique
+names. Future uploads also verify the RouterOS file size and last-modified
+timestamp before import. No captive HTML files were replaced.
+
+Requested validation report
+
+1. Router detected: NISTER-HS-01, RouterOS 7.20.2, hEX S. Current VPN public
+   peer 74.244.119.242, IKE identity 100.81.142.44. The configured .2 and .4
+   addresses belong to this restored router path.
+2. IPsec: one established IKE SA and an installed transport CHILD SA, with
+   encrypted packet counters increasing. Existing PSK authentication succeeded.
+3. L2TP/PPP: xl2tpd active; ppp0 present. Router l2tp-over-vps connected.
+4. Addressing/routes: VPS 10.99.99.1, PPP peer 10.10.20.2. Routes to
+   10.10.20.4/32, 192.168.88.0/24 and the configured 192.168.80.0/20 use ppp0.
+   The existing watchdog restored the configured /20 route.
+5. Router reachability: both 10.10.20.2 and 10.10.20.4 respond through PPP.
+6. DNS: Unbound validated, active and enabled; binds only to 10.99.99.1.
+   Router-originated DNS queries succeed. A systemd pre-start wait prevents
+   binding before the PPP address exists. Narrow persistent DNS rules permit
+   only the existing router/LAN sources through PPP to 10.99.99.1.
+7. FreeRADIUS: active, legitimate 10.10.20.4 traffic recognized. Router showed
+   23 accepts and zero bad replies at the final observation. No auto-created
+   mikrotik-starlink-auto-* client blocks exist.
+8. MariaDB: active; existing radius SQL connections and application reads work.
+   Protected radius, payapp and hotspot_api database principals are unchanged.
+9. Authentication/accounting: real HTTPS subscriber logins succeed. Seven open
+   radacct rows had current updates and approximately 732 million traffic bytes
+   at the recorded snapshot. Accounting requests and responses were observed
+   between 10.10.20.4 and 10.99.99.1 on ppp0.
+10. Hotspot/API: active HotSpot retains http-chap, https and mac-cookie.
+    Public Wi-Fi/CAPPORT respond. Actual-account status API returned HTTP 200
+    with ok=true. The API host boundary check passed, including blocking old
+    captive HTML routes on api.nister.org.
+11. Payment portal: loads; plans endpoint returned ok=true with three plans;
+    public config responds; unauthenticated status remains protected. Tested
+    .env, .bak, .save, .old, .orig and .sql paths return 403/404. Global Apache
+    sensitive-file protection remains enabled. No payment flow was modified.
+12. Quota/accounting automation: account queue sync, quota enforce and quota
+    sweep ran successfully. Cleanup dry-run found six open sessions, zero
+    duplicate groups, zero stale rows and zero invalid stop times. The later
+    final snapshot had seven open sessions. Current subscribers were recognized
+    with valid purchases.
+13. CoA/SSH automation: existing RADIUS and CoA secrets matched in memory.
+    A CoA request for a nonexistent user/session received an authenticated
+    CoA-NAK; six active sessions remained six before/after that probe. No real
+    disconnect test was performed. Existing certsync SSH authentication works.
+    The cookie helper ran as restricted local account nister-router against
+    an absent identifier and removed zero cookies.
+14. Enabled Nister timers (all restored timers individually ran successfully):
+    nister-account-queue-sync.timer
+    nister-quota-enforce.timer
+    nister-quota-sweep.timer
+    nister-router-catchup.timer
+    nister-tunnel-watchdog.timer
+    nister-mikrotik-guard.timer
+    nister-health-check.timer
+    nister-log-seal.timer
+    nister-netflow-archive.timer
+    nister-property-allocation-reconcile.timer
+    nister-radacct-cleanup.timer
+15. Deliberately disabled: nister-radius-starlink-sync.timer. It was not needed
+    for the restored tunnel path. ADOPT_UNKNOWN_RADIUS_CLIENTS=0 remains
+    enforced, and the guard's timer list excludes Starlink sync.
+16. Firewall: WISP_INGRESS_GUARD exactly matches the baseline and is accepting
+    private PPP traffic while rejecting unauthorized traffic. No public RADIUS
+    bypass was added. Temporary captive diagnostic rules were removed. Winbox
+    remains 10.10.20.2:8291, restricted to 10.99.99.1/32 through l2tp-over-vps,
+    with its allow rule before the WAN drop. Winbox checks passed after catch-up
+    and watchdog/guard restoration.
+17. Failed systemd units: zero at final validation. Core WISP services active.
+18. Remaining observations: ether3 has a 1 Gbps link; ether4 reports no physical
+    link. If the second AP should be connected, its power and Ethernet cable
+    need an onsite check. This does not block the seven observed live clients.
+    Confirmation from the originally affected phone remains outstanding.
+
+Changed live configuration
+- /etc/iptables/rules.v4: four narrowly scoped private PPP DNS rules.
+- /etc/systemd/system/unbound.service.d/30-wisp-address.conf: wait for address.
+- /etc/systemd/system/nister-mikrotik-guard.service.d/30-vacation-recovery.conf:
+  exclude Starlink sync from automatically restored timers.
+- /usr/local/sbin/sync-mikrotik-hotspot-cert.sh: unique imported certificate
+  naming and upload size/timestamp verification.
+- MikroTik certificate naming/binding repair described above; normal existing
+  catch-up automation reapplied its intended settings.
+- Unbound and the six requested operational timers enabled.
+
+Validation and preservation
+- tests/regression/run.sh: all 224 checks passed.
+- Certificate push script: bash syntax validation passed.
+- ops/check_api_host_boundary.sh: passed.
+- ops/check_winbox_tunnel.sh: passed using the original checker with a VPS-local
+  transport adapter; repeated after catch-up and watchdog/guard restoration.
+- Protected file digests unchanged, including IPsec/PPP secrets, MikroTik SSH
+  keys, FreeRADIUS clients/proxy/SQL configuration, application environment,
+  and the security override. Database principal digests also unchanged.
+- No SSH configuration or authorized_keys changes; no credential rotation;
+  no VPS reboot, package upgrade, unrelated service change or NetFlow deletion.
+
+Restricted server-side baseline, backups and validation evidence:
+/root/nister-recovery-20261020T120723Z
+Backups of existing modified files are under its backups/ directory.

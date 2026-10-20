@@ -1,0 +1,12 @@
+# Count other fresh devices across both supported account-name formats.
+# Do not count this MAC against itself during mac-cookie/HTTPS reauthentication.
+# Router admission also checks live sessions to cover accounting-start races.
+update control {
+    Tmp-Integer-6 := "%{sql:SELECT COUNT(DISTINCT CASE WHEN callingstationid IS NOT NULL AND callingstationid <> '' THEN CONCAT('mac:',UPPER(REPLACE(callingstationid,'-',':'))) WHEN framedipaddress IS NOT NULL AND framedipaddress <> '' THEN CONCAT('ip:',framedipaddress) ELSE CONCAT('sid:',acctsessionid) END) FROM radacct WHERE username IN ('%{User-Name}',CASE WHEN LEFT('%{User-Name}',3)='233' AND CHAR_LENGTH('%{User-Name}')=12 THEN CONCAT('0',SUBSTRING('%{User-Name}',4)) WHEN LEFT('%{User-Name}',1)='0' AND CHAR_LENGTH('%{User-Name}')=10 THEN CONCAT('233',SUBSTRING('%{User-Name}',2)) ELSE '%{User-Name}' END) AND (acctstoptime IS NULL OR acctstoptime='0000-00-00 00:00:00') AND COALESCE(acctupdatetime,acctstarttime)>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 10 MINUTE) AND (callingstationid IS NULL OR callingstationid='' OR UPPER(REPLACE(callingstationid,'-',':'))<>UPPER(REPLACE('%{Calling-Station-Id}','-',':')))}"
+}
+if (&control:Tmp-Integer-6 >= 2) {
+    update reply {
+        Reply-Message := "This account already has two connected devices."
+    }
+    reject
+}

@@ -13,6 +13,7 @@ SERVER_ALIVE_COUNT_MAX="${SERVER_ALIVE_COUNT_MAX:-2}"
 QUEUE_PREFIX="${QUEUE_PREFIX:-nister-acct-}"
 QUEUE_COMMENT_PREFIX="${QUEUE_COMMENT_PREFIX:-NISTER ACCOUNT SHAPER}"
 QUEUE_TYPE="${QUEUE_TYPE:-default-small/default-small}"
+FALLBACK_MAX_LIMIT="${FALLBACK_MAX_LIMIT:-1M/1M}"
 MYSQL_DEFAULTS_FILE="${MYSQL_DEFAULTS_FILE:-}"
 PRINT_STATUS="${PRINT_STATUS:-0}"
 LOG_TO_SYSLOG="${LOG_TO_SYSLOG:-0}"
@@ -108,6 +109,23 @@ fi
 
 ensure_hotspot_policy_replies(){
   mysql --defaults-extra-file="$SQL_CNF" >/dev/null <<'SQL'
+UPDATE radgroupcheck
+SET value='2', op=':='
+WHERE groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')
+  AND attribute='Simultaneous-Use';
+
+INSERT INTO radgroupcheck (groupname, attribute, op, value)
+SELECT g.groupname, 'Simultaneous-Use', ':=', '2'
+FROM (
+  SELECT 'HS_ACTIVE' AS groupname
+  UNION ALL SELECT 'HS_LIMITED'
+  UNION ALL SELECT 'HS_NOPAID'
+) g
+WHERE NOT EXISTS (
+  SELECT 1 FROM radgroupcheck c
+  WHERE c.groupname=g.groupname AND c.attribute='Simultaneous-Use'
+);
+
 DELETE r
 FROM radgroupreply r
 JOIN radgroupreply k
@@ -172,8 +190,7 @@ router_ssh(){
     -o ServerAliveInterval="$SERVER_ALIVE_INTERVAL" \
     -o ServerAliveCountMax="$SERVER_ALIVE_COUNT_MAX" \
     -o LogLevel=ERROR \
-    -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null \
+    -o StrictHostKeyChecking=yes \
     "${ROUTER_USER}@${ROUTER_HOST}" \
     "$ros"
 }
@@ -286,7 +303,7 @@ ros_file="$tmpdir/sync.rsc"
 
 if ! router_ssh ':foreach a in=[/ip hotspot active find] do={ :put ("ACTIVE|" . [/ip hotspot active get $a user] . "|" . [/ip hotspot active get $a address]) }' >"$active_raw" 2>"$tmpdir/router.err"; then
   log "status=skipped reason=router_active_failed detail=$(tr '\n' ' ' <"$tmpdir/router.err" | head -c 200)"
-  exit 0
+  exit 1
 fi
 
 awk -F '|' '
@@ -295,6 +312,8 @@ awk -F '|' '
     gsub(/\r/, "", u);
     gsub(/\r/, "", ip);
     gsub(/[^0-9]/, "", u);
+    if (u ~ /^00233[0-9]{9}$/) u="0" substr(u,6);
+    if (u ~ /^2330[0-9]{9}$/) u="0" substr(u,5);
     if (u ~ /^233[0-9]{9}$/) u="0" substr(u,4);
     if (u !~ /^0[0-9]{9}$/) next;
     if (ip !~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) next;
@@ -310,8 +329,8 @@ cut -f1 "$active_pairs" | sort -u | while IFS= read -r user; do
   [[ -n "$user" ]] || continue
   rate_raw="$(rate_from_radius "$user" || true)"
   if ! max_limit="$(rate_to_max_limit "$rate_raw")"; then
-    log "status=warn reason=missing_or_invalid_rate user=$user rate=$(printf '%s' "$rate_raw" | tr ' ' '_')"
-    continue
+    log "status=warn reason=missing_or_invalid_rate fallback=$FALLBACK_MAX_LIMIT user=$user"
+    max_limit="$(rate_to_max_limit "$FALLBACK_MAX_LIMIT")" || exit 1
   fi
   targets="$(awk -F '\t' -v u="$user" '$1==u {print $2 "/32"}' "$active_pairs" | sort -u | paste -sd, -)"
   [[ -n "$targets" ]] || continue
@@ -320,23 +339,38 @@ done
 
 {
   printf ':local changed 0;\n'
+  # Read current router sessions again while applying the policy. A login hook
+  # can attach a new device after the VPS snapshot; never erase that target.
+  cat <<'ROS'
+:local targetsFor do={
+  :local account $1;
+  :local targets "";
+  :foreach a in=[/ip hotspot active find] do={
+    :local u [:tostr [/ip hotspot active get $a user]];
+    :if (([:len $u] = 14) && ([:pick $u 0 5] = "00233")) do={ :set u ("0" . [:pick $u 5 14]); };
+    :if (([:len $u] = 13) && ([:pick $u 0 4] = "2330")) do={ :set u ("0" . [:pick $u 4 13]); };
+    :if (([:len $u] = 12) && ([:pick $u 0 3] = "233")) do={ :set u ("0" . [:pick $u 3 12]); };
+    :if ($u = $account) do={
+      :if ([:len $targets] > 0) do={ :set targets ($targets . ","); };
+      :set targets ($targets . [:tostr [/ip hotspot active get $a address]] . "/32");
+    };
+  };
+  :return $targets;
+};
+ROS
   printf ':foreach q in=[/queue simple find where comment~"^%s"] do={\n' "$QUEUE_COMMENT_PREFIX"
-  printf '  :local c [/queue simple get $q comment];\n'
-  printf '  :local keep false;\n'
-  while IFS=$'\t' read -r user targets max_limit; do
-    [[ -n "${user:-}" ]] || continue
-    printf '  :local p%s [:find $c "user=%s "]; :if ([:typeof $p%s] != "nil") do={ :set keep true };\n' "$user" "$user" "$user"
-  done <"$desired"
-  printf '  :if ($keep = false) do={ /queue simple remove $q; :set changed ($changed + 1) };\n'
+  printf '  :local u [:pick [/queue simple get $q name] %s [:len [/queue simple get $q name]]];\n' "${#QUEUE_PREFIX}"
+  printf '  :if ([:len [$targetsFor $u]] = 0) do={ /queue simple remove $q; :set changed ($changed + 1) };\n'
   printf '};\n'
   while IFS=$'\t' read -r user targets max_limit; do
     [[ -n "${user:-}" ]] || continue
     queue_name="${QUEUE_PREFIX}${user}"
     comment="${QUEUE_COMMENT_PREFIX} user=${user} rate=${max_limit}"
+    printf ':local targets [$targetsFor "%s"]; :if ([:len $targets] > 0) do={\n' "$(ros_escape "$user")"
     printf ':local q [/queue simple find where name="%s"];\n' "$(ros_escape "$queue_name")"
-    printf ':if ([:len $q] = 0) do={ /queue simple add name="%s" target=%s max-limit=%s limit-at=0/0 queue=%s comment="%s"; :set changed ($changed + 1) } else={ /queue simple set $q target=%s max-limit=%s limit-at=0/0 queue=%s disabled=no comment="%s"; :set changed ($changed + 1) };\n' \
-      "$(ros_escape "$queue_name")" "$targets" "$max_limit" "$QUEUE_TYPE" "$(ros_escape "$comment")" \
-      "$targets" "$max_limit" "$QUEUE_TYPE" "$(ros_escape "$comment")"
+    printf ':if ([:len $q] = 0) do={ /queue simple add name="%s" target=$targets max-limit=%s limit-at=0/0 queue=%s comment="%s"; :set changed ($changed + 1) } else={ /queue simple set $q target=$targets max-limit=%s limit-at=0/0 queue=%s disabled=no comment="%s"; :set changed ($changed + 1) }; };\n' \
+      "$(ros_escape "$queue_name")" "$max_limit" "$QUEUE_TYPE" "$(ros_escape "$comment")" \
+      "$max_limit" "$QUEUE_TYPE" "$(ros_escape "$comment")"
   done <"$desired"
   printf ':foreach q in=[/queue simple find where comment~"^%s"] do={ /queue simple move $q 0 };\n' "$QUEUE_COMMENT_PREFIX"
   printf ':put ("status=ok action=account_queue_sync active_accounts=%s active_sessions=%s changed=" . $changed);\n' \
@@ -346,12 +380,12 @@ done
 ros_cmd="$(tr '\n' ' ' <"$ros_file")"
 if ! out="$(router_ssh "$ros_cmd" 2>&1)"; then
   log "status=error reason=router_sync_failed detail=$(printf '%s' "$out" | tr '\n' ' ' | head -c 300)"
-  exit 0
+  exit 1
 fi
 
-if [[ "$out" == *"failure:"* || "$out" == *"syntax error"* ]]; then
+if [[ "$out" == *"failure:"* || "$out" == *"syntax error"* || "$out" != *"status=ok action=account_queue_sync"* ]]; then
   log "status=error reason=router_sync_rejected detail=$(printf '%s' "$out" | tr '\n' ' ' | head -c 300)"
-  exit 0
+  exit 1
 fi
 
 log "$(printf '%s' "$out" | tr '\n' ' ' | head -c 500)"

@@ -1,0 +1,129 @@
+NISTER WISP subscriber policy deployment - 20 October 2026
+Final policy validation: 21:50 UTC
+
+Deployed outcome
+- Two-device admission is enforced by an explicit FreeRADIUS accounting check
+  and by the router's login hook. Username variants share one account identity.
+- Daily, Weekly and Monthly plan caps remain 3/5, 5/8 and 10/10 Mbps respectively
+  (upload/download), shared across an account's devices.
+- A login immediately attaches the device to its account queue. If no queue
+  exists yet, a shared 1/1 Mbps fallback applies until the next plan refresh.
+- Missing plan metadata receives the same conservative cap instead of being
+  skipped without shaping. A separate 1/1 Mbps subnet fallback covers otherwise
+  unclassified addresses; AP management has its own 5/5 Mbps queue.
+- AP management bypasses now require the existing MAC plus the specific
+  management IP and HotSpot server. Management addresses may send DNS/NTP;
+  other forwarding from those addresses to WAN is blocked.
+- Identified BitTorrent/DHT traffic shares a 256 kbps upload queue and a
+  separate 256 kbps download queue across the hotspot.
+- The connection-count quarantine and legacy blanket P2P drops are disabled.
+  Normal users are no longer blocked for two hours merely for opening more
+  than 200 TCP connections. Previous quarantine entries have no active drop
+  rule using them.
+- Existing TTL=1 tethering protection and globally disabled IPv6 are retained.
+
+Device admission validation
+The original configured RADIUS limit did not reject a third device in a
+controlled test. The new explicit authorization guard was therefore required;
+aligning radgroupcheck values alone was insufficient.
+
+Final controlled RADIUS results:
+  No existing test devices:          Access-Accept
+  One existing test device:          Access-Accept
+  Two existing, different new MAC:   Access-Reject
+  Two existing, reauth existing MAC: Access-Accept
+
+The test used reserved unused local/international username variants and
+temporary zero-byte accounting fixtures. The fixtures and test credentials
+were removed; normal audit trail records were retained. No real subscriber
+was deliberately disconnected or impersonated for these tests. This was a
+server-side admission test, not an onsite three-phone association test.
+
+Router validation
+- Final snapshot: 13 authenticated devices across nine normalized accounts.
+- Maximum observed devices per account: two.
+- All authenticated addresses were covered by account queues.
+- All four HotSpot user profiles contain the exact deployed login/logout hooks.
+- Active users keep remembered-device cookies; default/limited/nopaid retain
+  zero-duration cookies. Existing login methods remain enabled.
+- No unexpected infrastructure-bypassed addresses remained.
+- Both AP bypasses are restricted to 192.168.88.10 and 192.168.88.2 respectively.
+- No other router script was found rewriting the audited subscriber policies.
+- Full router catch-up, including the policy reconciliation, completed with
+  exit 0. Its existing NetFlow refresh configuration was preserved.
+- Winbox tunnel check passed after deployment and after diagnostic cleanup.
+
+Traffic classification validation
+Controlled test packets matched classic BitTorrent ports, the plaintext
+BitTorrent handshake, and DHT signatures. Both torrent queue directions
+processed test packets. The two-direction loop test recorded 412 upload bytes
+and 156 download bytes through the torrent queues and one plaintext TCP match;
+the separate DHT test recorded one UDP payload match.
+
+The diagnostic TLS transfer through the temporary loop did not complete, so
+these results certify classification and queue traversal, not a saturated
+end-client throughput measurement. Both configured maximum rates were read
+back as 256000 bits per second. Temporary diagnostic NAT rules, routes,
+addresses and address-list entries were all removed and their absence checked.
+
+Operational validation
+- Fresh RADIUS accounting: 13 recent sessions; newest update four seconds old
+  at the final accounting query.
+- FreeRADIUS, MariaDB, Unbound, strongSwan, xl2tpd and Apache are active.
+- Account queue sync and router catch-up units report success / exit 0.
+- Public Wi-Fi and payment roots return HTTP 200; API root remains HTTP 404.
+- All 224 regression checks pass. Bash and Python syntax checks pass.
+- Eleven protected credential/configuration file hashes are unchanged.
+- WISP_INGRESS_GUARD is unchanged.
+- ADOPT_UNKNOWN_RADIUS_CLIENTS=0 is retained.
+- nister-radius-starlink-sync.timer remains disabled.
+- systemctl --failed contains the previously observed certbot.service failure
+  for edu.nister.org. No WISP service is failed. That unrelated renewal issue
+  was left unchanged.
+
+Files and persistence
+Live server:
+  /etc/freeradius/3.0/sites-enabled/default
+    Includes the new device guard after the existing authorization quota policy.
+  /etc/freeradius/3.0/sites-available/snippets/nister_device_limit.unlang
+  /usr/local/sbin/nister_account_queue_sync.sh
+  /usr/local/sbin/nister_hotspot_policy_sync.py
+  /usr/local/share/nister/hotspot-policy/hotspot_account_login.rsc
+  /usr/local/share/nister/hotspot-policy/hotspot_account_logout.rsc
+  /usr/local/sbin/nister_router_catchup.sh
+
+The existing account queue timer maintains plan caps and both RADIUS group
+policy values. Existing catch-up automation reconciles router admission hooks,
+management restrictions, fallback queues and P2P policy. Router settings are
+stored in the normal RouterOS configuration; no reboot is needed.
+
+Repository sources:
+  nister_account_queue_sync.sh
+  ops/router_catchup.sh
+  ops/sync_hotspot_policy.py
+  ops/hotspot_account_login.rsc
+  ops/hotspot_account_logout.rsc
+  ops/freeradius/nister_device_limit.unlang
+  ops/check_radius_device_limit.py
+
+The deployed catch-up script's pre-existing NetFlow configuration was also
+preserved in the repository source. The two nonsecret RouterOS hook templates
+are explicitly allowed by .gitignore; general router exports remain ignored.
+
+Boundaries and practical limits
+Encrypted/tunneled torrents cannot reliably be identified by these packet
+signatures. Their traffic remains subject to the subscriber's account cap.
+TTL protection deters ordinary routed tethering; application proxies/tunnels
+cannot be comprehensively prevented with this mechanism alone.
+
+No production credentials were rotated. SSH configuration, authorized_keys,
+SMTP, OAuth, NisterAI credentials and PostgreSQL were untouched. No server
+reboot, package upgrade, payment-flow change, captive HTML upload or NetFlow
+capture deletion was performed.
+
+Restricted backups and evidence:
+  /root/nister-policy-fix-20261020T211805Z
+Existing modified files and the router export baseline are preserved there.
+Key evidence includes final-policy-validation.json, radius-device-limit-probe.json,
+p2p-live-probe.json, p2p-loop-live-probe.json, catchup-full-validation.txt and
+final-winbox.txt. Existing router export and firewall snapshots support rollback.

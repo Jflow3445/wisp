@@ -1,0 +1,194 @@
+NISTER WISP anti-abuse policy audit - 20 October 2026
+Live observations: approximately 21:08-21:15 UTC
+
+Verdict
+The ordinary authenticated subscriber path has two-device settings, shared
+account speed queues, and an IPv4 tethering deterrent. The full implementation
+cannot be signed off as enforcing every stated rule. There is an infrastructure
+bypass exposure, conflicting RADIUS session limits, and torrent rules that
+combine incomplete detection with an overly broad whole-device quarantine.
+
+This was a read-only production audit. No live router rules, RADIUS policies,
+database records, credentials, timers, or services were changed. Evidence files
+were written into a restricted audit directory. Subscriber names and MAC
+addresses in this report are omitted or represented by hashes.
+
+1. High priority: infrastructure exception bypasses subscriber controls
+
+Two enabled HotSpot IP bindings are type=bypassed and match a MAC address only:
+- TP-Link EAP225 management on ether3, normally 192.168.88.10.
+- Downstream AP/router management on ether2, normally 192.168.88.2.
+
+Neither binding has an address restriction. The second MAC also appears in the
+HotSpot host table with 192.168.87.71, the router's own 192.168.88.1, and several
+public source addresses. This is broader than an exception for AP management.
+
+At 21:15:07 UTC, 192.168.87.71 had:
+- Zero active HotSpot sessions.
+- No HS_ACTIVE address-list entry.
+- No nister-acct-* queue targeting it.
+- 41 tracked public-destination connections, all with replies and source NAT.
+- 37 connections to TCP/UDP port 443 and four to port 5228.
+- Approximately 195 KB original and 1.19 MB reply bytes in those connections.
+
+Connection counters establish that the tracked connections have carried traffic;
+they do not identify a person or prove deliberate abuse. The MAC-only exception
+and missing subscriber controls are confirmed configuration exposures.
+
+The anti-sharing TTL rule and torrent inspection jump both match HS_ACTIVE.
+The account shaper enumerates active HotSpot accounts. Infrastructure-bypassed
+traffic therefore is outside these controls. A downstream device presenting the
+exempt MAC can evade the normal account path.
+
+Recommended repair: establish why the ether2 device presents multiple source
+addresses, restrict infrastructure exceptions to the intended management
+addresses, and separate management from subscriber forwarding. Preserve the AP
+management and VPS Winbox paths. Revalidate clients on that AP before removing
+any exception; simply deleting it could interrupt service.
+
+2. Two-device limit: router setting correct, RADIUS policy inconsistent
+
+Confirmed settings:
+- Active/default/limited/nopaid HotSpot user profiles: shared-users=2.
+- HS_ACTIVE, HS_LIMITED and HS_NOPAID RADIUS replies: Port-Limit := 2.
+- All 100 existing per-user Simultaneous-Use rows: := 2.
+- Application radius_simultaneous_use_limit() returns 2.
+- FreeRADIUS default virtual server has an enabled session { sql } section.
+- SQL simultaneous-use count includes local and 233 username variants, groups
+  duplicate accounting records by device, and considers updates within 10 min.
+- Interim accounting is configured every three minutes.
+
+Conflict:
+radgroupcheck still contains Simultaneous-Use := 1 for HS_ACTIVE, HS_LIMITED,
+and HS_NOPAID. SQL group processing is enabled. These contradict the stated
+two-device contract and should be aligned with the user rows and Port-Limit.
+No claim is made that the second login always fails: several accounts already
+had two active sessions. Effective third-device rejection was not exercised.
+
+Observed ordinary subscriber sessions:
+- First snapshot: 13 devices across nine normalized accounts, maximum two.
+- Later correlated snapshot: 11 devices across eight accounts, maximum two.
+- All current active account groups had an individual Simultaneous-Use row.
+- The two usernames without a limit had only expiry/quota metadata and were
+  not active-policy accounts at the check.
+
+Today's accounting contained one account with a peak of three overlapping
+device intervals, totaling 157 seconds above two. Both short overlaps ended
+with Lost-Service records. This can reflect stale/offline session cleanup and
+does not establish three devices actually transferring simultaneously.
+
+Port-Limit is per username. RADIUS normalization/counting is important to keep
+local-format and 233-format usernames within one account-wide device budget.
+These limits govern authenticated HotSpot sessions, not the number of devices
+that can associate with the Wi-Fi radio before authentication.
+The SQL accounting freshness window and admission/accounting race mean a strict
+at-every-instant guarantee needs a controlled third-device/alias login test.
+No real subscriber was disconnected or impersonated for this audit.
+
+3. Plan speed caps: correct for observed authenticated accounts, with gaps
+
+Current active plans, Mbps (upload / download):
+Daily_Unlimited:    3 / 5
+Weekly_Unlimited:   5 / 8
+Monthly_Unlimited: 10 / 10
+
+These agree across location_plans, legacy RADIUS plan metadata, and live simple
+queue max-limit values. One queue targets all IPs for an account, including
+username variants. Two devices share the account's cap rather than receiving
+the full cap independently. Burst limits are zero.
+
+All 11 devices in the later correlated snapshot had the correct account queue
+and HS_ACTIVE entry. Queues had traffic counters and some observed drops.
+There was no active IPv4 FastTrack or FastPath bypass. The unlimited dynamic
+HotSpot catch-all queue sits after the account queues. No throughput saturation
+test was run against a subscriber.
+
+Implementation weaknesses:
+- The external queue synchronizer runs every 20 seconds with five-second timer
+  accuracy. New device addresses can wait for the next successful run before
+  joining their account queue.
+- Active profiles have no fallback rate-limit. Missing/invalid rate metadata
+  causes the synchronizer to log a warning and skip that account. A new active
+  account could therefore remain unshaped on this path.
+- Such warnings existed today, but the identified account was HS_LIMITED;
+  those warnings alone are not evidence of an unlimited paid-user session.
+- Infrastructure-bypassed traffic in item 1 is not included in account queues.
+
+Recommended repair: enforce shaping at admission or otherwise provide a safe
+fallback while retaining the shared per-account cap. Alert on uncovered active
+addresses and missing rate metadata rather than treating a skipped run as a
+healthy policy state.
+
+4. Tethering: active deterrent, not an absolute prevention mechanism
+
+The enabled NISTER ANTI-SHARE TTL1 rule sets IPv4 TTL to 1 in postrouting for
+destinations in HS_ACTIVE leaving bridge. Its counter increased during the
+audit, reaching approximately 38.3 GB and 33.1 million packets. This prevents
+ordinary additional routed forwarding of the received packets.
+
+IPv6 is globally disabled, so it does not currently provide an IPv6 escape
+around this IPv4-only rule. Active users retain remembered-device login.
+
+This does not establish that every form of sharing has stopped. Application
+proxies or tunnel-based relaying can appear as traffic generated by the
+authenticated endpoint. Bypassed infrastructure is also outside the TTL rule.
+No controlled downstream tethering-device test was performed.
+
+5. Torrent handling: not a hard bandwidth throttle
+
+There is no torrent queue tree, no torrent-specific simple queue, and no torrent
+packet marking. The implementation attempts to block/quarantine traffic:
+- HS_ACTIVE source traffic jumps to torrent-block before active allow-all.
+- Classic BitTorrent TCP/UDP destination ports are dropped.
+- L7 BitTorrent and DHT matches add the source IP to TORRENT_QUARANTINE for 1d.
+- More than 200 TCP connections per source address adds it for two hours.
+- A quarantined IP's entire traffic through that chain is dropped.
+
+Counters at the final observation:
+- Classic TCP ports: 0 packets.
+- Classic UDP ports: 0 packets.
+- L7 BitTorrent: 0 packets.
+- L7 DHT: 0 packets.
+- Connection-count quarantine: 91 packets.
+- Quarantine drop: 121,553 packets, approximately 45.3 MB.
+- One IP, 192.168.87.59, remained quarantined from 19:50:09.
+
+Problems:
+- A connection-count threshold does not establish torrent use. Normal software
+  can reach it and lose all forwarded internet access for two hours.
+- The BitTorrent TCP L7 rule matches connection-state=new, so ordinary payload
+  sent after the TCP handshake is outside that rule's inspection.
+- Inspection is entered for client-source traffic only. MikroTik documents that
+  L7 detection needs both directions. This further limits reliable detection.
+- Legacy HG3 P2P rules are below active allow-all; they do not repair the active
+  subscriber inspection gaps.
+- Classic ports and plaintext patterns cannot reliably identify encrypted,
+  arbitrary-port or tunneled torrents. Zero L7 hits does not prove no torrents.
+- The quarantine is tied to an IP, not an account/session. Address reassignment
+  can expose a different device to a remaining quarantine.
+
+Recommended repair: replace the whole-device connection-count punishment with
+a deliberate traffic shaping policy. Keep verified protocol controls narrowly
+scoped, measure false positives, and retain aggregate account caps for traffic
+that cannot be classified reliably. Validate classification with permitted
+test traffic before claiming comprehensive torrent enforcement.
+
+Additional observation outside this audit's policy scope
+certbot.service currently reports failure for edu.nister.org challenge renewal.
+This was observed read-only and left unchanged. The failed lineage in the
+service log was edu.nister.org, not the Wi-Fi certificate lineage.
+
+Evidence
+Restricted VPS directory: /root/nister-policy-audit-20261020T210843Z
+Key files: correlated_snapshot.json, bypass_verified_summary.json,
+db_policies.txt, radius_default_active.txt, simul_queries.txt, queue_config.txt,
+filter_config.txt, mangle_config.txt, current_radius_health.txt,
+historical_concurrency.txt, three_device_overlap_details.txt.
+
+Primary documentation consulted
+https://help.mikrotik.com/docs/spaces/ROS/pages/328097/RADIUS
+https://help.mikrotik.com/docs/spaces/ROS/pages/56459266/HotSpot+-+Captive+portal
+https://help.mikrotik.com/docs/spaces/ROS/pages/130220161/Layer7
+https://help.mikrotik.com/docs/spaces/ROS/pages/250708064/Common+Firewall+Matchers+and+Actions
+https://wiki.freeradius.org/modules/Rlm_sql
+https://github.com/FreeRADIUS/freeradius-server/tree/release_3_0_26

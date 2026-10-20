@@ -81,4 +81,7 @@ reboot_window_*.txt
 secret_rotation_*.txt
 deploy_backup_manifest_*.txt
 *.rsc
+!ops/hotspot_account_login.rsc
+!ops/hotspot_account_logout.rsc
+__pycache__/
 mikrotik_backups/
