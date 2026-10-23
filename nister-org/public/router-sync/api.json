@@ -1,6 +1,8 @@
 {
-   "captive": $(if logged-in == 'yes')false$(else)true$(endif),
-   "user-portal-url": "$(link-login-only)",
+   "captive": $(if logged-in == 'yes')$(if radius3-14988 == 'nopaid')true$(elif radius3-14988 == 'limited')true$(elif radius3-14988 == 'default')true$(else)false$(endif)$(else)true$(endif),
+   "x-nister-authenticated": $(if logged-in == 'yes')true$(else)false$(endif),
+   "user-portal-url": "$(if logged-in == 'yes')https://$(hostname)/status$(else)$(link-login-only)$(endif)",
+   "venue-info-url": "https://pay.nister.org/",
 $(if session-timeout-secs != 0)
    "seconds-remaining": $(session-timeout-secs),
 $(endif)

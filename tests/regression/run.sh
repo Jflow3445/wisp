@@ -413,7 +413,7 @@ assert_not_contains "login_sync_never_preserves_stale_session_limit" "$user_auth
 assert_not_contains "login_sync_never_falls_back_to_three" "$user_auth_content" '$simVal = '"'"'3'"'"';'
 
 router_catchup_content="$(cat ops/router_catchup.sh)"
-assert_contains "router_catchup_capport_url_configurable" "$router_catchup_content" 'CAPPORT_API_URL="${CAPPORT_API_URL:-https://wifi.nister.org/api.json?v=20260601-remote-refresh}"'
+assert_contains "router_catchup_capport_url_configurable" "$router_catchup_content" 'CAPPORT_API_URL="${CAPPORT_API_URL:-https://wifi.nister.org/api?v=20261022-captive}"'
 assert_contains "router_catchup_capport_url_sanitized" "$router_catchup_content" 'invalid CAPPORT_API_URL: unsafe RouterOS characters'
 assert_contains "router_catchup_winbox_port_guardrail" "$router_catchup_content" 'WINBOX_PORT="${WINBOX_PORT:-8291}"'
 assert_contains "router_catchup_winbox_firewall_guardrail" "$router_catchup_content" 'Allow Winbox from VPS over L2TP'
@@ -553,5 +553,8 @@ assert_not_contains "radius_no_future_expiry_active_fallback" "$radius_content" 
 assert_not_contains "radius_never_marks_zero_quota_exhausted" "$radius_content" 'if ($quotaBytes <= 0) $exhaustedFlag = 1;'
 assert_contains "radius_usage_dedupes_duplicate_acct_sessions" "$radius_content" 'GROUP BY q.session_key, q.mac_key, q.ip_key'
 assert_contains "radius_usage_counts_largest_duplicate_session_counter" "$radius_content" 'MAX(q.sess_bytes) AS sess_bytes'
+
+node tests/regression/captive_login.js
+pass "captive_login_behavior"
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

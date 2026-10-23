@@ -1,0 +1,121 @@
+NISTER captive access investigation and production correction
+2026-10-22 to 2026-10-23 UTC
+
+Scope
+  iPhone/iPad captive detection and login; access to Nister and Paystack before
+  payment, including authenticated HS_NOPAID and HS_LIMITED clients.
+
+Confirmed causes and corrections
+  1. DHCP option 114 advertised the literal /api.json file. On this router it
+     returned unexpanded HotSpot macros and application/octet-stream. Native
+     /api renders the template as valid application/captive+json. DHCP now
+     advertises https://wifi.nister.org/api?v=20261022-captive. Login polling
+     also uses native /api. Public wifi.nister.org/api.json remains separate.
+
+  2. Login selected CHAP from page context, although the router supplied an
+     HTTPS form action even on the HTTP page. Sending a CHAP digest to the HTTPS
+     password endpoint fails authentication. Select authentication from the
+     actual endpoint protocol; raw passwords always use certificate-matching
+     HTTPS. Preserve top-level Apple navigation and Android's iframe flow.
+     Normalize local/international phone aliases before navigating; recognize
+     desktop-mode iPads; prevent duplicate submissions. Apply the HTTPS rule
+     to alogin too. Keep mac-cookie,http-chap,https enabled.
+
+  3. CAPPORT previously marked every authenticated session non-captive,
+     including nopaid and limited users without internet entitlement. Explicit
+     nopaid/limited/default profiles now remain captive and link to /status.
+     x-nister-authenticated lets login polling distinguish successful account
+     authentication from paid internet entitlement. Paid/remembered sessions
+     retain their existing non-captive fallback. The profile comes from the
+     actual RADIUS MikroTik-Group template variable radius3-14988.
+
+  4. Native hostname garden rules alone were insufficient. Before authentication
+     their web proxy allowed most Paystack requests, but authenticated unpaid
+     and limited users then hit the HG3 forward firewall. HG3_WG_DST contained
+     only the router and VPS; the Nister public site and Paystack SDK/API were
+     refused after login. Actual Google font files were also blocked before
+     login despite a successful stylesheet response.
+
+     Existing policy reconciliation now maintains hostname garden rules plus
+     DNS-resolved HTTPS garden entries and FQDN parents in HG3_WG_DST for the
+     required external hosts. Existing HG3 TCP web allow rules remain in place.
+     No whole CDN network ranges, arbitrary client bypass, or general internet
+     allow rule was introduced. DNS-based IP exceptions necessarily operate
+     on the resolved destination addresses, rather than isolating every SNI
+     name that a shared destination might serve.
+
+     External HTTPS hosts: nister.org, www.nister.org, paystack.com,
+     checkout.paystack.com, js.paystack.co, api.paystack.co, assets.paystack.com,
+     standard.paystack.co, checkout-studio.paystack.com, studio-api.paystack.co,
+     fonts.googleapis.com, fonts.gstatic.com, challenges.cloudflare.com.
+     Existing API/pay VPS exceptions and router-local Wi-Fi DNS are preserved.
+     The exact retired nister.org -> 24.199.120.76 override was removed; public
+     Nister DNS now resolves normally. Apple/Android connectivity probes remain
+     outside the garden so captive detection still triggers.
+
+Deployment and persistence
+  Updated native flash/hotspot/login.html, alogin.html, api.json, their public
+  router-sync mirrors, /usr/local/sbin/nister_router_catchup.sh, and
+  /usr/local/sbin/nister_hotspot_policy_sync.py. Public API/payment routing and
+  payment verification code were not changed. Router uploads were staged over
+  the existing tunnel and checked by byte size, timestamp, and normalized
+  content hash before activation. Private originals and deployment evidence:
+    /root/nister-captive-fix-20261022T232433Z
+
+Validation
+  - tests/regression/run.sh: all 225 checks passed, including 30 executable
+    captive-login behavior cases across source and router-sync mirror.
+  - Router policy parsed before application; the new HTTPS policy was applied
+    twice to check idempotence. Full catch-up persistence and Winbox tunnel
+    checks passed. The active profile retains all three login methods, a
+    30-day active mac-cookie, zero cookies on nonpaid profiles, and two devices.
+  - An isolated temporary L2 client joined the actual HotSpot bridge over the
+    encrypted tunnel, received DHCP option 114, resolved through router DNS,
+    and fetched complete HTTP/HTTPS login pages with certificate verification.
+    Native /api returned valid JSON. Apple and Android probes redirected to
+    the local HTTPS login page.
+  - A reserved synthetic account, checked unused before creation, authenticated
+    through real RADIUS using both CHAP and HTTPS. Native profile output showed
+    nopaid and limited; both correctly retained captive=true with successful
+    authentication and /status as the portal URL. No real subscriber's password
+    or financial balance was changed.
+  - Client-path payment/asset checks cover both unauthenticated and authenticated
+    restricted states. After the correction, both nopaid/CHAP and limited/HTTPS
+    sessions fetched pay/login.php, the public Nister site, Paystack's SDK/API,
+    and actual font files with HTTP 200. Challenge scripts were reachable.
+    Ordinary internet controls remained blocked. Tests do not claim zero-rating
+    of accounting bytes: no accounting calculation changed.
+
+Operational boundaries and remaining limits
+  - No physical iPhone was available remotely. A fresh iPhone Wi-Fi connection,
+    login, and real checkout are still needed for onsite confirmation. Existing
+    DHCP clients may need Wi-Fi toggled once to learn the corrected option 114.
+    Do not require paid customers to forget their network or change MAC identity.
+  - Bare checkout.paystack.com and assets.paystack.com URLs returned upstream
+    Cloudflare 403/challenge responses. Their TLS path is reachable; this does
+    not prove a valid transaction checkout succeeds. No charge was submitted.
+    Required Cloudflare challenge scripts are allowed and were fetched.
+  - RouterOS 7.20.2 also produced premature TLS EOF/partial bodies for forced
+    Connection: close requests to local captive HTTPS. Keep-alive requests
+    returned complete pages. An occasional closed GET also occurred between
+    tests; repeating the client test with bounded GET retries passed. Diagnostic
+    queue and small-file tests did not resolve that router HTTPS behavior.
+    No upgrade or reboot was attempted.
+  - The router certificate is valid through 2026-11-23 11:46:49 UTC, with the
+    expected Wi-Fi/API names. No certificate or credential replacement needed.
+  - Tunnel, DNS, RADIUS, MariaDB, Apache and all six operational timers remain
+    active. Protected service/configuration hashes are unchanged;
+    ADOPT_UNKNOWN_RADIUS_CLIENTS=0 and the disabled Starlink sync are preserved.
+  - The preexisting failed certbot.service and nister-netflow-archive.service
+    remain separate operational issues. Their failure state was not cleared.
+    NetFlow records/retention, archive credentials, PostgreSQL, SMTP, OAuth,
+    NisterAI, SSH configuration, and authorized_keys were not modified.
+  - Temporary probe interfaces, test SQL rows/cookies/queues, diagnostic router
+    files, upload servers and temporary VPS firewall rules were removed. VPS
+    INPUT and WISP_INGRESS_GUARD match the captured baseline.
+
+Protocol references
+  https://developer.apple.com/news/?id=q78sq5rv
+  https://help.mikrotik.com/docs/spaces/ROS/pages/56459266/HotSpot+-+Captive+portal
+  https://help.mikrotik.com/docs/spaces/ROS/pages/87162881/Hotspot+customisation
+  https://paystack.com/docs/guides/using_the_paystack_checkout_in_a_mobile_webview/

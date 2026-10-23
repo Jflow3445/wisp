@@ -87,12 +87,21 @@ function doLogin(){
     chapId !== '' && chapId.indexOf('$(') === -1 &&
     chapChal !== '' && chapChal.indexOf('$(') === -1
   );
-  if (chapPresent && typeof hexMD5 === 'function') {
+  if (location.protocol !== 'https:' && /^http:\/\//i.test(f.action) && chapPresent && typeof hexMD5 === 'function') {
     f.password.value = hexMD5(chapId + p + chapChal);
   } else {
-    // PAP/HTTPS fallback keeps auto-login working on profiles that do not require CHAP.
+    // Raw passwords must use the router's certificate-matching HTTPS host.
+    try {
+      var action = new URL(f.action, location.href);
+      if (action.hostname !== 'wifi.nister.org' && action.hostname !== '192.168.88.1') throw new Error('invalid_login_host');
+      action.protocol = 'https:';
+      action.hostname = 'wifi.nister.org';
+      action.port = '';
+      f.action = action.href;
+    } catch (_) { showFallback(); return; }
     f.password.value = p;
   }
+  f.target = '_top';
   f.submit();
 }
 </script>
@@ -125,7 +134,7 @@ function doLogin(){
     <input type="hidden" name="username" value="$(username)">
     <input type="hidden" name="password" value="$(password)">
     <input type="hidden" name="dst" value="$(link-orig)">
-    <input type="hidden" name="popup" value="true">
+    <input type="hidden" name="popup" value="false">
   </form>
 <script src="config.js"></script>
 </body>

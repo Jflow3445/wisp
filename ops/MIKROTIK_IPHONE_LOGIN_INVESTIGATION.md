@@ -2,6 +2,14 @@
 
 Purpose: preserve the known-good state while investigating iPhone-only login complaints.
 
+Current correction (2026-10-22): advertise `https://wifi.nister.org/api?v=20261022-captive`
+in DHCP option 114 and poll router-local `/api` after login. RouterOS renders
+`api.json` through `/api`; requesting `/api.json` directly serves an unexpanded
+template, which fails captive detection. Public `wifi.nister.org/api.json`
+remains the separate public JSON fallback. See `ops/captive-fix-2026-10-22.txt`
+for the current deployment and client-path validation. The observations below
+describe the earlier investigation, not the current certificate or topology.
+
 ## Current Known-Good State
 
 - User report: Android and laptop users can connect and log in.

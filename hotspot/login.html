@@ -68,23 +68,14 @@
     var LOGIN_TOTAL_TIMEOUT_MS = 24000;
 
     function usernameCandidates(raw){
-      var base = (raw || '').trim();
-      if (!base) return [];
-      var out = [base];
-      var d = String(base).replace(/\D+/g, '');
-      if (/^0\d{9}$/.test(d)) {
-        out.push('233' + d.slice(1));
-      } else if (/^233\d{9}$/.test(d)) {
-        out.push('0' + d.slice(3));
-      }
-      var uniq = [];
-      for (var i = 0; i < out.length; i++){
-        var v = String(out[i] || '').trim();
-        if (!v) continue;
-        if (uniq.indexOf(v) !== -1) continue;
-        uniq.push(v);
-      }
-      return uniq;
+      var d = String(raw || '').replace(/\D+/g, '');
+      if (/^00233\d{9}$/.test(d)) d = '0' + d.slice(5);
+      if (/^2330\d{9}$/.test(d)) d = '0' + d.slice(4);
+      if (/^233\d{9}$/.test(d)) d = '0' + d.slice(3);
+      if (!/^0\d{9}$/.test(d)) return [];
+      // A top-level captive login leaves this page immediately. Try the
+      // canonical account first, including formatted international numbers.
+      return [d, '233' + d.slice(1)];
     }
 
     function chapContext(){
@@ -105,7 +96,8 @@
     function isAppleMobileClient(){
       try {
         var ua = String(navigator.userAgent || '');
-        return /(iPhone|iPad|iPod)/.test(ua) && /AppleWebKit/.test(ua);
+        return /AppleWebKit/.test(ua) && (/(iPhone|iPad|iPod)/.test(ua) ||
+          (/Macintosh/.test(ua) && Number(navigator.maxTouchPoints || 0) > 1));
       } catch(_) {
         return false;
       }
@@ -114,20 +106,34 @@
     function buildLoginAttempts(candidates){
       var out = [];
       var chap = chapContext();
-      var appleMobile = isAppleMobileClient();
       for (var i = 0; i < candidates.length; i++){
         var u = String(candidates[i] || '').trim();
         if (!u) continue;
-        if (appleMobile) {
-          out.push({ username: u, mode: 'pap' });
-          if (chap.present && chap.md5Ready) out.push({ username: u, mode: 'chap' });
-          continue;
+        // Match the router endpoint's protocol, which may differ from this
+        // page's URL. Raw passwords are permitted only through HTTPS.
+        if (routerLoginAction('chap') && chap.present && chap.md5Ready) {
+          out.push({ username: u, mode: 'chap' });
         }
-        // Try CHAP first when available, then PAP fallback for HTTPS/PAP profiles.
-        if (chap.present && chap.md5Ready) out.push({ username: u, mode: 'chap' });
         out.push({ username: u, mode: 'pap' });
       }
       return out;
+    }
+
+    function routerLoginAction(mode){
+      var raw = '$(link-login-only)';
+      if (!raw || raw.indexOf('$(') !== -1) return '';
+      try {
+        var url = new URL(raw, location.href);
+        if (url.hostname !== 'wifi.nister.org' && url.hostname !== '192.168.88.1') return '';
+        if (url.username || url.password || !/^https?:$/.test(url.protocol)) return '';
+        if (mode === 'chap' && (url.protocol !== 'http:' || location.protocol === 'https:')) return '';
+        if (mode === 'pap') {
+          url.protocol = 'https:';
+          url.hostname = 'wifi.nister.org';
+          url.port = '';
+        }
+        return url.href;
+      } catch (_) { return ''; }
     }
 
     function redirectToStatus(){
@@ -170,8 +176,8 @@
       topLevelFallbackTried = true;
       var attempt = loginAttempts[loginAttempt] || null;
       if (!attempt || !attempt.username) return false;
-      var action = '$(link-login-only)';
-      if (!action || action.indexOf('$(') !== -1) return false;
+      var action = routerLoginAction('pap');
+      if (!action) return false;
       try{
         var form = document.createElement('form');
         form.method = 'post';
@@ -187,7 +193,7 @@
           form.appendChild(input);
         };
         add('username', attempt.username);
-        add('password', loginRawPassword); // PAP/HTTPS fallback for strict captive agents
+        add('password', loginRawPassword);
         add('dst', '$(link-orig)');
         add('popup', 'false');
         document.body.appendChild(form);
@@ -268,14 +274,16 @@
     function checkLoginState(){
       if (!loginPending) return;
       var xhr = new XMLHttpRequest();
-      xhr.open('GET', 'api.json?_t=' + Date.now(), true);
+      // /api expands api.json and returns application/captive+json. Requesting
+      // the file itself returns the literal, unexpanded RouterOS template.
+      xhr.open('GET', '/api?_t=' + Date.now(), true);
       xhr.timeout = 4000;
       xhr.onreadystatechange = function(){
         if (xhr.readyState !== 4) return;
         if (xhr.status >= 200 && xhr.status < 300){
           try{
             var j = JSON.parse(xhr.responseText || '{}');
-            if (j && j.captive === false){
+            if (j && (j.captive === false || j['x-nister-authenticated'] === true)){
               redirectToStatus();
               return;
             }
@@ -308,6 +316,9 @@
 
       var chap = chapContext();
       var mode = attempt && attempt.mode ? attempt.mode : 'pap';
+      var action = routerLoginAction(mode);
+      if (!action) { handleLoginError('Please reopen the Wi-Fi login page and try again.'); return; }
+      f.action = action;
       if (mode === 'chap') {
         try{
           if (!chap.present || !chap.md5Ready) throw new Error('chap_unavailable');
@@ -356,6 +367,7 @@
 
     function doLogin(e){
       if (e && e.preventDefault) e.preventDefault();
+      if (loginPending) return false;
 
       var uEl = document.getElementById('user');
       var pEl = document.getElementById('pass');
@@ -383,7 +395,7 @@
       }
 
       persistRemember(u);
-      submitLoginAttempt(); // actual POST happens via hidden iframe
+      submitLoginAttempt();
       return false;
     }
 

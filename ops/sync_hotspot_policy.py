@@ -8,6 +8,24 @@ import subprocess
 import sys
 
 
+# RouterOS' hostname garden handles HTTP and HTTPS without granting blanket
+# access to shared CDN IP ranges. Keep OS connectivity probes outside it.
+PREAUTH_HOSTS = (
+    'nister.org', 'www.nister.org', 'wifi.nister.org', 'api.nister.org', 'pay.nister.org',
+    'checkout.paystack.com', 'paystack.com', 'js.paystack.co', '*.paystack.co', '*.paystack.com',
+    'fonts.googleapis.com', 'fonts.gstatic.com', 'challenges.cloudflare.com',
+)
+
+# Authenticated nopaid/limited clients also traverse the HG3 forward policy.
+# Resolve only these service hosts, never entire shared CDN network ranges.
+PREAUTH_HTTPS_HOSTS = (
+    'nister.org', 'www.nister.org', 'paystack.com', 'checkout.paystack.com',
+    'js.paystack.co', 'api.paystack.co', 'assets.paystack.com', 'standard.paystack.co',
+    'checkout-studio.paystack.com', 'studio-api.paystack.co',
+    'fonts.googleapis.com', 'fonts.gstatic.com', 'challenges.cloudflare.com',
+)
+
+
 def ros_quote(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('\r', '\\r').replace('\n', '\\n') + '"'
 
@@ -28,6 +46,21 @@ def commands(policy_dir):
         raise ValueError('HotSpot admission hooks must not be empty')
     # Parse every hook before changing production policies.
     yield 'parse-hooks', f':local a [:parse {ros_quote(login)}]; :local b [:parse {ros_quote(logout)}];'
+    yield 'portal-garden', '\n'.join(upsert('/ip hotspot walled-garden', {
+        'server': 'hotspot1', 'dst-host': host, 'action': 'allow', 'disabled': 'no',
+        'comment': 'NISTER PREAUTH ' + host}) for host in PREAUTH_HOSTS) + (
+        # This retired override sends the public site to an unrelated old VPS.
+        ' /ip dns static remove [find where name="nister.org" and comment="direct A" and address=24.199.120.76];')
+    https_assets = []
+    for host in PREAUTH_HTTPS_HOSTS:
+        https_assets.append(upsert('/ip hotspot walled-garden ip', {
+            'server': 'hotspot1', 'dst-host': host, 'protocol': 'tcp', 'dst-port': '443',
+            'action': 'accept', 'disabled': 'no', 'comment': 'NISTER PREAUTH HTTPS ' + host}, 'dst-host'))
+        # Select the FQDN parent, not the dynamic IP children RouterOS creates.
+        https_assets.append('{ :local ids [/ip firewall address-list find where list="HG3_WG_DST" and address=' + ros_quote(host) + ']; '
+            ':if ([:len $ids] = 0) do={ /ip firewall address-list add list="HG3_WG_DST" address=' + ros_quote(host) +
+            ' comment=' + ros_quote('NISTER PREAUTH HTTPS ' + host) + ' } else={ /ip firewall address-list set $ids disabled=no; } };')
+    yield 'portal-https-assets', '\n'.join(https_assets)
     yield 'admission-hooks', (' :foreach profileName in={"active";"default";"limited";"nopaid"} do={ '
         ':local ids [/ip hotspot user profile find where name=$profileName]; '
         ':if ([:len $ids] != 1) do={ :error "required hotspot profile missing or duplicated" }; '
