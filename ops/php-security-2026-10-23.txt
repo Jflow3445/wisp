@@ -1,0 +1,76 @@
+PHP security patch record - 2026-10-23 UTC
+Server: 209.97.137.68, Ubuntu 22.04
+CVEs: CVE-2026-109618 and CVE-2026-109619
+
+Result
+  Upgraded all 42 installed packages built from the php8.1, php8.3 and php8.4
+  source packages, including Apache modules, CLI, FPM, OPcache and extensions.
+  Used the server's existing signed Ondrej PHP PPA. No repository was added.
+
+Installed security builds
+  PHP 8.1: 8.1.34-8 -> 8.1.34-9+ubuntu22.04.1+deb.sury.org+1
+  PHP 8.3: 8.3.35-1 -> 8.3.36-1+ubuntu22.04.1+deb.sury.org+1
+  PHP 8.4: 8.4.26-1 -> 8.4.27-1+ubuntu22.04.1+deb.sury.org+1
+
+  PHP 8.1 remains upstream end-of-life. Its installed vendor security build
+  explicitly backports BOTH CVEs from PHP 8.2.35. This was verified in the
+  downloaded package changelog before installation; PHP_VERSION still reports
+  8.1.34. The package revision, vendor changelog and refreshed loaded code are
+  the patch evidence. A later migration to a supported upstream branch remains
+  separate lifecycle work; no major-version migration was performed here.
+
+Coverage
+  Active Apache module: libphp8.1, verified through a guarded loopback HTTP
+  probe as PHP 8.1.34 / apache2handler. Its package revision is now -9.
+  PHP-FPM 8.1, 8.3 and 8.4: all installed and running; each tested directly
+  through its actual Unix socket before and after the update.
+  CLI 8.1, 8.3 and 8.4: all tested before and after.
+  Installed inactive libapache2-mod-php8.4 was updated too.
+  No Docker/Podman/CRI runtime was found. LXD is installed but inactive and
+  its container directory is empty. No active PHP container was identified.
+
+  Active HTTPS virtual hosts on this server: api.nister.org, pay.nister.org,
+  wifi.nister.org, nister.org, nisterai.com and famerlio.org, including the
+  configured www aliases. Nister/Wi-Fi and NisterAI frontend proxies remain
+  on their existing Node services; their application code was not changed.
+  Scope is this server, not any other server public DNS might resolve to.
+
+Validation
+  - Refreshed package metadata, inspected candidate package changelogs for
+    both CVEs, and simulated the complete exact-version transaction first.
+  - 42 packages upgraded; zero packages added or removed. Full package-state
+    comparison confirmed no changes outside the reviewed PHP package set.
+  - Apache configuration test and all three FPM configuration tests passed.
+  - Gracefully refreshed Apache and all three FPM services. Final process
+    inspection found zero stale/deleted PHP executable, module or extension
+    mappings. A full Apache restart was not needed.
+  - All seven live runtime probes passed with the expected versions, the
+    same handlers, and identical extension sets (8.1: 50, 8.3: 48, 8.4: 51).
+  - All 25 HTTPS endpoint/contract checks matched the pre-update baseline,
+    using loopback address overrides with normal hostname/certificate checks.
+    This covers all configured site names/aliases, payment/login/admin/config
+    pages, API status validation, OTP preflights and API host boundaries.
+    Expected API rejection codes remained 400/404/405; OTP OPTIONS remained
+    204. No signup, OTP delivery, payment or wallet credit was submitted.
+  - dpkg --audit is clean; Apache and all three FPM services are active.
+  - Existing /etc/php, /etc/apache2 and /etc/nginx file hashes are unchanged.
+    All 11 protected WISP configuration/credential hashes are unchanged.
+  - VPN, L2TP, DNS, RADIUS, MariaDB, Redis and SSH service state/PIDs/start
+    timestamps are unchanged. The server boot ID is unchanged; no reboot.
+  - Temporary diagnostic PHP files were removed from the web root and /run.
+  - Preexisting failed certbot.service and nister-netflow-archive.service
+    remain unchanged. No new failed service was introduced.
+
+Evidence and recovery material (root-only directory)
+  /root/nister-php-security-20261023T000547Z
+  Includes before/after inventory, reviewed exact-version plan, downloaded
+  candidate changelogs, apt logs, configuration/runtime file backups, HTTP
+  results, seven runtime/extension probes and configuration/service comparisons.
+  No application files, routing, firewall rules, SSH configuration, credentials,
+  databases, payment logic, router configuration or NetFlow records were changed.
+
+Primary references
+  https://www.php.net/index.php
+  https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w
+  https://github.com/php/php-src/security/advisories/GHSA-6wmf-4rv5-p3rp
+  https://ubuntu.com/security/notices/USN-8948-1
