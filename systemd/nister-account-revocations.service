@@ -1,0 +1,15 @@
+[Unit]
+Description=NISTER retry account device sign-outs after password changes and purge
+After=network-online.target mariadb.service
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+ExecStart=/usr/bin/php8.1 /usr/local/lib/nister/account_revocations.php
+TimeoutStartSec=180
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# The existing sudo rule switches only to the restricted nister-router account.
+NoNewPrivileges=false

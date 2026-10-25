@@ -1020,7 +1020,7 @@ function radius_get_active_plan(string $msisdn): ?array {
 // --- Nister helper: return local & canonical MSISDN variants (unique, in-order)
 if (!function_exists('nister_username_variants')) {
   function nister_username_variants(string $u): array {
-    $d = preg_replace('/\D+/', '', $u);
+    $d = preg_match('/^\+?[0-9 ()-]+$/D', $u) ? preg_replace('/\D+/', '', $u) : '';
     $out = [];
     if (preg_match('/^233\d{9}$/', $d)) {
       $out[] = '0'.substr($d,3);
@@ -1301,7 +1301,7 @@ function radius_clear_hotspot_cookies(string $msisdn, array $ENV=[]): void {
   $commands = [];
   $sudo = trim((string)@shell_exec('command -v sudo 2>/dev/null'));
   if ($sudo !== '' && is_executable($sudo)) {
-    $commands[] = array_merge([$sudo, '-n', $script], $users);
+    $commands[] = array_merge([$sudo, '-n', '-u', 'nister-router', $script], $users);
   }
   $commands[] = array_merge([$script], $users);
 

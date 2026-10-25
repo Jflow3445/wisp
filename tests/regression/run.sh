@@ -556,5 +556,9 @@ assert_contains "radius_usage_counts_largest_duplicate_session_counter" "$radius
 
 node tests/regression/captive_login.js
 pass "captive_login_behavior"
+php tests/regression/account_access.php
+pass "account_access_behavior"
+bash tests/regression/revoke_sessions.sh
+pass "account_device_revocation_behavior"
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

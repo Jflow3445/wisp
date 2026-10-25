@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/common.php';
 require_once __DIR__.'/radius.php';
 require_once __DIR__.'/location.php';
+require_once __DIR__.'/account_access.php';
 
 function user_boot(): array {
   $env = app_boot();
@@ -36,7 +37,7 @@ function user_boot(): array {
       $c = (string)(location_find_by_id($d)['code'] ?? location_default_code());
       location_session_set($d, $c);
     }
-    if (!empty($_SESSION['user_msisdn'])) {
+    if (user_logged_in()) {
       $loc = location_resolve_for_user((string)$_SESSION['user_msisdn'], null, false);
       $_SESSION['user_location_id'] = (int)($loc['id'] ?? 0);
       $_SESSION['user_location_code'] = (string)($loc['code'] ?? '');
@@ -55,7 +56,14 @@ function user_boot(): array {
 }
 
 function user_logged_in(): bool {
-  return !empty($_SESSION['user_msisdn']);
+  if (empty($_SESSION['user_msisdn'])) return false;
+  $pdo = rdb_pdo();
+  $user = (string)$_SESSION['user_msisdn'];
+  if (!account_access_session_valid($pdo, $user, (int)($_SESSION['user_access_revision'] ?? 0))) {
+    user_logout();
+    return false;
+  }
+  return true;
 }
 
 function user_msisdn(): string {
@@ -111,14 +119,14 @@ function user_require_login(bool $json=false): void {
   exit;
 }
 
-function user_sync_radius_auth_variants(string $msisdn, string $password): void {
+function user_sync_radius_auth_variants(string $msisdn, string $password): ?int {
   $msisdn = normalize_msisdn($msisdn);
-  if ($msisdn === '' || $password === '') return;
+  if ($msisdn === '' || $password === '') return null;
 
   try {
     $r = rdb_pdo();
     $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
-    if (!$targets) return;
+    if (!$targets) return null;
 
     $passAttrs = [
       'Cleartext-Password','Password','Crypt-Password',
@@ -132,6 +140,14 @@ function user_sync_radius_auth_variants(string $msisdn, string $password): void 
     if (!$r->inTransaction()) { $r->beginTransaction(); $started = true; }
 
     try {
+      $revision = account_access_lock($r, $msisdn);
+      $fresh = $r->prepare("SELECT attribute,value FROM radcheck WHERE username IN ($ph) AND attribute IN ($ph2)");
+      $fresh->execute(array_merge($targets, $passAttrs));
+      $valid = false;
+      foreach ($fresh->fetchAll(PDO::FETCH_ASSOC) as $credential) {
+        if (radius_password_match($password, (string)$credential['value'], (string)$credential['attribute'])) $valid = true;
+      }
+      if (!$valid) throw new RuntimeException('account_credentials_changed');
       $del = $r->prepare("DELETE FROM radcheck WHERE username IN ($ph) AND attribute IN ($ph2)");
       $del->execute(array_merge($targets, $passAttrs));
 
@@ -182,12 +198,14 @@ function user_sync_radius_auth_variants(string $msisdn, string $password): void 
       }
 
       if ($started && $r->inTransaction()) $r->commit();
+      return $revision;
     } catch (Throwable $e) {
       if ($started && $r->inTransaction()) $r->rollBack();
       throw $e;
     }
   } catch (Throwable $e) {
-    // Non-fatal: auth already succeeded.
+    // A concurrent reset or purge must invalidate the earlier password check.
+    return null;
   }
 }
 
@@ -215,12 +233,14 @@ function user_do_login(string $rawMsisdn, string $password): bool {
     $val  = (string)($row['value'] ?? '');
     if ($attr === '' || $val === '') continue;
     if (radius_password_match($password, $val, $attr)) {
-      user_sync_radius_auth_variants($msisdn, $password);
+      $revision = user_sync_radius_auth_variants($msisdn, $password);
+      if ($revision === null) return false;
       if (session_status() === PHP_SESSION_ACTIVE) {
         @session_regenerate_id(true);
       }
       $_SESSION['user_msisdn'] = $msisdn;
       $_SESSION['user_at'] = time();
+      $_SESSION['user_access_revision'] = $revision;
       try {
         $hintCode = location_session_get_code();
         if ($hintCode === null || $hintCode === '') {

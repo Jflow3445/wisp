@@ -295,11 +295,11 @@ function wallet_expire_promos_for_user(string $msisdn): int {
   }
 }
 
-function wallet_balance(string $msisdn): int {
+function wallet_balance(string $msisdn, bool $createAccount=true): int {
   global $PDO;
   wallet_require_tables();
   try { wallet_expire_promos_for_user($msisdn); } catch (Throwable $e) { /* non-fatal */ }
-  $PDO->prepare("INSERT IGNORE INTO accounts(msisdn) VALUES(:m)")->execute([':m'=>$msisdn]);
+  if ($createAccount) $PDO->prepare("INSERT IGNORE INTO accounts(msisdn) VALUES(:m)")->execute([':m'=>$msisdn]);
   $st=$PDO->prepare("SELECT balance_cents FROM accounts WHERE msisdn=:m"); $st->execute([':m'=>$msisdn]);
   return (int)$st->fetchColumn();
 }

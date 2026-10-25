@@ -1,0 +1,113 @@
+Account purge and password session revocation - 2026-10-25 UTC
+Server: existing WISP VPS 209.97.137.68
+
+Result
+  Deployed account purge, account identity and password session fixes.
+  Purged the two records explicitly identified by the administrator:
+    codex_admin
+    codex_probe_20260506011033
+  The second record was incorrectly displayed as 20260506011033. Fresh admin
+  API lists now preserve actual usernames, and both purged records remain absent
+  after repeated list requests and dashboard statistics reloads.
+
+Confirmed causes
+  The admin list stripped non-digits from named usernames. Purge either rejected
+  a name as an empty phone number or targeted its numeric suffix, leaving the
+  actual RADIUS policy row. The first phone-account fix also rejected legacy
+  numeric IDs; the administrator's examples exposed that gap and it was fixed.
+  Phone normalization is now limited to recognized phone formats. Names and
+  other numeric IDs retain exact identities in listing, deduplication, RADIUS
+  aliases, purge and router session removal. No suffix/wildcard deletion is used.
+
+  Separately, purge omitted location profiles, promotion grants and several
+  legacy account tables. Admin lookup called a wallet accessor that inserted
+  missing accounts, recreating a purged wallet. Existing portal sessions were
+  not invalidated, allowing stale access and profile recreation.
+
+  Password change/reset did not revoke existing network sessions. The cookie
+  helper was invoked through sudo with the wrong target identity, although an
+  existing sudo rule already permits the restricted nister-router account.
+
+Implemented behavior
+  Purge verifies removal of the selected account's active authentication,
+  policy, wallet, purchase, OTP, profile, referral and legacy records. Production
+  portal/RADIUS connections point to the same store, so this uses one transaction.
+  Admin lookup is read-only for absent accounts and reports User not found.
+  Confirmation, admin authentication, CSRF and location scope checks remain.
+
+  Public password change/reset, admin password change and admin login reset
+  commit a durable per-account revision and router sign-out request with the
+  credential change. Old password/hash attributes are removed from both phone
+  aliases. Existing portal sessions fail their next authorization check. Login
+  rechecks credentials under the same account lock to avoid restoring a password
+  superseded by a concurrent reset or purge. Normal login does not revoke other
+  devices or change the account revision.
+
+  The existing router helper now supports clearing that account's HotSpot
+  cookies before removing all its active sessions. It reports success only after
+  checking that no matching cookies or sessions remain. Named accounts and
+  numeric legacy IDs are matched exactly using validated script-safe names.
+  The existing router key, key path and SSH options were preserved. No SSH or
+  sudo configuration was modified.
+
+  New nister-account-revocations.timer runs the restricted worker every 30 seconds.
+  Tunnel outages retain pending requests and the UI reports pending sign-out.
+  Authentication failures remain pending and stop automatic retries for that
+  account. Password changes remain committed even if the router is unreachable.
+  Deployment creates account_access_revocations with a 64-character account key.
+  Keep these revision receipts across future deployments: deleting them could
+  permit old portal sessions to match a reused account's initial revision.
+  Receipts are security state, not active users, and are excluded from user lists.
+
+Validation
+  tests/regression/run.sh: passed, reported 227 checks; includes 53 account access
+  behavior checks, six native shell helper checks and existing captive behavior.
+  PHP syntax checks, shell syntax checks and git diff --check passed.
+  Live synthetic phone-account verification: 31 checks passed, including two old
+  portal sessions rejected after password change, another account unaffected,
+  new password accepted, old password rejected, purge confirmation enforced,
+  omitted records cleared, no lookup recreation and purged sessions rejected.
+  Live verification for the administrator's two records: 33 checks passed,
+  including exact names before purge, database removal, repeated fresh lists,
+  statistics reloads and durable pending router sign-outs.
+  Actual localhost FreeRADIUS authentication: old password accepted before
+  change, old password rejected after change, new password accepted after change.
+  The systemd retry worker ran successfully as www-data using the existing
+  restricted sudo path and retained tunnel_unavailable requests for retry.
+  Public pay/wifi pages and expected API status/error boundaries responded.
+  OTP delivery and real customer password-reset SMS were not exercised.
+
+  Reserved synthetic accounts, their receipts and temporary validation sessions
+  were removed after verification. No customer password was changed. The only
+  existing records purged were the two explicitly identified above.
+
+Production boundaries and evidence
+  MikroTik is offline during the administrator-confirmed power outage. IPsec
+  has no SAs and the PPP route is absent. Live physical Wi-Fi disconnection
+  therefore remains unverified; pending sign-outs retry when the tunnel returns.
+  No VPN repair, reboot, firewall, SSH configuration, credential rotation,
+  device cap, rate limit, quota, payment routing or unrelated service changes.
+  ADOPT_UNKNOWN_RADIUS_CLIENTS=0 and the disabled Starlink sync timer preserved.
+  Audit records, backups and NetFlow records/retention were not changed.
+  Existing production Owner Platform/noindex additions were preserved by
+  applying only the relevant admin function/case blocks to the live source.
+  Eleven protected credential/configuration hashes and the twelve deployed file
+  hashes matched verification. Server boot identity was unchanged.
+
+  Root-only backup and evidence directory:
+    /root/nister-purge-fix-20261025T185236Z
+  Includes deployment-manifest.json, protected-before.json, live-verification.json,
+  named-live-verification.json, radius-password-verification.json, original source
+  backups and sanitized responses. No credentials are included in this report.
+
+  Final systemctl --failed observation lists four operational problems:
+    certbot.service
+    logrotate.service
+    nister-mikrotik-guard.service
+    nister-netflow-archive.service
+  Account queue sync, router catch-up and tunnel watchdog were also observed
+  failed earlier; their normal timer runs cleared those failures without any
+  configuration change or reset-failed command from this task.
+  The archive unit became failed during this work; it was not modified or run by
+  this task. No failure state was reset to hide these observations. The new
+  account revocation worker completed successfully and its timer is active.

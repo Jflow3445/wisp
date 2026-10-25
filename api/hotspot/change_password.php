@@ -4,6 +4,8 @@ ini_set('display_errors', '0');
 error_reporting(E_ERROR | E_PARSE);
 
 require_once __DIR__ . '/_db.php';
+require_once __DIR__ . '/_paylib.php';
+hotspot_require_paylib('account_access.php');
 
 function portal_base_from_link(string $link, string $fallback): string {
   $link = trim($link);
@@ -209,6 +211,8 @@ if (!($ipGate['allowed'] ?? false) || !($userGate['allowed'] ?? false)) {
 
 try {
   $pdo = hotspot_radius_pdo();
+  $pdo->beginTransaction();
+  account_access_lock($pdo, $user);
 
   $targets = array_values(array_unique(array_filter(array_merge([$user], username_variants($user)))));
   $found = false;
@@ -227,13 +231,10 @@ try {
     fail('Invalid account or current password.', $user);
   }
 
-  $upsert = $pdo->prepare(
-    "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
-     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
-  );
-  foreach ($targets as $u) {
-    $upsert->execute([$u, $pass]);
-  }
+  account_access_replace_password($pdo, $user, $pass);
+  account_access_record($pdo, $user, 'password_change');
+  $pdo->commit();
+  $access = account_access_dispatch($pdo, $user, app_boot());
   hs_cp_rate_limit_clear('hotspot_change_password_ip', $clientIp);
   hs_cp_rate_limit_clear('hotspot_change_password_user', $clientIp . '|' . $userKey);
 
@@ -241,6 +242,7 @@ try {
   header("Content-Type: text/html; charset=utf-8");
   $safe = h($user);
   $login = $LOGIN_URL;
+  $deviceMessage = $access['pending'] ? 'Some devices could not be signed out yet. We will keep trying automatically.' : 'All existing devices have been signed out. Please log in with your new password.';
   echo "<!doctype html><meta charset='utf-8'><title>Password updated</title>
   <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:2rem}
@@ -250,9 +252,11 @@ try {
   </style>
   <div class='card'><h2>Password updated</h2>
   <div class='ok'>Your password for <b>".$safe."</b> has been updated.</div>
+  <p>".h($deviceMessage)."</p>
   <p><a class='btn' href='".h($login)."'>Go to Wi-Fi login</a></p></div>";
   exit;
 } catch (Throwable $e) {
+  if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) $pdo->rollBack();
   error_log('[api/hotspot/change_password.php] user=' . $user . ' err=' . $e->getMessage());
   fail('Could not update password right now. Please try again shortly.', $user);
 }

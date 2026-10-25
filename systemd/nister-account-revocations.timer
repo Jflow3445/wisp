@@ -1,0 +1,10 @@
+[Unit]
+Description=NISTER retry pending account device sign-outs
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=30s
+Unit=nister-account-revocations.service
+
+[Install]
+WantedBy=timers.target

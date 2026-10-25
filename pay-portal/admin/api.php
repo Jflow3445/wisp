@@ -15,6 +15,7 @@ require_once __DIR__.'/../lib/location.php';
 require_once __DIR__.'/../lib/admin_auth.php';
 require_once __DIR__.'/../lib/sms.php';
 require_once __DIR__.'/../lib/referrals.php';
+require_once __DIR__.'/../lib/account_access.php';
 
 $ENV = admin_boot();
 header('Content-Type: application/json; charset=utf-8');
@@ -54,7 +55,7 @@ function admin_attach_location_profiles(array &$rows): void {
 
   $canon = [];
   foreach ($rows as $r) {
-    $u = normalize_msisdn((string)($r['username'] ?? ''));
+    $u = admin_user_canon((string)($r['username'] ?? ''));
     if ($u !== '') $canon[$u] = true;
   }
   if (!$canon) return;
@@ -69,7 +70,7 @@ function admin_attach_location_profiles(array &$rows): void {
   $st->execute($vals);
   $map = [];
   foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
-    $m = normalize_msisdn((string)($row['msisdn'] ?? ''));
+    $m = admin_user_canon((string)($row['msisdn'] ?? ''));
     if ($m === '') continue;
     $map[$m] = [
       'location_id' => (int)($row['location_id'] ?? 0),
@@ -79,7 +80,7 @@ function admin_attach_location_profiles(array &$rows): void {
   }
 
   foreach ($rows as &$r) {
-    $m = normalize_msisdn((string)($r['username'] ?? ''));
+    $m = admin_user_canon((string)($r['username'] ?? ''));
     if ($m === '' || !isset($map[$m])) continue;
     $r['location_id'] = $map[$m]['location_id'];
     $r['location_code'] = $map[$m]['location_code'];
@@ -810,11 +811,8 @@ function promo_apply_plan_access(PDO $pdo, PDO $r, string $msisdn, array $plan, 
 }
 
 function admin_user_canon(string $username): string {
-  $d = preg_replace('/\D+/', '', $username);
-  if ($d === '') return trim($username);
-  if (preg_match('/^0\d{9}$/', $d)) return '233'.substr($d, 1);
-  if (preg_match('/^233\d{9}$/', $d)) return $d;
-  return $d;
+  try { return account_access_users($username)[0]; }
+  catch (InvalidArgumentException $e) { return trim($username); }
 }
 
 function admin_wallet_account_canon_sql(string $column): string {
@@ -1330,16 +1328,17 @@ try {
           $groupFilter = $g;
         }
       }
-      $searchDigits = preg_replace('/\D+/', '', (string)($in['search'] ?? ''));
-      $candidateLimit = ($expiredOnly || $exhaustedOnly || $groupFilter !== '' || $searchDigits !== '')
+      $search = trim((string)($in['search'] ?? ''));
+      if (preg_match('/^\+?[0-9 ()-]+$/D', $search)) $search = preg_replace('/\D+/', '', $search);
+      $candidateLimit = ($expiredOnly || $exhaustedOnly || $groupFilter !== '' || $search !== '')
         ? min(5000, $limit * 8)
         : min(5000, $limit * 4);
 
       $where = "groupname IN ('HS_ACTIVE','HS_LIMITED','HS_NOPAID')";
       $params = [];
-      if ($searchDigits !== '') {
+      if ($search !== '') {
         $where .= " AND username LIKE :q";
-        $params[':q'] = '%'.$searchDigits.'%';
+        $params[':q'] = '%'.$search.'%';
       }
       $st = $r->prepare("SELECT DISTINCT username FROM radusergroup WHERE {$where} ORDER BY username LIMIT :lim");
       $st->bindValue(':lim', $candidateLimit, PDO::PARAM_INT);
@@ -1349,8 +1348,7 @@ try {
 
       $canonUsers = [];
       foreach ($rawUsers as $uRaw) {
-        $u = normalize_msisdn((string)$uRaw);
-        if ($u === '') $u = admin_user_canon((string)$uRaw);
+        $u = admin_user_canon((string)$uRaw);
         if ($u === '') continue;
         $canonUsers[$u] = true;
       }
@@ -1373,7 +1371,7 @@ try {
         if (!is_array($exact)) continue;
 
         $row = [
-          'username' => normalize_msisdn((string)($exact['username'] ?? $msisdn)) ?: $msisdn,
+          'username' => admin_user_canon((string)($exact['username'] ?? $msisdn)),
           'groupname' => (string)($exact['groupname'] ?? ''),
           'expires' => (string)($exact['expires'] ?? ''),
           'window_start' => (string)($exact['window_start'] ?? ''),
@@ -2546,7 +2544,13 @@ try {
       $scopeCheck = admin_user_scope_check($in, $msisdn);
       if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
 
-      $out = ['ok'=>true,'msisdn'=>$msisdn];
+      $exists = account_access_portal_exists($PDO, rdb_pdo(), $msisdn);
+      if (!$exists) {
+        echo json_encode(['ok'=>true,'exists'=>false,'msisdn'=>$msisdn,'balance_cents'=>null,
+          'status'=>null,'active_plan'=>null,'user_state'=>null,'ledger'=>[]]);
+        break;
+      }
+      $out = ['ok'=>true,'exists'=>true,'msisdn'=>$msisdn];
       try {
         $prof = location_profile_get($msisdn);
         if ($prof) {
@@ -2556,7 +2560,7 @@ try {
         }
       } catch (Throwable $e) { /* non-fatal */ }
       try {
-        $out['balance_cents'] = wallet_balance($msisdn);
+        $out['balance_cents'] = wallet_balance($msisdn, false);
       } catch (Throwable $e) {
         $out['balance_cents'] = null;
         $out['wallet_error'] = $e->getMessage();
@@ -2713,13 +2717,11 @@ try {
           http_response_code(404);
           echo json_encode(['ok'=>false,'error'=>'user_not_found']); break;
         }
-        $upsert = $r->prepare(
-          "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
-           ON DUPLICATE KEY UPDATE value = VALUES(value), op=':='"
-        );
-        foreach ($targets as $u) {
-          $upsert->execute([$u, $pass]);
-        }
+        $r->beginTransaction();
+        account_access_replace_password($r, $msisdn, $pass);
+        account_access_record($r, $msisdn, 'admin_password_change');
+        $r->commit();
+        $access = account_access_dispatch($r, $msisdn, is_array($ENV) ? $ENV : []);
         try {
           $tpl = trim((string)(sms_setting('SMS_PASSWORD_RESET_TEXT', '') ?? ''));
           if ($tpl !== '') {
@@ -2730,8 +2732,9 @@ try {
             sms_send($msisdn, $msg);
           }
         } catch (Throwable $e) { /* ignore */ }
-        echo json_encode(['ok'=>true]);
+        echo json_encode(['ok'=>true,'revocation_pending'=>$access['pending']]);
       } catch (Throwable $e) {
+        if (isset($r) && $r->inTransaction()) $r->rollBack();
         error_log('[admin/api user_set_password] msisdn=' . $msisdn . ' err=' . $e->getMessage());
         http_response_code(500);
         echo json_encode(['ok'=>false,'error'=>'password_update_failed']);
@@ -2771,6 +2774,7 @@ try {
         $started = false;
         if (!$r->inTransaction()) { $r->beginTransaction(); $started = true; }
         try {
+          account_access_lock($r, $msisdn);
           $passAttrs = [
             'Cleartext-Password','Password','Crypt-Password',
             'MD5-Password','SHA-Password','SSHA-Password','SMD5-Password',
@@ -2808,18 +2812,20 @@ try {
             }
           }
 
+          account_access_record($r, $msisdn, 'admin_login_reset');
           if ($started && $r->inTransaction()) $r->commit();
         } catch (Throwable $e) {
           if ($started && $r->inTransaction()) $r->rollBack();
           throw $e;
         }
 
-        try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
+        $access = account_access_dispatch($r, $msisdn, is_array($ENV) ? $ENV : []);
 
         echo json_encode([
           'ok'=>true,
           'msisdn'=>$msisdn,
           'targets'=>$targets,
+          'revocation_pending'=>$access['pending'],
         ]);
       } catch (Throwable $e) {
         error_log('[admin/api user_reset_login] msisdn=' . $msisdn . ' err=' . $e->getMessage());
@@ -2897,7 +2903,11 @@ try {
     }
 
     case 'user_purge': {
-      $msisdn = normalize_msisdn((string)from_any([$in],'msisdn',''));
+      try {
+        $msisdn = account_access_users((string)from_any([$in],'msisdn',''))[0];
+      } catch (InvalidArgumentException $e) {
+        http_response_code(400); echo json_encode(['ok'=>false,'error'=>'valid username required']); break;
+      }
       $confirm = strtoupper(trim((string)from_any([$in], 'confirm', from_any([$in], 'confirm_text', ''))));
       if ($msisdn === '') { http_response_code(400); echo json_encode(['ok'=>false,'error'=>'msisdn required']); break; }
       if ($confirm !== 'PURGE') {
@@ -2908,86 +2918,10 @@ try {
       $scopeCheck = admin_user_scope_check($in, $msisdn);
       if (!($scopeCheck['ok'] ?? false)) { admin_emit_scope_error($scopeCheck); break; }
       try {
-        $targets = array_values(array_unique(array_filter(nister_username_variants($msisdn))));
-        $ids = array_values(array_unique(array_filter([$msisdn, msisdn_local($msisdn)])));
-        if (!$targets) $targets = [$msisdn];
-        if (!$ids) $ids = [$msisdn];
-
-        // Best-effort disconnect before deleting everything.
-        try { radius_try_disconnect($msisdn, is_array($ENV) ? $ENV : []); } catch (Throwable $e) { /* ignore */ }
-
         $r = rdb_pdo();
-        $startedR = false;
-        $startedP = false;
-        if (!$r->inTransaction()) { $r->beginTransaction(); $startedR = true; }
-        if (!$PDO->inTransaction()) { $PDO->beginTransaction(); $startedP = true; }
-
-        $deleted = [
-          'radius' => [],
-          'portal' => [],
-        ];
-
-        // Radius/full auth purge.
-        $phU = implode(",", array_fill(0, count($targets), "?"));
-        foreach (['radcheck','radreply','radusergroup','radpostauth','radacct','radippool'] as $tbl) {
-          if (!table_exists($r, $tbl)) continue;
-          $st = $r->prepare("DELETE FROM {$tbl} WHERE username IN ($phU)");
-          $st->execute($targets);
-          $deleted['radius'][$tbl] = (int)$st->rowCount();
-        }
-
-        // Pay portal purge (wallet, purchases, referrals, otp, payments, automation, alerts).
-        $phM = implode(",", array_fill(0, count($ids), "?"));
-
-        if (table_exists($PDO, 'referral_rewards')) {
-          $st = $PDO->prepare("DELETE FROM referral_rewards WHERE referrer_msisdn IN ($phM) OR referred_msisdn IN ($phM)");
-          $st->execute(array_merge($ids, $ids));
-          $deleted['portal']['referral_rewards'] = (int)$st->rowCount();
-        }
-        if (table_exists($PDO, 'referral_links')) {
-          $st = $PDO->prepare("DELETE FROM referral_links WHERE referrer_msisdn IN ($phM) OR referred_msisdn IN ($phM)");
-          $st->execute(array_merge($ids, $ids));
-          $deleted['portal']['referral_links'] = (int)$st->rowCount();
-        }
-        if (table_exists($PDO, 'referral_profiles')) {
-          $st = $PDO->prepare("DELETE FROM referral_profiles WHERE msisdn IN ($phM)");
-          $st->execute($ids);
-          $deleted['portal']['referral_profiles'] = (int)$st->rowCount();
-        }
-
-        foreach ([
-          'signup_otp_sessions',
-          'signup_otp_challenges',
-          'auto_renew_settings',
-          'payments',
-          'purchases',
-          'ledger',
-          'accounts',
-        ] as $tbl) {
-          if (!table_exists($PDO, $tbl)) continue;
-          $st = $PDO->prepare("DELETE FROM {$tbl} WHERE msisdn IN ($phM)");
-          $st->execute($ids);
-          $deleted['portal'][$tbl] = (int)$st->rowCount();
-        }
-
-        $alertKeys = array_values(array_unique(array_filter(array_merge($targets, $ids))));
-        if ($alertKeys && table_exists($PDO, 'admin_alerts')) {
-          $phA = implode(",", array_fill(0, count($alertKeys), "?"));
-          $st = $PDO->prepare("DELETE FROM admin_alerts WHERE username IN ($phA)");
-          $st->execute($alertKeys);
-          $deleted['portal']['admin_alerts'] = (int)$st->rowCount();
-        }
-
-        if ($startedR && $r->inTransaction()) $r->commit();
-        if ($startedP && $PDO->inTransaction()) $PDO->commit();
-
-        echo json_encode([
-          'ok'=>true,
-          'msisdn'=>$msisdn,
-          'targets'=>$targets,
-          'portal_ids'=>$ids,
-          'deleted'=>$deleted,
-        ]);
+        $result = account_access_purge($PDO, $r, $msisdn);
+        $access = account_access_dispatch($r, $msisdn, is_array($ENV) ? $ENV : []);
+        echo json_encode(['ok'=>true, 'revocation_pending'=>$access['pending']] + $result);
       } catch (Throwable $e) {
         try { if (isset($r) && $r instanceof PDO && $r->inTransaction()) $r->rollBack(); } catch (Throwable $x) {}
         try { if ($PDO->inTransaction()) $PDO->rollBack(); } catch (Throwable $x) {}

@@ -225,7 +225,10 @@ if (!reset_rate_limit_allow('hotspot_reset_password_ip', $clientIp, 12, 600, 900
 
 try {
   hotspot_require_paylib('referrals.php');
+  hotspot_require_paylib('account_access.php');
   $pdo = hotspot_radius_pdo();
+  $pdo->beginTransaction();
+  account_access_lock($pdo, $user);
 
   $targets = username_variants($user);
   if (!$targets) fail('Enter a valid phone number.', $user);
@@ -252,24 +255,11 @@ try {
     fail('OTP verification expired. Send a new code and verify again.', $user);
   }
 
-  $delAttrs = [
-    'Password','Crypt-Password','MD5-Password','SHA-Password','SSHA-Password',
-    'SMD5-Password','NT-Password','LM-Password',
-  ];
-  $del = $pdo->prepare(
-    "DELETE FROM radcheck WHERE username = ? AND attribute IN (" . implode(',', array_fill(0, count($delAttrs), '?')) . ")"
-  );
-  $upsert = $pdo->prepare(
-    "INSERT INTO radcheck (username, attribute, op, value) VALUES (?, 'Cleartext-Password', ':=', ?)
-     ON DUPLICATE KEY UPDATE value = VALUES(value), op = ':='"
-  );
-  $pdo->beginTransaction();
-  foreach ($targets as $u) {
-    $del->execute(array_merge([$u], $delAttrs));
-    $upsert->execute([$u, $pass]);
-  }
+  account_access_replace_password($pdo, $user, $pass);
+  account_access_record($pdo, $user, 'password_reset');
   mirror_hs_policy($pdo, $targets, $policy);
   $pdo->commit();
+  $access = account_access_dispatch($pdo, $user, app_boot());
 
   reset_rate_limit_clear('hotspot_reset_password_ip', $clientIp);
   reset_rate_limit_clear('hotspot_reset_password_user', $clientIp . '|' . $userKey);
@@ -289,6 +279,7 @@ try {
   http_response_code(200);
   header("Content-Type: text/html; charset=utf-8");
   $safe = h($user);
+  $deviceMessage = $access['pending'] ? 'Some devices could not be signed out yet. We will keep trying automatically.' : 'All existing devices have been signed out. Please log in with your new password.';
   $login = $LOGIN_URL . '?username=' . rawurlencode($user) . '&msg=' . rawurlencode('Password reset. Please log in with your new password.');
   echo "<!doctype html><meta charset='utf-8'><title>Password reset</title>
   <style>
@@ -299,6 +290,7 @@ try {
   </style>
   <div class='card'><h2>Password reset</h2>
   <div class='ok'>Your password for <b>".$safe."</b> has been reset.</div>
+  <p>".h($deviceMessage)."</p>
   <p><a class='btn' href='".h($login)."'>Go to Wi-Fi login</a></p></div>";
   exit;
 } catch (Throwable $e) {

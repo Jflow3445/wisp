@@ -2359,7 +2359,7 @@ function renderUserStates(rows){
           renderUserSnapshot({ balance_cents: null, status: null, active_plan: null, ledger: [] });
         }
         await loadStats();
-        setToolStatus(`Purged ${u}.`, 'success');
+        setToolStatus(j.revocation_pending ? `Purged ${u}. Device sign-out is pending and will retry automatically.` : `Purged ${u}. All devices signed out.`, j.revocation_pending ? 'error' : 'success');
       }
       await loadUserStates();
     });
@@ -3098,6 +3098,11 @@ async function lookupUser(){
     setToolStatus(j.error || 'Lookup failed.', 'error');
     return;
   }
+  if (j.exists === false) {
+    renderUserSnapshot({balance_cents:null,status:null,active_plan:null,ledger:[]});
+    setToolStatus('User not found.', 'error');
+    return;
+  }
   let merged = j;
   if (j.user_state) {
     merged = mergeLookupState(j, j.user_state);
@@ -3500,7 +3505,7 @@ async function setPassword(){
     setToolStatus(j.error || 'Password update failed.', 'error');
     return;
   }
-  setToolStatus('Password updated.', 'success');
+  setToolStatus(j.revocation_pending ? 'Password updated. Device sign-out is pending and will retry automatically.' : 'Password updated. All devices signed out.', j.revocation_pending ? 'error' : 'success');
 }
 
 async function resetLogin(){
@@ -3539,7 +3544,7 @@ async function resetLogin(){
     if (p2) p2.value = finalPass;
   }
   await lookupUser();
-  const doneMsg = `Login reset complete for ${msisdn}.`;
+  const doneMsg = j.revocation_pending ? `Login reset for ${msisdn}. Device sign-out is pending and will retry automatically.` : `Login reset complete for ${msisdn}. All devices signed out.`;
   setToolStatus(doneMsg, 'success');
   window.alert(doneMsg);
 }
@@ -3585,7 +3590,7 @@ async function purgeUser(){
   await loadStats();
   await loadUserStates();
   renderUserSnapshot({ balance_cents: null, status: null, active_plan: null, ledger: [] });
-  setToolStatus('User fully purged.', 'success');
+  setToolStatus(j.revocation_pending ? 'User purged. Device sign-out is pending and will retry automatically.' : 'User fully purged. All devices signed out.', j.revocation_pending ? 'error' : 'success');
 }
 
 async function sendSms(){
