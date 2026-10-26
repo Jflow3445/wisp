@@ -573,6 +573,8 @@ if python -c 'import sys; assert sys.version_info.major == 3' >/dev/null 2>&1; t
 fi
 "$qos_python" tests/regression/qos_policy.py
 pass "qos_capacity_and_retirement_behavior"
+"$qos_python" tests/regression/congestion_control.py
+pass "shared_congestion_control_behavior"
 node tests/regression/plan_rate_display.js
 pass "plan_download_upload_display_behavior"
 

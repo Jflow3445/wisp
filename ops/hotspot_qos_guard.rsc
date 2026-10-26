@@ -6,6 +6,27 @@
 # This avoids nested scheduler/script jobs and averaging resets.
 :do {
     :local burstFactor 3;
+    :local rateNumber do={
+        :local s [:tostr $1]; :local multiplier 1;
+        :local suffix [:pick $s ([:len $s] - 1) [:len $s]];
+        :if ($suffix = "M") do={ :set multiplier 1000000; };
+        :if (($suffix = "k") || ($suffix = "K")) do={ :set multiplier 1000; };
+        :if ($suffix = "G") do={ :set multiplier 1000000000; };
+        :if ($multiplier > 1) do={ :set s [:pick $s 0 ([:len $s] - 1)]; };
+        :local n [:tonum $s]; :if ([:typeof $n] != "num") do={ :error "invalid account rate"; };
+        :return ($n * $multiplier);
+    };
+
+    # Once shared congestion management is installed, its current budget is the
+    # burst reference. A static peak estimate must not overrule congestion cuts.
+    :local site [/queue simple find where name="nister-site" and disabled=no];
+    :if ([:len $site] = 1) do={
+        :local budget [:tostr [/queue simple get $site max-limit]];
+        :local cut [:find $budget "/"];
+        # RouterOS may return these rates with k/M/G suffixes.
+        :set capacityUp [$rateNumber [:pick $budget 0 $cut]];
+        :set capacityDown [$rateNumber [:pick $budget ($cut + 1) [:len $budget]]];
+    };
     :local wan [/interface monitor-traffic ether1 once as-value];
     :delay 1s;
     :local previous [/interface monitor-traffic ether1 once as-value];
@@ -14,6 +35,24 @@
     :if (($previous->"tx-bits-per-second") > $usedUp) do={ :set usedUp ($previous->"tx-bits-per-second"); };
     :if (($previous->"rx-bits-per-second") > $usedDown) do={ :set usedDown ($previous->"rx-bits-per-second"); };
     :local healthy ([/system resource get cpu-load] < 60);
+    :foreach core in=[/system resource cpu find] do={
+        :local load [:tostr [/system resource cpu get $core load]];
+        :if ([:pick $load ([:len $load] - 1) [:len $load]] = "%") do={ :set load [:pick $load 0 ([:len $load] - 1)]; };
+        :if ([:tonum $load] >= 85) do={ :set healthy false; };
+    };
+    :if ([:len $site] = 1) do={
+        :local heartbeat [/system script find where name="nister-congestion-heartbeat"];
+        :if ([:len $heartbeat] != 1) do={ :set healthy false; } else={
+            :local stamp [/system script get $heartbeat last-started];
+            :if ([:len $stamp] = 0) do={ :set healthy false; } else={
+                :local today [:tostr [/system clock get date]];
+                :if ([:pick $stamp 0 10] != $today) do={ :set healthy false; } else={
+                    :local age ([:totime [/system clock get time]] - [:totime [:pick $stamp 11 19]]);
+                    :if (($age < 0s) || ($age > 2m)) do={ :set healthy false; };
+                };
+            };
+        };
+    };
     :local probes [/ping 1.1.1.1 count=2 interval=200ms as-value];
     :if ([:len $probes] != 2) do={ :set healthy false; };
     :foreach probe in=$probes do={
@@ -29,16 +68,6 @@
     :if ($healthy) do={ :set good 2; };
     :local budgetUp ($capacityUp * 80 / 100 - $usedUp);
     :local budgetDown ($capacityDown * 80 / 100 - $usedDown);
-    :local rateNumber do={
-        :local s [:tostr $1]; :local multiplier 1;
-        :local suffix [:pick $s ([:len $s] - 1) [:len $s]];
-        :if ($suffix = "M") do={ :set multiplier 1000000; };
-        :if (($suffix = "k") || ($suffix = "K")) do={ :set multiplier 1000; };
-        :if ($suffix = "G") do={ :set multiplier 1000000000; };
-        :if ($multiplier > 1) do={ :set s [:pick $s 0 ([:len $s] - 1)]; };
-        :local n [:tonum $s]; :if ([:typeof $n] != "num") do={ :error "invalid account rate"; };
-        :return ($n * $multiplier);
-    };
     :local pairNumbers do={
         :local s [:tostr $1]; :local slash [:find $s "/"]; :local number $2;
         :return (([$number [:pick $s 0 $slash]]) . "/" . ([$number [:pick $s ($slash + 1) [:len $s]]]));

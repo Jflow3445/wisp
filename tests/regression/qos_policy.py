@@ -18,7 +18,7 @@ class CapacityRendering(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
-        for name in ['hotspot_account_login.rsc', 'hotspot_account_logout.rsc', 'hotspot_qos_guard.rsc']:
+        for name in ['hotspot_account_login.rsc', 'hotspot_account_logout.rsc', 'hotspot_qos_guard.rsc', 'hotspot_qos_devices.rsc']:
             shutil.copyfile(ROOT / 'ops' / name, self.directory / name)
 
     def render(self, capacity=None):
@@ -53,6 +53,20 @@ class CapacityRendering(unittest.TestCase):
         for required in ['connection-state="new"', 'src-address-list="HS_ACTIVE"',
                          'in-interface="bridge"', 'out-interface-list="WAN"']:
             self.assertIn(required, rules)
+
+    def test_congestion_install_preserves_learned_budget(self):
+        shutil.copyfile(ROOT / 'ops/congestion_site.json', self.directory / 'congestion_site.json')
+        stages = self.render()
+        install = stages['congestion-management']
+        self.assertIn('kind="fq-codel"', install)
+        self.assertIn('name="nister-qos-devices"', install)
+        self.assertNotIn('set $ids max-limit', install)
+        self.assertIn('max-limit=5000000/70000000', install)
+
+    def test_unused_marks_are_retired_without_disabling_garden_learning(self):
+        stage = self.render()['retire-unused-tls-marks']
+        self.assertIn('"wg-allow";"preauth-ok"', stage)
+        self.assertNotIn('WG_AUTO', stage)
 
 
 if __name__ == '__main__':

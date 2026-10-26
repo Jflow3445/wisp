@@ -1,0 +1,126 @@
+NISTER shared-link congestion management - 26 October 2026 UTC
+
+Production behavior
+  Traffic now follows a shared HTB budget, an account queue, and a device queue.
+  Account guarantees are proportional to the purchased plan and fit inside 90%
+  of the shared budget, with additional space left for capped pre-auth traffic.
+  Unused guarantees remain borrowable. Each account's two devices share its
+  guarantee; each device uses FQ-CoDel to manage its individual connections.
+  Multiple torrent connections do not earn extra account or device guarantees.
+
+  The unchanged normal plan ceilings are download/upload:
+    Daily Unlimited:   5/3 Mbps
+    Weekly Unlimited:  8/5 Mbps
+    Monthly Unlimited: 15/10 Mbps
+  Data plans retain their individual rates too. Rates are ceilings subject to
+  shared capacity, not simultaneous minimum-speed guarantees for every account.
+  Normal plan max-limit values are still read from RADIUS/location metadata.
+  The congestion controller changes shared capacity and account CIRs, never the
+  purchased plan's max-limit. A plan downgrade clears the old CIR safely before
+  the new allocation. Logout/account removal clears stale device queues.
+
+  Existing two-device admission, remembered paid-device login, blocked-profile
+  zero-duration cookies, anti-sharing TTL policy and peer-connection ceilings
+  remain. The old shared 256 kbps P2P shapers and quarantine rules stay disabled.
+  No customer logout or router reboot was requested for this deployment.
+
+Adaptive capacity and bursts
+  Probes originate on the MikroTik, to two independent Internet destinations.
+  Three consecutive samples showing more than 25 ms of additional delay (or
+  substantial loss) reduce the most-loaded direction(s). One remote endpoint
+  failing, a single latency spike, or low traffic alone cannot collapse the
+  budget. A busy CPU core prevents upward exploration; the local burst guard
+  also disables bursts on CPU, delay, loss, stale-controller or probe failures.
+
+  Bounded site probes measured approximately 41-80 Mbps HTTP download. A routed
+  POST upload probe delivered about 4.2 Mbps; its tunnel path makes it a lower
+  bound rather than a definitive ISP capacity measurement. The starting shared
+  budget is 70 Mbps download / 5 Mbps upload. Operating bounds are 10-300 Mbps
+  download and 2-50 Mbps upload. The administrator's 300 Mbps download reference
+  is retained; the 50 Mbps upload bound is an exploration ceiling, not a measured
+  or advertised link speed. These are shared adaptive budgets, not plan rates.
+
+  After three healthy samples, recovery toward the starting budget is bounded
+  to 20% plus 100 kbps per pass, including after an idle period. Above that
+  starting budget, actual demand is required and growth is 5% plus 100 kbps per
+  pass. This prevents a transient reduction from becoming a long-lived idle cap.
+  State persists across runs; counters reset across prolonged downtime.
+  Invalid/incomplete observations retain the last forwarding budget.
+
+  Conditional three-times bursts use the current shared budget rather than the
+  static peak estimate. The original 16-second averaging window is retained.
+  The controller runs from nister-congestion-control.timer on the VPS; all packet
+  forwarding, per-device FQ-CoDel and the five-second burst guard run locally.
+  A missing/stale VPS heartbeat disables extra bursts, while normal shaping
+  continues with the last budget. No WAN FastTrack bypass or IPv6 path was added.
+
+Rule audit and overhead
+  Disabled 16 active legacy TLS mark rules: four wrote wg-allow and twelve
+  duplicate rules wrote preauth-ok. No filter, NAT, raw, queue or route rule
+  consumed those connection marks. The separate WG_AUTO address-list learning
+  has NAT consumers and remains, along with the canonical captive/payment garden.
+  The already disabled torrent/L7 rules do not process packets; they were not
+  presented as an active bottleneck. Required TTL, hotspot bridge firewall,
+  accounting/NetFlow and management rules were preserved.
+
+  The full live client count exposed extra CLI-read overhead during rollout.
+  Reconciliation now snapshots queue properties and HotSpot session properties
+  rather than repeatedly issuing individual property reads. Repeated unchanged
+  device reconciliation took approximately 0.82-0.89 seconds and produced zero
+  queue writes in the controlled check. Account sync completed in 12-14 seconds
+  under its unchanged 25-second service timeout. Routine reconciliation does
+  not move unchanged queues or reset their burst history.
+
+Validation
+  Full regression suite: 234 reported checks, including 14 congestion decision
+  cases and seven deployment-rendering cases. Native burst guard: 14 cases.
+  Native device lifecycle covers first/second device, logout and account removal.
+  RouterOS parses, Bash/Python syntax, protected configuration hashes and Winbox
+  checks passed. Test-only routes, rules, scripts, queue types and queues are
+  removed from their reserved namespace after validation.
+
+  An initial plain-flow queue experiment gave an eight-flow device an excessive
+  share, so that design was rejected. With separate account/device guarantees,
+  the final shared-account test delivered an eight-stream/single-stream byte
+  ratio of 1.10. Small HTTP requests completed in 1.00 and 2.10 seconds while
+  bulk transfers ran. These are isolated tunnel-routed tests, not measurements
+  of the affected iPhone or proof of a 300 Mbps forwarding rate.
+
+  Initial live-start validation failures triggered automatic restoration of the
+  previous router/files. The RouterOS heartbeat return was corrected and the
+  final controller completed multiple successful scheduled passes. Deployment
+  rescue timers were removed after successful health/management validation;
+  exact before-images and a manual rollback remain in the private evidence dir.
+
+  RADIUS local health, live accounting, tunnel and Winbox were checked alongside
+  the rollout. API, public Wi-Fi and payment host checks accompany the final
+  private report. Protected credentials/configurations were hashed, not printed.
+  ADOPT_UNKNOWN_RADIUS_CLIENTS=0 and the disabled Starlink adoption timer remain.
+  Regulatory NetFlow capture/retention and unrelated services were not changed.
+
+  Closing checks: overall WISP health and local RADIUS passed; 26 recent
+  accounting records were observed, with the newest update one second old.
+  Wi-Fi/payment pages returned HTTP 200. The protected status API returned its
+  expected HTTP 400 for a trusted-origin request without a username (a request
+  without an origin/token is correctly forbidden). Winbox passed. All ten
+  deployed source/configuration hashes matched the local release. Both queue
+  sync and congestion control reported success. The existing disk warning and
+  unrelated edu.nister.org certbot failure remain; no NISTER unit was failed.
+
+Limits and operations
+  Router shaping cannot fix radio interference, weak signal or radio airtime
+  unfairness. AP login credentials are still unavailable; radio settings remain
+  unchanged under the owner's earlier instruction. The reported iPhone speed
+  has not been correlated to a new direct device test, so no claim is made that
+  its specific 3.1 Mbps result has been resolved.
+
+  Inspect: systemctl status nister-congestion-control.timer
+           journalctl -u nister-congestion-control.service
+           /var/lib/nister/congestion/state.json
+  Shared budgets and decision inputs are retained in that state/journal.
+  Configuration: /usr/local/share/nister/hotspot-policy/congestion_site.json
+  Private evidence, before-images, manifests and manual rollback:
+    /root/nister-congestion-20261026T105600Z
+    python3 /root/nister-congestion-20261026T105600Z/rollback.py
+  The rollback stops the controller and restores the previous scoped files and
+  router queues/hooks. SSH credentials/configuration are outside that operation.

@@ -1,0 +1,10 @@
+[Unit]
+Description=NISTER shared-link congestion controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 /usr/local/sbin/nister_congestion_control.py
+TimeoutStartSec=100s

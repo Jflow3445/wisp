@@ -360,14 +360,14 @@ done
 :local targetsFor do={
   :local account $1;
   :local targets "";
-  :foreach a in=[/ip hotspot active find] do={
-    :local u [:tostr [/ip hotspot active get $a user]];
+  :foreach a in=[/ip hotspot active print as-value] do={
+    :local u [:tostr ($a->"user")];
     :if (([:len $u] = 14) && ([:pick $u 0 5] = "00233")) do={ :set u ("0" . [:pick $u 5 14]); };
     :if (([:len $u] = 13) && ([:pick $u 0 4] = "2330")) do={ :set u ("0" . [:pick $u 4 13]); };
     :if (([:len $u] = 12) && ([:pick $u 0 3] = "233")) do={ :set u ("0" . [:pick $u 3 12]); };
     :if ($u = $account) do={
       :if ([:len $targets] > 0) do={ :set targets ($targets . ","); };
-      :set targets ($targets . [:tostr [/ip hotspot active get $a address]] . "/32");
+      :set targets ($targets . [:tostr ($a->"address")] . "/32");
     };
   };
   :return $targets;
@@ -375,7 +375,7 @@ done
 ROS
   printf ':foreach q in=[/queue simple find where comment~"^%s"] do={\n' "$QUEUE_COMMENT_PREFIX"
   printf '  :local u [:pick [/queue simple get $q name] %s [:len [/queue simple get $q name]]];\n' "${#QUEUE_PREFIX}"
-  printf '  :if ([:len [$targetsFor $u]] = 0) do={ /queue simple remove $q; :set changed ($changed + 1) };\n'
+  printf '  :if ([:len [$targetsFor $u]] = 0) do={ :local parentName [/queue simple get $q name]; /queue simple remove [find where comment="NISTER DEVICE AQM" and parent=$parentName]; /queue simple remove $q; :set changed ($changed + 1) };\n'
   printf '};\n'
   while IFS=$'\t' read -r user targets max_limit; do
     [[ -n "${user:-}" ]] || continue
@@ -387,15 +387,16 @@ ROS
       "$(ros_escape "$queue_name")" "$max_limit" "$QUEUE_TYPE" "$(ros_escape "$comment")"
     # Do not reset token buckets/burst averages on every 20-second sync tick.
     printf ':if ([:tostr [/queue simple get $q target]] != [:tostr [:toarray $targets]]) do={ /queue simple set $q target=$targets; :set changed ($changed + 1) };\n'
-    printf ':if ([:tostr [/queue simple get $q max-limit]] != "%s") do={ /queue simple set $q max-limit=%s burst-limit=0/0; :set changed ($changed + 1) };\n' "$max_limit" "$max_limit"
+    printf ':if ([:tostr [/queue simple get $q max-limit]] != "%s") do={ /queue simple set $q max-limit=%s limit-at=0/0 burst-limit=0/0; :set changed ($changed + 1) };\n' "$max_limit" "$max_limit"
     printf ':if ([:tostr [/queue simple get $q queue]] != "%s") do={ /queue simple set $q queue=%s; :set changed ($changed + 1) };\n' "$QUEUE_TYPE" "$QUEUE_TYPE"
-    printf ':if ([:tostr [/queue simple get $q limit-at]] != "0/0") do={ /queue simple set $q limit-at=0/0; :set changed ($changed + 1) };\n'
+    printf ':if ([:len [/queue simple find where name="nister-site" and disabled=no]] = 0) do={ :if ([:tostr [/queue simple get $q limit-at]] != "0/0") do={ /queue simple set $q limit-at=0/0; :set changed ($changed + 1) }; };\n'
     printf ':if ([/queue simple get $q disabled]) do={ /queue simple set $q disabled=no; :set changed ($changed + 1) };\n'
     printf ':if ([/queue simple get $q comment] != "%s") do={ /queue simple set $q comment="%s"; :set changed ($changed + 1) };\n' "$(ros_escape "$comment")" "$(ros_escape "$comment")"
     printf '}; };\n'
   done <"$desired"
   # RouterOS item number 0 can refer to a previously printed item. Use stable
   # internal IDs so the broad fallback can never sit above paid account queues.
+  printf ':if ([:len [/queue simple find where name="nister-site" and disabled=no]] = 1) do={ /system script run nister-qos-devices; } else={\n'
   printf ':local fallback [:pick [/queue simple find where name="nister-unclassified"] 0];\n'
   # Moving a queue restarts its burst window. Repair an invalid order once;
   # leave the entire queue list untouched when it is already correctly ordered.
@@ -404,7 +405,7 @@ ROS
   printf ':local first [:pick [/queue simple find] 0]; :if ($fallback != $first) do={ /queue simple move $fallback $first };\n'
   printf ':local before $fallback; :local infra [/queue simple find where name="nister-infra-management"]; :if ([:len $infra] = 1) do={ :set before [:pick $infra 0]; /queue simple move $before $fallback };\n'
   printf ':foreach q in=[/queue simple find where comment~"^%s"] do={ /queue simple move $q $before };\n' "$QUEUE_COMMENT_PREFIX"
-  printf ':set changed ($changed + 1); };\n'
+  printf ':set changed ($changed + 1); }; };\n'
   # The local scheduler guards bursts every five seconds. A stopped/missing
   # scheduler must not leave a previously enabled burst permanently enabled.
   printf ':if ([:len [/system scheduler find where name="nister-qos-tick" and disabled=no]] != 1) do={ /queue simple set [find where comment~"^%s"] burst-limit=0/0 };\n' "$QUEUE_COMMENT_PREFIX"

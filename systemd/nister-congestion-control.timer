@@ -1,0 +1,11 @@
+[Unit]
+Description=Measure and adjust NISTER shared-link budget
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=10s
+AccuracySec=1s
+Unit=nister-congestion-control.service
+
+[Install]
+WantedBy=timers.target

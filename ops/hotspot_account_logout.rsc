@@ -24,3 +24,6 @@
         /queue simple set $queues target=$targets;
     };
 };
+:if ([:len [/queue simple find where name="nister-site" and disabled=no]] = 1) do={
+    /system script run nister-qos-devices;
+};

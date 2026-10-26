@@ -49,7 +49,11 @@
         /queue simple set $queues target=$targets disabled=no;
     };
     :local before [/queue simple find where name="nister-unclassified"];
-    :if ([:len $before] = 1) do={ /queue simple move [:pick $queues 0] [:pick $before 0]; };
+    :if ([:len [/queue simple find where name="nister-site" and disabled=no]] = 1) do={
+        /system script run nister-qos-devices;
+    } else={
+        :if ([:len $before] = 1) do={ /queue simple move [:pick $queues 0] [:pick $before 0]; };
+    };
 } on-error={
     :log error "nister: hotspot account queue admission failed";
     /ip hotspot active remove [find where user=$accountUser and address=$clientIP];

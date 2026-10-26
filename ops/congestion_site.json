@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "up_min_bps": 2000000,
+  "up_initial_bps": 5000000,
+  "up_max_bps": 50000000,
+  "down_min_bps": 10000000,
+  "down_initial_bps": 70000000,
+  "down_max_bps": 300000000,
+  "delay_ms": 25,
+  "bad_ticks": 3,
+  "purpose": "Adaptive shared subscriber budget, separate from individual plan rates. Bounds are controller operating limits, not claimed ISP capacity.",
+  "calibration_utc": "2026-10-26",
+  "source": "Owner reports up to 300 Mbps download. Bounded site HTTP downloads measured approximately 41-80 Mbps and a tunnel-routed upload probe approximately 4.2 Mbps. Start at 70M/5M download/upload, decrease on sustained queue delay and probe upward under healthy demand. Upload 50 Mbps is an exploration ceiling, not a measured capacity."
+}

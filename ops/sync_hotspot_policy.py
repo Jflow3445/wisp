@@ -41,11 +41,13 @@ def upsert(menu, properties, key='comment', changed_only=False):
             expected = ros_quote(value)
             if name == 'target':
                 expected = '[:tostr [:toarray ' + ros_quote(value) + ']]'
-            elif name == 'disabled':
+            elif name in ['disabled', 'fq-codel-ecn']:
                 expected = ros_quote('true' if value == 'yes' else 'false')
             elif name in ['pcq-limit', 'pcq-total-limit'] and str(value).endswith('KiB'):
                 # RouterOS get returns these numeric values in KiB.
                 expected = ros_quote(str(value)[:-3])
+            elif name == 'fq-codel-memlimit' and str(value).endswith('MiB'):
+                expected = ros_quote(str(int(str(value)[:-3]) * 1048576))
             differences.append('([:tostr [' + menu + ' get $keep ' + name + ']] != ' + expected + ')')
         update = ':if (' + ' || '.join(differences) + ') do={ ' + update + '}; '
     return ('{ :local ids [' + menu + ' find where ' + selector + ']; '
@@ -66,6 +68,35 @@ def commands(policy_dir):
         'pcq-classifier': classifier, 'pcq-limit': '16KiB', 'pcq-total-limit': '64KiB',
         'pcq-src-address-mask': '32', 'pcq-dst-address-mask': '32'}, 'name', changed_only=True)
         for direction, classifier in [('up', 'src-address'), ('down', 'dst-address')])
+    congestion_path = policy_dir / 'congestion_site.json'
+    congestion = json.loads(congestion_path.read_text()) if congestion_path.exists() else {}
+    if congestion.get('enabled'):
+        import importlib.util
+        controller_path = Path(__file__).with_name('congestion_control.py')
+        if not controller_path.exists():
+            controller_path = Path(__file__).with_name('nister_congestion_control.py')
+        spec = importlib.util.spec_from_file_location("nister_congestion", controller_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        validate = module.validate
+        validate(congestion)
+        devices = (policy_dir / 'hotspot_qos_devices.rsc').read_text().strip()
+        yield 'parse-congestion-devices', ':local candidate [:parse ' + ros_quote(devices) + '];'
+        shared_rate = str(congestion['up_initial_bps']) + '/' + str(congestion['down_initial_bps'])
+        # A repeat deployment must preserve the controller's learned budget.
+        root = ('{ :local ids [/queue simple find where name="nister-site"]; '
+                ':if ([:len $ids] = 0) do={ /queue simple add name=nister-site target=192.168.80.0/20 '
+                'max-limit=' + shared_rate + ' bucket-size=0.01/0.01 comment="NISTER adaptive shared capacity"; } '
+                'else={ :if ([:len $ids] != 1) do={ :error "duplicate site queue"; }; }; };')
+        yield 'congestion-management', '\n'.join([
+            upsert('/queue type', {'name': 'nister-device-aqm', 'kind': 'fq-codel',
+                'fq-codel-limit': '512', 'fq-codel-memlimit': '1MiB',
+                'fq-codel-target': '5ms', 'fq-codel-interval': '100ms', 'fq-codel-ecn': 'yes'}, 'name', changed_only=True),
+            upsert('/system script', {'name': 'nister-qos-devices', 'policy': 'read,write,test', 'source': devices}, 'name'),
+            upsert('/system script', {'name': 'nister-congestion-heartbeat', 'policy': 'read,write,test', 'source': ':local alive true;'}, 'name'),
+            root,
+            '/queue simple set [find where name="nister-unclassified"] parent=nister-site;',
+            '/system script run nister-qos-devices;'])
     # Site references decide bursts, never a WAN shaper. An unknown direction
     # fails closed to its normal plan rate while the other can still burst.
     site_path = policy_dir / 'qos_site.json'
@@ -112,7 +143,9 @@ def commands(policy_dir):
         'name': 'nister-infra-management', 'comment': 'NISTER dedicated AP management queue',
         'target': '192.168.88.10/32,192.168.88.2/32', 'max-limit': '5M/5M', 'limit-at': '0/0',
         'priority': '1/1', 'burst-limit': '0/0', 'queue': 'default-small/default-small', 'disabled': 'no'}, 'name', changed_only=True) + (
-        ' :local fallback [:pick [/queue simple find where name="nister-unclassified"] 0]; '
+        ' :if ([:len [/queue simple find where name="nister-site" and disabled=no]] = 1) do={ '
+        '/queue simple set [find where name="nister-unclassified"] parent=nister-site; /system script run nister-qos-devices; '
+        '} else={ :local fallback [:pick [/queue simple find where name="nister-unclassified"] 0]; '
         ':local ordered true; :local previousTier 0; :foreach q in=[/queue simple find] do={ '
         ':local tier 3; :if ([/queue simple get $q comment] ~ "^NISTER ACCOUNT SHAPER") do={ :set tier 0 }; '
         ':if ([/queue simple get $q name] = "nister-infra-management") do={ :set tier 1 }; '
@@ -121,7 +154,7 @@ def commands(policy_dir):
         ':local first [:pick [/queue simple find] 0]; :if ($fallback != $first) do={ /queue simple move $fallback $first }; '
         ':local infra [:pick [/queue simple find where name="nister-infra-management"] 0]; '
         '/queue simple move $infra $fallback; '
-        ':foreach q in=[/queue simple find where comment~"^NISTER ACCOUNT SHAPER"] do={ /queue simple move $q $infra }; };')
+        ':foreach q in=[/queue simple find where comment~"^NISTER ACCOUNT SHAPER"] do={ /queue simple move $q $infra }; }; };')
 
     # Management exceptions must not also authorize downstream subscriber traffic.
     for label, address in [('TP-Link EAP225 on ether3', '192.168.88.10'), ('downstream AP/router on ether2', '192.168.88.2')]:
@@ -194,6 +227,12 @@ def commands(policy_dir):
         '/ip firewall filter disable [find where comment="ANTI-TORRENT: inspect hotspot clients"]; '
         ':foreach c in={"HG3_FWD_P2P_L7_DROP_TCP";"HG3_FWD_P2P_PORTS_DROP_TCP";"HG3_FWD_P2P_PORTS_DROP_UDP"} do={ '
         '/ip firewall filter disable [find where comment=$c] };')
+    # Production audit: no filter, NAT, raw, route, or queue consumes either
+    # connection mark. These duplicate TLS inspections cannot grant access.
+    # WG_AUTO address-list learning is separate and still has NAT consumers.
+    yield 'retire-unused-tls-marks', (
+        ':foreach mark in={"wg-allow";"preauth-ok"} do={ '
+        '/ip firewall mangle disable [find where action="mark-connection" and new-connection-mark=$mark]; };')
 
 
 def run(command, label):
