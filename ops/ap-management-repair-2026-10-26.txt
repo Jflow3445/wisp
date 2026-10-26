@@ -1,0 +1,101 @@
+NISTER AP management and time repair, 26 October 2026 (UTC)
+
+Production evidence
+  /root/nister-ap-repair-20261026T162812Z
+  Scoped router-policy rollback: python3 <evidence-directory>/rollback.py
+
+Result
+  Wavlink's existing management address is reserved, both AP clocks are now
+  correct, the intended DNS/NTP exception works through the router, Wavlink's
+  daily reboot is set to 04:00 UTC, and TP-Link airtime fairness is enabled on
+  both bands. Neither AP nor the MikroTik/VPS was rebooted by this repair.
+  Customer-side speed improvement has not been established by a live retest.
+
+Wavlink: WL-WN573HX3 / AERIAL HD9
+  - Confirmed AP mode, management IP 192.168.88.2/24, gateway 192.168.88.1,
+    DHCP server disabled. Its /24 mask controls management routing; client
+    network settings come from the MikroTik's 192.168.80.0/20 DHCP network.
+    The management mask was retained because it is not a competing DHCP setup.
+  - Static 192.168.88.2 was inside the dynamic pool with no reservation. Added
+    a static lease using the trusted existing HotSpot management binding MAC.
+    The lease is expected to show waiting: the AP uses a static management IP
+    and does not need to request this lease for the reservation to protect it.
+  - Before correction its clock reported November 2025. After restoring NTP
+    forwarding it synchronized automatically to 26 October 2026 UTC.
+  - Stored reboot schedule was enabled daily at 03:00. Updated it through the
+    normal vendor API to 04:00 UTC, preserving all seven days and enabled state.
+    Verified by read-back; AP uptime advanced from 1647 to 1651 seconds.
+    Both radio configuration snapshots were identical before and after.
+
+Router correction and persistence
+  - The two DNS/NTP rules in nister-infra-out previously returned to forward,
+    where the later nonactive-client policy dropped those AP packets.
+  - They now accept UDP 53/123 and TCP 53 only for new/established connections
+    leaving through WAN. Entry to this chain remains restricted to the two
+    AP management addresses arriving through bridge. The existing WAN drop
+    still denies other AP internet traffic; subscriber policy is unchanged.
+  - Persisted the rules and management-address reservation stages in
+    /usr/local/sbin/nister_hotspot_policy_sync.py. Existing TP-Link static lease
+    192.168.88.10 was verified without changing its identity or client ID.
+  - Reservations reject an address already leased to another MAC, duplicate
+    leases, missing/ambiguous trusted bindings, and an unexpected DHCP server.
+    Repeated reconciliation preserves an existing correct lease ID.
+  - Router-only rollback restores the prior source, prior properties of the
+    two service rules, and removes only the newly owned Wavlink reservation.
+    AP configuration before-images are retained separately in the evidence.
+
+TP-Link: EAP225-Outdoor v3
+  - Firmware 5.1.11 Build 20250401 Rel. 50587(4555), standalone management.
+  - Uses DHCP with the existing static reservation at 192.168.88.10; actual
+    management mask is 255.255.240.0. The 192.168.0.254/24 shown in its network
+    configuration is a fallback address, not its active subnet.
+  - Clock reported January 2025 and both NTP server fields were empty.
+    Configured 0.pool.ntp.org and 1.pool.ntp.org through Time Settings, retained
+    UTC and disabled daylight saving, bootstrapped current UTC, then invoked
+    the vendor's Get GMT operation successfully. A separate authenticated
+    read confirmed correct time and persistent NTP configuration.
+  - Two 5 GHz clients were approximately -90/-91 dBm with negotiated rates
+    around 13/29 Mbps. Airtime fairness was off on both radios.
+  - Enabled the supported airtime control through wireless.adv.json using the
+    same fields as the native UI. Read-back confirmed atf=on on both radios.
+    Beacon/DTIM/RTS/fragmentation values and both basic radio configurations
+    were unchanged. Uptime advanced from 17:55:10 to 17:55:25 during the change.
+    A later login confirmed both settings persisted; 12 clients were present,
+    CPU 27%, memory 56%. No signal-threshold disconnection policy was added.
+  - Its current standalone interface has manual Reboot/Reset and a WLAN
+    scheduler, with WLAN scheduling disabled. A daily device reboot schedule
+    is provided by Omada Controller, not this standalone interface. No TP-Link
+    reboot schedule, controller adoption, or custom reboot job was introduced.
+
+Validation
+  - Full tests/regression/run.sh passed: 234 reported checks, including 8 QoS
+    policy tests and 15 congestion tests. Packet-policy cases verify AP DNS/
+    NTP acceptance, denial of other AP WAN traffic, invalid-state denial, and
+    preservation of subscriber policy and non-WAN behavior.
+  - Native TEST-NET fixture passed reservation creation, repeat idempotence,
+    and refusal to overwrite a different client. Fixture lease and binding
+    absence verified after cleanup.
+  - Both APs responded to 5/5 pings at approximately 1 ms; WAN 5/5 replies,
+    average 31.4 ms. Both existing affected-account HotSpot sessions retained
+    their long uptimes. MAC-cookie/CHAP/HTTPS login remains configured.
+  - Winbox tunnel checker passed. Protected SSH/key/VPN/database hashes match.
+    ADOPT_UNKNOWN_RADIUS_CLIENTS=0 and the disabled Starlink timer are retained.
+  - Health 16:41:35: overall OK, RADIUS OK (84 ms), tunnel OK via ppp0,
+    0% tunnel loss. Congestion and account-queue workers both report success.
+    Wi-Fi CAPPORT/pay pages and the API's expected protected response passed.
+  - systemctl --failed contains only the pre-existing certbot.service failure.
+    The existing disk warning remains at approximately 85.73% usage.
+
+Remaining RF work
+  Wavlink remains auto channel 9 with 20/40 MHz on 2.4 GHz and channel 40 with
+  80 MHz on 5 GHz. TP-Link selected channels 1 and 36 respectively with Auto
+  widths. Their 5 GHz selections can occupy the same 36-48 block. No RF survey
+  or busy-period channel-utilization measurement has established a replacement
+  channel plan. Channels, widths, SSIDs, security, transmit power, country,
+  user speed plans and Wavlink roaming thresholds were retained.
+  Airtime fairness protects sharing; it does not improve weak signal itself.
+
+Primary references
+  https://support.omadanetworks.com/en/document/119756/
+  https://www.tp-link.com/us/configuration-guides/managing_system_standalone_eap/?configurationId=18700
+  https://api.ntppool.org/en/use.html

@@ -3,6 +3,8 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
+import shlex
 import shutil
 import tempfile
 import unittest
@@ -67,6 +69,40 @@ class CapacityRendering(unittest.TestCase):
         stage = self.render()['retire-unused-tls-marks']
         self.assertIn('"wg-allow";"preauth-ok"', stage)
         self.assertNotIn('WG_AUTO', stage)
+
+    def test_ap_service_packets_terminate_before_subscriber_drop(self):
+        commands = self.render()['infra-firewall']
+        rules = [dict(part.split('=', 1) for part in shlex.split(properties))
+                 for properties in re.findall(r'/ip firewall filter add ([^{}]+)', commands)]
+
+        def verdict(protocol, port, state='new', wan=True, managed=True):
+            jump = next(r for r in rules if r['action'] == 'jump')
+            if not managed or jump['src-address-list'] != 'NISTER_INFRA_MANAGEMENT':
+                return 'subscriber_policy'
+            for rule in rules:
+                if rule['chain'] != jump['jump-target']:
+                    continue
+                if rule.get('protocol', protocol) != protocol:
+                    continue
+                if 'dst-port' in rule and str(port) not in rule['dst-port'].split(','):
+                    continue
+                if 'connection-state' in rule and state not in rule['connection-state'].split(','):
+                    continue
+                if rule.get('out-interface-list') == 'WAN' and not wan:
+                    continue
+                return rule['action']
+            return 'subscriber_policy'
+
+        for protocol, port in [('udp', 53), ('tcp', 53), ('udp', 123)]:
+            with self.subTest(protocol=protocol, port=port):
+                self.assertEqual(verdict(protocol, port), 'accept')
+                self.assertEqual(verdict(protocol, port, state='established'), 'accept')
+                self.assertEqual(verdict(protocol, port, state='invalid'), 'drop')
+                self.assertEqual(verdict(protocol, port, managed=False), 'subscriber_policy')
+                self.assertEqual(verdict(protocol, port, wan=False), 'return')
+        for protocol, port in [('tcp', 80), ('tcp', 443), ('tcp', 853), ('udp', 443), ('udp', 5000)]:
+            with self.subTest(protocol=protocol, port=port):
+                self.assertEqual(verdict(protocol, port), 'drop')
 
 
 if __name__ == '__main__':

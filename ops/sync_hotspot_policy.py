@@ -56,6 +56,28 @@ def upsert(menu, properties, key='comment', changed_only=False):
             ':foreach id in=$ids do={ :if ($id != $keep) do={ ' + menu + ' remove $id } } } };')
 
 
+def reserve_management_address(address, binding_comment):
+    """Reserve the existing trusted AP identity without replacing another lease."""
+    return ('{ :local binding [/ip hotspot ip-binding find where comment=' + ros_quote(binding_comment) + ']; '
+        ':if ([:len $binding] != 1) do={ :error "AP binding missing or duplicated"; }; '
+        ':if ([:tostr [/ip hotspot ip-binding get [:pick $binding 0] address]] != ' + ros_quote(address) + ') do={ '
+        ':error "AP binding address differs from reservation"; }; '
+        ':local mac [/ip hotspot ip-binding get [:pick $binding 0] mac-address]; '
+        ':if ([:len [:tostr $mac]] != 17) do={ :error "AP binding needs an existing MAC"; }; '
+        ':local server [/ip dhcp-server find where name="defconf"]; '
+        ':if ([:len $server] != 1) do={ :error "expected DHCP server missing"; }; '
+        ':if ([:tostr [/ip dhcp-server get [:pick $server 0] interface]] != "bridge") do={ '
+        ':error "expected bridge DHCP server"; }; '
+        ':local leases [/ip dhcp-server lease find where address=' + ros_quote(address) + ']; '
+        ':if ([:len $leases] > 1) do={ :error "AP address has multiple leases"; }; '
+        ':if ([:len $leases] = 0) do={ /ip dhcp-server lease add server=defconf '
+        'address=' + ros_quote(address) + ' mac-address=$mac comment=' + ros_quote('NISTER AP reserved ' + address) + '; '
+        '} else={ :local lease [:pick $leases 0]; '
+        ':if ([:tostr [/ip dhcp-server lease get $lease mac-address]] != [:tostr $mac]) do={ '
+        ':error "AP address belongs to another DHCP client; refusing replacement"; }; '
+        ':if ([/ip dhcp-server lease get $lease dynamic]) do={ /ip dhcp-server lease make-static $lease; }; }; };')
+
+
 def commands(policy_dir):
     login = (policy_dir / 'hotspot_account_login.rsc').read_text(encoding='utf-8').strip()
     logout = (policy_dir / 'hotspot_account_logout.rsc').read_text(encoding='utf-8').strip()
@@ -168,9 +190,14 @@ def commands(policy_dir):
             ':if ([/ip hotspot host get $h bypassed]) do={ /ip hotspot host remove $h } } }; };')
         yield 'infra-list-' + address, upsert('/ip firewall address-list', {
             'list': 'NISTER_INFRA_MANAGEMENT', 'address': address, 'comment': 'NISTER management address ' + address})
+        yield 'infra-reservation-' + address, reserve_management_address(address, comment)
+    # A return would send AP DNS/NTP into the later nonactive-client drop.
+    # Accept only these services over WAN; keep all other AP WAN traffic denied.
     infra = [
-        dict(chain='nister-infra-out', action='return', protocol='udp', **{'dst-port': '53,123', 'comment': 'NISTER INFRA DNS and NTP'}),
-        dict(chain='nister-infra-out', action='return', protocol='tcp', **{'dst-port': '53', 'comment': 'NISTER INFRA TCP DNS'}),
+        dict(chain='nister-infra-out', action='accept', protocol='udp', **{'dst-port': '53,123',
+            'out-interface-list': 'WAN', 'connection-state': 'new,established', 'comment': 'NISTER INFRA DNS and NTP'}),
+        dict(chain='nister-infra-out', action='accept', protocol='tcp', **{'dst-port': '53',
+            'out-interface-list': 'WAN', 'connection-state': 'new,established', 'comment': 'NISTER INFRA TCP DNS'}),
         dict(chain='nister-infra-out', action='drop', **{'out-interface-list': 'WAN', 'comment': 'NISTER INFRA deny subscriber internet through management bypass'}),
         dict(chain='nister-infra-out', action='return', comment='NISTER INFRA return management traffic'),
         dict(chain='forward', action='jump', **{'jump-target': 'nister-infra-out', 'src-address-list': 'NISTER_INFRA_MANAGEMENT', 'in-interface': 'bridge', 'comment': 'NISTER INFRA management egress guard'}),
