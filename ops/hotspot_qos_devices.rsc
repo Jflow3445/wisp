@@ -1,6 +1,9 @@
 # Account/device hierarchy with per-device FQ-CoDel. Snapshot queue properties
 # once per reconciliation; per-property CLI reads across every device are costly
 # on the hEX S. Only changed properties produce configuration writes.
+# Login/logout hooks and both VPS workers can invoke this script together.
+# A second invocation must leave the current writer to finish its snapshot.
+:if ([/system script job print count-only as-value where script=[:jobname]] <= 1) do={
 :local rows [/queue simple print as-value];
 :local byName [:toarray ""];
 :foreach row in=$rows do={ :set ($byName->($row->"name")) $row; };
@@ -101,4 +104,5 @@
     :local root ($site->".id"); /queue simple move $root $anchor;
     :local infra [/queue simple find where name="nister-infra-management"];
     :if ([:len $infra] = 1) do={ /queue simple move $infra $root; };
+};
 };

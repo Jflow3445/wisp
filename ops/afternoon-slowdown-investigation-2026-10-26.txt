@@ -1,0 +1,90 @@
+NISTER WISP afternoon slowdown investigation, 26 October 2026 (UTC)
+
+Account: 0534994265
+Observation began 15:33 UTC; scoped correction deployed 15:42:34 UTC.
+
+Conclusion
+  A queue maintenance concurrency defect introduced with the congestion rollout
+  was reproduced and corrected. Its contribution to this customer's reported
+  slowdown is unproven. The observed account traffic was not being constrained
+  by a saturated shared queue or by newly accumulating queue drops. Direct
+  customer speed testing and authenticated radio telemetry remain unavailable.
+
+Observed customer and network state
+  - HS_ACTIVE, renewed Daily_Unlimited window starting 26 October 12:11:51,
+    expiration 27 October 12:11:51. Correct shared account ceiling: 5 Mbps
+    download / 3 Mbps upload; two sessions, each with its own FQ-CoDel leaf.
+  - Sessions 192.168.87.85 and 192.168.86.49 both use the Wavlink on ether2.
+    DHCP identifies a Windows client and an Android client respectively.
+    An affected iPhone has not been identified or directly tested this turn.
+  - Shared budget stayed 71.9 Mbps download / 11.9 Mbps upload throughout the
+    afternoon observations. Sampled shared download traffic was 4.3-10.5 Mbps.
+    Account traffic was below its normal ceiling, predominantly on .87.85.
+  - During the passive 15:36:34-15:37:13 sample there were no new shared,
+    account, or either-device queue drops and no queued-byte backlog. The
+    account's existing cumulative download-drop counter stayed at 174820;
+    .87.85's counter stayed at 4 and .86.49's at 0.
+  - Internet probes: 16/16 replies, about 25-26 ms average. Subsequent probe:
+    6/6 replies, 20.8 ms average. No persistent router CPU saturation observed.
+  - Both AP management IPs returned 16/16 replies at about 1 ms. WAN/AP wired
+    links were gigabit/full duplex, with zero FCS/alignment/drop counters.
+  - The idle Android client returned 10/16 pings, averaging 84.7 ms and reaching
+    178 ms. This is compatible with wireless impairment or client power-saving;
+    it is not proof of RF congestion. The Windows client did not answer ICMP,
+    which alone is not evidence of connectivity failure.
+  - Account devices had 23 and 138 tracked connections, below the configured
+    peer ceilings. No active quarantine list entry; old P2P shapers disabled.
+  - RADIUS accounting is current for both sessions. Accounting uses an account
+    alias, so exact local-format username lookup alone omitted those records.
+
+Defect and scoped correction
+  - Account-sync failures at 12:52:11, 13:50:07 and 14:05:07 reported
+    "already have such name (/queue/simple/add; line 67)". Each next pass
+    recovered. One separate 25-second sync timeout at 14:32 also recovered.
+  - Login/logout hooks, the account sync, and the congestion controller can
+    call nister-qos-devices concurrently. Two snapshots can both see a missing
+    leaf and then try to create the same name.
+  - The device reconciler now permits one named native script job to perform
+    writes at a time. Overlapping calls skip the body and allow their caller
+    to continue normally. No persistent global lock can remain after a crash.
+  - The controller reads all account telemetry in one table snapshot, replacing
+    three individual CLI reads per account. This also avoids reading stale
+    queue IDs after concurrent removal. Native rate arrays retain both
+    upload/download values and account CIRs in the existing wire format.
+  - Deployed only the device script source and controller Python source. No
+    plan rates, account access states, radio settings, credentials, firewall,
+    VPN, captive pages or payment routing were changed by this correction.
+
+Validation
+  - Isolated native RouterOS fixture using reserved 192.0.2.* targets reproduced
+    the old duplicate-create failure. The corrected concurrent invocation
+    completed in 77 ms, retained one leaf and continued the calling script.
+    Both fixtures and their jobs were removed and absence verified.
+  - Native bulk telemetry retained the customer's 3M/5M RouterOS rate and CIR.
+  - Full tests/regression/run.sh: 234 checks passed, including 15 congestion
+    decision/parser tests and 7 policy rendering tests.
+  - Six congestion-control and three account-sync completions had no errors
+    during the initial post-deployment observation. This is a short observation
+    window, not a claim that intermittent problems can never recur.
+  - Native installed script source and both deployed file hashes verified.
+    Six protected SSH/key/VPN/database configuration hashes unchanged.
+  - Both customer sessions remained connected, with their existing uptimes.
+    No customer was deliberately disconnected and neither host was restarted.
+  - Health 15:44:02: overall OK, RADIUS OK (71 ms), tunnel OK via ppp0,
+    zero tunnel ping loss. VPS-side speed sample 63.14 Mbps is not a customer
+    Wi-Fi speed or a measurement of the site's full ISP capacity.
+  - Existing disk warning remains (85.70% used). systemctl --failed contains
+    only the pre-existing certbot.service failure, outside this task's scope.
+
+Outstanding customer verification
+  The owner was asked whether the issue persists, for the affected iPhone's
+  Wi-Fi IP, and for a FAST.com test with mobile data off. No result was
+  available when this report was written. AP RF settings remain untouched
+  under the owner's prior instruction where radio authentication is unavailable.
+  Do not represent the customer's reported slowdown as conclusively resolved.
+
+Private production evidence and manual scoped rollback
+  /root/nister-afternoon-20261026T153330Z
+  python3 /root/nister-afternoon-20261026T153330Z/rollback.py
+  Rollback restores the two prior source files and prior native device script,
+  preserving the learned shared budget, all customer sessions and plan rates.

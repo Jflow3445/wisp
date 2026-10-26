@@ -97,6 +97,18 @@ class CongestionControl(unittest.TestCase):
         with self.assertRaises(ValueError):
             c.parse_snapshot('ROOT|5M/70M\nWAN|1|2\nPING|1.1.1.1|20000000\n')
 
+    def test_bulk_snapshot_preserves_account_rates_and_shares(self):
+        output = ('ROOT|11900k/71900k\nWAN|1000000|7000000\nCPU|31%\n'
+                  'PING|1.1.1.1|20000000\nPING|1.1.1.1|21000000\n'
+                  'PING|8.8.8.8|22000000\nPING|8.8.8.8|23000000\n'
+                  'ACCOUNT|nister-acct-0123456789|3000000/5000000|589444/3671022\n')
+        sample = c.parse_snapshot(output)
+        self.assertEqual(sample['accounts'], [
+            {'name': 'nister-acct-0123456789', 'rates': (3000000, 5000000),
+             'cir': (589444, 3671022)}])
+        self.assertEqual(sample['limits'], (11900000, 71900000))
+        self.assertEqual(sample['cpu_max'], 31)
+
     def test_rate_directions_and_units(self):
         self.assertEqual(c.pair('3M/5M'), (3000000, 5000000))
 

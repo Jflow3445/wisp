@@ -109,6 +109,8 @@ def quote(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('\n', '\\n') + '"'
 
 
+# Bulk account telemetry avoids three CLI lookups per account and stale item IDs
+# when a logout removes a queue during observation. Normalize native rate arrays.
 SNAPSHOT = r''':put ("ROOT|" . [/queue simple get [find name="nister-site"] max-limit]);
 :local w [/interface monitor-traffic ether1 once as-value];
 :put ("WAN|" . ($w->"tx-bits-per-second") . "|" . ($w->"rx-bits-per-second"));
@@ -120,8 +122,12 @@ SNAPSHOT = r''':put ("ROOT|" . [/queue simple get [find name="nister-site"] max-
   :put ("PING|" . $host . "|" . $ns);
  };
 };
-:foreach q in=[/queue simple find where comment~"^NISTER ACCOUNT SHAPER"] do={
- :put ("ACCOUNT|" . [/queue simple get $q name] . "|" . [/queue simple get $q max-limit] . "|" . [/queue simple get $q limit-at]);
+:local ratePair do={
+ :if ([:typeof $1] = "array") do={ :return (([:pick $1 0]) . "/" . ([:pick $1 1])); };
+ :return [:tostr $1];
+};
+:foreach q in=[/queue simple print as-value where comment~"^NISTER ACCOUNT SHAPER"] do={
+ :put ("ACCOUNT|" . ($q->"name") . "|" . [$ratePair ($q->"max-limit")] . "|" . [$ratePair ($q->"limit-at")]);
 };'''
 
 
