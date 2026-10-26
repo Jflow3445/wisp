@@ -679,6 +679,9 @@ RADIUS/CoA/health:
 - NAS_IP / NAS_IPS
 - COA_HOST / COA_PORT / COA_SECRET_FILE
 - HEALTH_RADIUS_USER / HEALTH_RADIUS_PASS / HEALTH_RADIUS_SECRET_FILE
+  HEALTH_RADIUS_USER is legacy. The health collector uses the reserved local-only
+  nister-health-local identity; install it with ops/configure_health_radius.php
+  --write. The existing HEALTH_RADIUS_PASS and secret file remain in use.
 - HEALTH_TUNNEL_HOST / HEALTH_TUNNEL_DEV
 - HEALTH_COA_USER
 - HEALTH_SPEED_URL (or HEALTH_SPEED_GDRIVE)

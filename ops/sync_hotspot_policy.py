@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Reconcile the existing NISTER router's subscriber controls over its SSH tunnel."""
 import argparse
+import json
 import os
 from pathlib import Path
 import re
@@ -30,12 +31,26 @@ def ros_quote(value):
     return '"' + str(value).replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('\r', '\\r').replace('\n', '\\n') + '"'
 
 
-def upsert(menu, properties, key='comment'):
+def upsert(menu, properties, key='comment', changed_only=False):
     selector = f'{key}={ros_quote(properties[key])}'
     values = ' '.join(f'{name}={ros_quote(value)}' for name, value in properties.items())
+    update = menu + ' set $keep ' + values + '; '
+    if changed_only:
+        differences = []
+        for name, value in properties.items():
+            expected = ros_quote(value)
+            if name == 'target':
+                expected = '[:tostr [:toarray ' + ros_quote(value) + ']]'
+            elif name == 'disabled':
+                expected = ros_quote('true' if value == 'yes' else 'false')
+            elif name in ['pcq-limit', 'pcq-total-limit'] and str(value).endswith('KiB'):
+                # RouterOS get returns these numeric values in KiB.
+                expected = ros_quote(str(value)[:-3])
+            differences.append('([:tostr [' + menu + ' get $keep ' + name + ']] != ' + expected + ')')
+        update = ':if (' + ' || '.join(differences) + ') do={ ' + update + '}; '
     return ('{ :local ids [' + menu + ' find where ' + selector + ']; '
             ':if ([:len $ids] = 0) do={ ' + menu + ' add ' + values + ' } '
-            'else={ :local keep [:pick $ids 0]; ' + menu + ' set $keep ' + values + '; '
+            'else={ :local keep [:pick $ids 0]; ' + update +
             ':foreach id in=$ids do={ :if ($id != $keep) do={ ' + menu + ' remove $id } } } };')
 
 
@@ -46,6 +61,30 @@ def commands(policy_dir):
         raise ValueError('HotSpot admission hooks must not be empty')
     # Parse every hook before changing production policies.
     yield 'parse-hooks', f':local a [:parse {ros_quote(login)}]; :local b [:parse {ros_quote(logout)}];'
+    yield 'account-fairness', '\n'.join(upsert('/queue type', {
+        'name': 'nister-fair-' + direction, 'kind': 'pcq', 'pcq-rate': '0',
+        'pcq-classifier': classifier, 'pcq-limit': '16KiB', 'pcq-total-limit': '64KiB',
+        'pcq-src-address-mask': '32', 'pcq-dst-address-mask': '32'}, 'name', changed_only=True)
+        for direction, classifier in [('up', 'src-address'), ('down', 'dst-address')])
+    # Site references decide bursts, never a WAN shaper. An unknown direction
+    # fails closed to its normal plan rate while the other can still burst.
+    site_path = policy_dir / 'qos_site.json'
+    site = json.loads(site_path.read_text()) if site_path.exists() else {}
+    up = site.get('upload_bps', 0)
+    down = site.get('download_bps', 0)
+    if any(type(v) is not int or v < 0 or v > 1_000_000_000 for v in [up, down]):
+        raise ValueError('QoS capacity estimates must be integer bits/second')
+    guard = (f':local capacityUp {up}; :local capacityDown {down};\n' +
+        (policy_dir / 'hotspot_qos_guard.rsc').read_text(encoding='utf-8').strip())
+    yield 'parse-qos-guard', ':local guard [:parse ' + ros_quote(guard) + '];'
+    yield 'qos-burst-guard', upsert('/system script', {
+        'name': 'nister-qos-guard', 'policy': 'read,write,test',
+        'source': guard, 'comment': 'NISTER measured-headroom burst guard'}, 'name') + (
+        '/system scheduler remove [find where name="nister-qos-guard" and comment="NISTER bounded bursts; fail closed on probe failure"]; '
+        ) + upsert('/system scheduler', {
+        'name': 'nister-qos-tick', 'interval': '5s', 'start-time': 'startup',
+        'policy': 'read,write,test', 'on-event': 'nister-qos-guard',
+        'disabled': 'no', 'comment': 'NISTER bounded bursts; fail closed on probe failure'}, 'name')
     yield 'portal-garden', '\n'.join(upsert('/ip hotspot walled-garden', {
         'server': 'hotspot1', 'dst-host': host, 'action': 'allow', 'disabled': 'no',
         'comment': 'NISTER PREAUTH ' + host}) for host in PREAUTH_HOSTS) + (
@@ -69,13 +108,20 @@ def commands(policy_dir):
     yield 'fallback-queue', upsert('/queue simple', {
         'name': 'nister-unclassified', 'comment': 'NISTER fallback cap for unclassified hotspot addresses',
         'target': '192.168.80.0/20', 'max-limit': '1M/1M', 'limit-at': '0/0',
-        'burst-limit': '0/0', 'queue': 'default-small/default-small', 'disabled': 'no'}, 'name') + upsert('/queue simple', {
+        'burst-limit': '0/0', 'queue': 'default-small/default-small', 'disabled': 'no'}, 'name', changed_only=True) + upsert('/queue simple', {
         'name': 'nister-infra-management', 'comment': 'NISTER dedicated AP management queue',
         'target': '192.168.88.10/32,192.168.88.2/32', 'max-limit': '5M/5M', 'limit-at': '0/0',
-        'priority': '1/1', 'burst-limit': '0/0', 'queue': 'default-small/default-small', 'disabled': 'no'}, 'name') + (
-        ' /queue simple move [find where name="nister-unclassified"] 0; '
-        '/queue simple move [find where name="nister-infra-management"] 0; '
-        ':foreach q in=[/queue simple find where comment~"^NISTER ACCOUNT SHAPER"] do={ /queue simple move $q 0 };')
+        'priority': '1/1', 'burst-limit': '0/0', 'queue': 'default-small/default-small', 'disabled': 'no'}, 'name', changed_only=True) + (
+        ' :local fallback [:pick [/queue simple find where name="nister-unclassified"] 0]; '
+        ':local ordered true; :local previousTier 0; :foreach q in=[/queue simple find] do={ '
+        ':local tier 3; :if ([/queue simple get $q comment] ~ "^NISTER ACCOUNT SHAPER") do={ :set tier 0 }; '
+        ':if ([/queue simple get $q name] = "nister-infra-management") do={ :set tier 1 }; '
+        ':if ($q = $fallback) do={ :set tier 2 }; :if ($tier < $previousTier) do={ :set ordered false }; :set previousTier $tier; }; '
+        ':if (!$ordered) do={ '
+        ':local first [:pick [/queue simple find] 0]; :if ($fallback != $first) do={ /queue simple move $fallback $first }; '
+        ':local infra [:pick [/queue simple find where name="nister-infra-management"] 0]; '
+        '/queue simple move $infra $fallback; '
+        ':foreach q in=[/queue simple find where comment~"^NISTER ACCOUNT SHAPER"] do={ /queue simple move $q $infra }; };')
 
     # Management exceptions must not also authorize downstream subscriber traffic.
     for label, address in [('TP-Link EAP225 on ether3', '192.168.88.10'), ('downstream AP/router on ether2', '192.168.88.2')]:
@@ -99,31 +145,50 @@ def commands(policy_dir):
     yield 'infra-firewall', '\n'.join(upsert('/ip firewall filter', {**p, 'disabled': 'no'}) for p in infra) + (
         ' /ip firewall filter move [find where comment="NISTER INFRA management egress guard"] 0;')
 
-    yield 'torrent-patterns', upsert('/ip firewall layer7-protocol', {
-        'name': 'nister-bittorrent', 'regexp': 'bittorrent protocol'}, 'name') + upsert('/ip firewall layer7-protocol', {
-        'name': 'nister-dht', 'regexp': '^d1:ad2:id20:|^d1:rd2:id20:|^d1:q4:ping|^d1:q9:find_node|^d1:q9:get_peers|^d1:q13:announce_peer'}, 'name')
-    mangle = []
-    for direction, field in [('out', 'src-address-list'), ('in', 'dst-address-list')]:
-        mangle.append(dict(chain='forward', action='jump', **{'jump-target': 'nister-p2p-classify', 'connection-mark': 'no-mark',
-            field: 'HS_ACTIVE', 'comment': 'NISTER P2P inspect ' + direction}))
-    for protocol in ['tcp', 'udp']:
-        for field in ['dst-port', 'src-port']:
-            mangle.append(dict(chain='nister-p2p-classify', action='mark-connection', protocol=protocol,
-                **{field: '6881-6999,51413,6969', 'new-connection-mark': 'nister-p2p', 'passthrough': 'yes',
-                   'comment': 'NISTER P2P classic ' + protocol + ' ' + field}))
-    for protocol, pattern in [('tcp', 'nister-bittorrent'), ('udp', 'nister-dht')]:
-        mangle.append(dict(chain='nister-p2p-classify', action='mark-connection', protocol=protocol,
-            **{'layer7-protocol': pattern, 'connection-bytes': '0-8192', 'connection-state': 'new,established',
-               'new-connection-mark': 'nister-p2p', 'passthrough': 'yes', 'comment': 'NISTER P2P payload ' + protocol}))
-    mangle.append(dict(chain='nister-p2p-classify', action='return', comment='NISTER P2P classifier return'))
-    for direction, field in [('up', 'src-address-list'), ('down', 'dst-address-list')]:
-        mangle.append(dict(chain='forward', action='mark-packet', **{'connection-mark': 'nister-p2p', field: 'HS_ACTIVE',
-            'new-packet-mark': 'nister-p2p-' + direction, 'passthrough': 'no', 'comment': 'NISTER P2P packets ' + direction}))
-    yield 'torrent-classification', '\n'.join(upsert('/ip firewall mangle', {**p, 'disabled': 'no'}) for p in mangle)
-    yield 'torrent-queues', '\n'.join(upsert('/queue tree', {
-        'name': 'nister-p2p-' + direction, 'parent': 'global', 'packet-mark': 'nister-p2p-' + direction,
-        'max-limit': '256k', 'limit-at': '0', 'priority': '8', 'queue': 'default-small', 'disabled': 'no',
-        'comment': 'NISTER identified P2P aggregate ' + direction + ' 256kbps'}, 'name') for direction in ['up', 'down'])
+    # Private management path for the owner, reached through SSH on the VPS.
+    # No AP administration port is opened on either public WAN address.
+    admin_rules = [
+        dict(chain='forward', action='accept', protocol='tcp', **{
+            'src-address': '10.99.99.1/32', 'in-interface': 'l2tp-over-vps',
+            'dst-address-list': 'NISTER_INFRA_MANAGEMENT', 'dst-port': '80,443',
+            'connection-state': 'new,established', 'comment': 'NISTER AP admin from VPS tunnel'}),
+        dict(chain='forward', action='accept', protocol='tcp', **{
+            'dst-address': '10.99.99.1/32', 'out-interface': 'l2tp-over-vps',
+            'src-address-list': 'NISTER_INFRA_MANAGEMENT', 'src-port': '80,443',
+            'connection-state': 'established', 'comment': 'NISTER AP admin replies to VPS tunnel'}),
+    ]
+    admin_commands = [upsert('/ip firewall filter', {**rule, 'disabled': 'no'}) for rule in admin_rules]
+    for rule in admin_rules:
+        admin_commands.append('{ :local id [:pick [/ip firewall filter find where comment=' + ros_quote(rule['comment']) +
+            '] 0]; :local first [:pick [/ip firewall filter find] 0]; '
+            ':if ($id != $first) do={ /ip firewall filter move $id $first }; };')
+    admin_commands.append(upsert('/ip firewall nat', {
+        'chain': 'srcnat', 'action': 'src-nat', 'src-address': '10.99.99.1/32',
+        'dst-address-list': 'NISTER_INFRA_MANAGEMENT', 'out-interface': 'bridge',
+        'protocol': 'tcp', 'dst-port': '80,443', 'to-addresses': '192.168.88.1',
+        'disabled': 'no', 'comment': 'NISTER AP admin trusted tunnel source'}))
+    yield 'infra-admin-tunnel', '\n'.join(admin_commands)
+
+    # Torrents share the purchased account limit like other traffic. Retain the
+    # old objects disabled for rollback, without ongoing L7 packet inspection.
+    yield 'retire-p2p-throttle', (
+        '/queue tree disable [find where name="nister-p2p-up"]; '
+        '/queue tree disable [find where name="nister-p2p-down"]; '
+        '/ip firewall mangle disable [find where comment~"^NISTER P2P "];')
+    peer_rules = []
+    for protocol, limit in [('tcp', 512), ('udp', 256)]:
+        peer_rules.append(upsert('/ip firewall filter', {
+            'chain': 'forward', 'action': 'drop', 'protocol': protocol,
+            'connection-state': 'new', 'connection-limit': str(limit) + ',32',
+            'in-interface': 'bridge', 'out-interface-list': 'WAN',
+            'src-address-list': 'HS_ACTIVE', 'disabled': 'no',
+            'comment': 'NISTER per-device peer ceiling ' + protocol}))
+        peer_rules.append('{ :local id [:pick [/ip firewall filter find where comment=' +
+            ros_quote('NISTER per-device peer ceiling ' + protocol) + '] 0]; '
+            ':local before [:pick [/ip firewall filter find where comment="HG3_FWD_1_ACTIVE_ALLOW_ALL"] 0]; '
+            ':if ([:len $before] = 0) do={ :error "active forward anchor missing" }; '
+            '/ip firewall filter move $id $before; };')
+    yield 'peer-connection-ceilings', '\n'.join(peer_rules)
     yield 'retire-quarantine', (
         '/ip firewall filter disable [find where chain="torrent-block"]; '
         '/ip firewall filter disable [find where comment="ANTI-TORRENT: inspect hotspot clients"]; '

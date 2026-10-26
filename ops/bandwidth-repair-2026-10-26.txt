@@ -1,0 +1,108 @@
+NISTER plan direction, fair sharing and bursts - 26 October 2026 UTC
+
+Confirmed and corrected
+  A broad nister-unclassified 1M/1M queue could sit above paid account queues.
+  RouterOS numeric move destinations were ambiguous. Stable internal IDs now
+  keep account queues before the infrastructure/fallback queues in the sync,
+  login hook and policy reconciler. Moving a queue was also found to restart
+  its burst window. Correct order is now left untouched; queue types and
+  fallback/infrastructure properties are updated only when different. Repeated
+  unchanged syncs report changed=0; two native reconciliation repeats produced
+  no queue mutations.
+
+  The stored rates used download/upload order, while RouterOS applies those
+  values as upload/download. The public top-up formatter also labelled the first
+  value as download. The administrator confirmed the intended direction for all
+  plans. Six location_plans and six RADIUS group fallback rows were corrected
+  together in one transaction, guarded by their exact old values. Public cards
+  now display download first from the correct stored field; admin raw-rate
+  controls explicitly label upload/download. The top-up asset version is 21.
+  Prices, quotas, validity periods, purchases and wallets were not changed.
+
+  Plan                 Download   Upload    Possible download burst
+  PLAN_3GB             5 Mbps     3 Mbps    15 Mbps
+  PLAN_20GB            15 Mbps    5 Mbps    45 Mbps
+  PLAN_70GB            30 Mbps    10 Mbps   90 Mbps
+  Daily_Unlimited      5 Mbps     3 Mbps    15 Mbps
+  Weekly_Unlimited     8 Mbps     5 Mbps    24 Mbps
+  Monthly_Unlimited    15 Mbps    10 Mbps   45 Mbps
+
+  Each rate is shared across an account's devices. The existing two-device
+  admission rules remain. The reported account was on the daily plan, with both
+  username forms agreeing; its observed addresses were covered by its queue.
+  The earlier reported 7.5 Mbps was not independently reproduced before these
+  changes. Speeds above the normal plan rate can now be legitimate short bursts.
+
+Torrent handling and bursts
+  The shared 256 kbps P2P queue trees and their port/L7 classification are now
+  disabled persistently. Torrents use the same account limits as other traffic.
+  Legacy quarantine/drop rules remain disabled; no two-hour punishment was added.
+  Each account uses PCQ by source address for upload and destination address for
+  download, with bounded per-device queues. Multiple torrent connections do not
+  earn extra shares within that account. New paid WAN connections have per-device
+  ceilings of 512 for TCP and 256 for UDP; existing connections are not kicked.
+
+  Burst factor is 3 for every plan. A five-second local scheduler samples WAN
+  traffic twice and checks two pings, packet loss and CPU. High latency (>50 ms),
+  loss, CPU >=60%, probe errors or excessive referenced load disable bursts.
+  Extra burst capacity is reserved once across eligible accounts; accounts with
+  traffic get precedence over idle connected accounts. Allocation rotates every
+  five minutes, using the correct nanosecond conversion for RouterOS timestamps.
+  A 16-second average and 75%-of-plan threshold produce a short initial burst,
+  then sustained traffic returns to the plan rate. Unchanged ticks preserve the
+  averaging history. VPS sync checks native scheduler/script metadata and fails closed
+  if it is disabled/missing/stale; it does not launch competing guard jobs.
+
+  The administrator reports the download can reach 300 Mbps and upload capacity
+  is unknown. qos_site.json therefore uses 300 Mbps only as a download reference,
+  with live health/load checks; upload reference 0 keeps normal plan upload rates
+  and disables upload bursts until capacity is known. No fixed WAN bandwidth cap
+  or production aggregate parent shaper was installed. Short diagnostic results
+  were not used as WAN caps. Radio/client performance can also limit a transfer.
+
+  Native guard behavior: 14 cases passed, covering healthy load, congestion in
+  either sample/direction, latency, loss, CPU, unknown capacity and aggregate
+  burst allocation. Live native run timestamps stayed 0-5 seconds old.
+  Disabling the scheduler returned bursts to zero; re-enabling restored
+  daily/weekly/monthly download ceilings 15/24/45 Mbps. Two reconciliation
+  repeats and account sync produced no queue mutations. A final private
+  daily-plan traffic test peaked at 10.6 Mbps over the VPS roundtrip and
+  settled to 4.87 Mbps across later samples spanning normal sync ticks. This
+  test path does not establish the WAN maximum. Traffic with the legacy
+  torrent mark transferred at 4.24 Mbps. Eight streams on one device received
+  1.30 times the bytes of one stream on the other device, rather than eight
+  times. All diagnostic routes, rules, queues and rescue schedulers were
+  removed.
+
+Remote radios
+  The owner confirmed both private login pages open:
+    Wavlink: http://127.0.0.1:18080/ -> 192.168.88.2:80
+    TP-Link/Omada: https://127.0.0.1:18443/ -> 192.168.88.10:443
+  Only trusted VPS tunnel traffic to those management addresses on TCP 80/443
+  was added. No public AP admin listener was opened. Existing radio credentials
+  are required; no passwords were guessed and no radio settings were changed.
+  Router shaping cannot establish or repair 802.11 airtime fairness on the APs.
+  The TP-Link address is learned on ether3 despite its old DHCP comment.
+
+  The current hidden SSH forwarder is intentionally left running on this PC.
+  If it has stopped, run the following in PowerShell and keep the terminal open:
+    & 'C:\Program Files\OpenSSH\ssh.exe' -N -i C:\Users\DummYBoY\famerlio -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18080:192.168.88.2:80 -L 127.0.0.1:18443:192.168.88.10:443 wispadmin@209.97.137.68
+  Localhost links work only on the machine running that forwarder.
+
+Validation and evidence
+  Full regression suite passed: 233 reported checks, including 17
+  health-probe, 8 archive-integrity, 14 Drive-folder, 5 QoS-rendering and 6
+  plan-display checks. Native RADIUS admission and guard tests, queue
+  idempotence, live traffic, guard fallback and Winbox checks passed.
+  PHP/Python/JavaScript/Bash syntax and git diff --check passed. Production
+  IPv6 is disabled, with no IPv6 route bypass observed. Protected
+  credential/configuration hashes matched; core WISP health passed. No actual
+  customer was deliberately disconnected. Radio airtime settings remain
+  unverified and unchanged.
+  Full protected/credential checks and remaining certbot observation are in:
+    ops/network-health-repair-2026-10-26.txt
+  Restricted live backups, native test results and deployment manifest:
+    /root/nister-health-20261026T014538Z
+  RouterOS rate direction and queue/burst references:
+    https://help.mikrotik.com/docs/spaces/ROS/pages/56459266/HotSpot+-+Captive+portal
+    https://help.mikrotik.com/docs/spaces/ROS/pages/328088/Queues

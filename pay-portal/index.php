@@ -489,6 +489,6 @@ if ($siteCode !== null && $siteCode !== '') {
     window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
     window.NISTER_MIN_TOPUP_CENTS = <?= (int)$minTopupCents ?>;
   </script>
-  <script src="assets/topup.js?v=20"></script>
+  <script src="assets/topup.js?v=21"></script>
 </body>
 </html>

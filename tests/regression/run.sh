@@ -507,7 +507,8 @@ assert_contains "account_queue_sync_groups_targets_per_account" "$account_queue_
 assert_contains "account_queue_sync_sets_shared_simple_queue_limit" "$account_queue_content" 'max-limit=%s limit-at=0/0'
 assert_not_contains "account_queue_sync_never_parents_under_dynamic_hotspot_queue" "$account_queue_content" 'parent=$hotspotParent'
 assert_not_contains "account_queue_sync_never_targets_dynamic_hotspot_parent" "$account_queue_content" 'name~"^hs-<"'
-assert_contains "account_queue_sync_moves_queues_before_dynamic_hotspot_queues" "$account_queue_content" '/queue simple move $q 0'
+assert_contains "account_queue_sync_orders_accounts_before_explicit_anchor" "$account_queue_content" '/queue simple move $q $before'
+assert_not_contains "account_queue_sync_avoids_stale_routeros_item_number" "$account_queue_content" '/queue simple move $q 0'
 assert_contains "account_queue_sync_suppresses_known_host_noise" "$account_queue_content" '-o LogLevel=ERROR'
 account_queue_timer_content="$(cat systemd/nister-account-queue-sync.timer)"
 assert_contains "account_queue_timer_runs_frequently" "$account_queue_timer_content" 'OnUnitActiveSec=20s'
@@ -560,5 +561,19 @@ php tests/regression/account_access.php
 pass "account_access_behavior"
 bash tests/regression/revoke_sessions.sh
 pass "account_device_revocation_behavior"
+php tests/regression/health_probes.php
+pass "health_probe_behavior"
+php tests/regression/archive_integrity.php
+pass "archive_integrity_behavior"
+php tests/regression/drive_folders.php
+pass "drive_folder_recovery_behavior"
+qos_python=python3
+if python -c 'import sys; assert sys.version_info.major == 3' >/dev/null 2>&1; then
+  qos_python=python
+fi
+"$qos_python" tests/regression/qos_policy.py
+pass "qos_capacity_and_retirement_behavior"
+node tests/regression/plan_rate_display.js
+pass "plan_download_upload_display_behavior"
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

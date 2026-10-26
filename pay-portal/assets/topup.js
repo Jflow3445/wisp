@@ -36,7 +36,10 @@
   function fmtRate(rate){
     var raw = String(rate || '').trim();
     if (!raw) return 'Managed speed';
-    return raw.replace('/', ' down / ') + ' up';
+    // Stored RADIUS/RouterOS rates are upload/download; cards show download first.
+    var pair = raw.split(/\s+/)[0].split('/');
+    if (pair.length === 1) pair.push(pair[0]);
+    return pair[1] + ' down / ' + pair[0] + ' up';
   }
   function pricePerGb(cents, bytes){
     var c = Number(cents || 0);

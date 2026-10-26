@@ -134,6 +134,17 @@ if (!is_dir($netflowDir)) {
   exit(1);
 }
 
+// A missing/inaccessible destination affects every capture. Check it once so
+// a bad folder does not cause hundreds of hashes, API failures and audit rows.
+try {
+  $rootMeta = gdrive_file_metadata(gdrive_ensure_archive_root());
+  if (!empty($rootMeta['trashed'])) throw new RuntimeException('archive_folder_trashed');
+} catch (Throwable $e) {
+  settings_set('NETFLOW_DRIVE_ARCHIVE_LAST_STATUS', 'failed: archive destination unavailable; check the folder in admin');
+  cli_log($logFile, 'status=failed reason=archive_destination_unavailable');
+  exit(1);
+}
+
 gdrive_archive_bootstrap($PDO);
 
 $minAge = gdrive_archive_min_age_minutes();
@@ -148,8 +159,13 @@ $deleted = 0;
 $verifiedExisting = 0;
 $failed = 0;
 
+settings_set('NETFLOW_DRIVE_ARCHIVE_LAST_STATUS', 'running: verifying and archiving captures');
 foreach ($rows as $capture) {
   $processed++;
+  if ($processed > 1 && $processed % 10 === 1) {
+    settings_set('NETFLOW_DRIVE_ARCHIVE_LAST_STATUS', 'running: processed='.($processed - 1)
+      .", uploaded={$uploaded}, deleted={$deleted}, verified_existing={$verifiedExisting}, failed={$failed}");
+  }
   $path = $capture['path'];
   $name = $capture['name'];
   $stamp = $capture['stamp'];

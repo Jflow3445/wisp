@@ -1,0 +1,9 @@
+# Dedicated monitor only. Customer authorization and device limits remain below.
+if (&Packet-Src-IP-Address == 127.0.0.1 && &NAS-IP-Address == 127.0.0.1 && &NAS-Identifier == "nister-health-local" && &User-Name == "nister-health-local") {
+    files
+    if (!&control:Cleartext-Password) {
+        reject
+    }
+    pap
+    return
+}

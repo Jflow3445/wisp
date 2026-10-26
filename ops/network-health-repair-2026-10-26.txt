@@ -1,0 +1,86 @@
+NISTER health and verified archive repair - 26 October 2026 UTC
+Existing WISP VPS: 209.97.137.68
+
+Health monitoring
+  The health check depended on a real subscriber identity. The monitor's files
+  entry used the local phone format while RADIUS canonicalized the request;
+  subscriber SQL records had masked the mismatch. Purging/changing the subscriber
+  exposed the defect. No purged subscriber, wallet or credential was restored.
+
+  Monitoring now uses reserved nister-health-local with the existing configured
+  probe password and shared-secret file. A dedicated unlang branch requires
+  loopback packet source, NAS-IP-Address=127.0.0.1, the reserved username and the
+  dedicated NAS-Identifier. Subscriber SQL tables are checked separately so a
+  database failure cannot be hidden by the local files-based probe.
+  Native tests accepted the local probe and rejected a router NAS, missing marker
+  and the legacy subscriber identity. RADIUS configuration validated and reloaded.
+  Four normal admission cases passed: zero/one existing device accepted, a third
+  distinct device rejected, and an existing MAC accepted for reauthentication.
+  Test fixtures were removed; customer passwords were unchanged.
+
+  The old VPS speed probe accepted a Google Drive 404 HTML response of 1,652 bytes
+  as 0.02 Mbps. Transfers now require successful HTTP status, suitable content,
+  valid size and a positive transfer rate. A bounded 2 MB fallback is available.
+  This measurement is explicitly VPS-side, not the Wi-Fi site's WAN capacity.
+
+  Native health at 04:55:42 UTC: overall OK, RADIUS OK 33 ms, tunnel ppp0,
+  latency 131 ms, loss 0%, VPS-side download 144.19 Mbps, disk 86.65% used.
+  The health_fail event beginning 25 October 18:58:36 closed automatically;
+  there were zero open health events. The dashboard timeline's earlier 404
+  represented elapsed minutes; the separate old speed-test URL really was 404.
+  Actual admin health_status, drive_status and drive_test returned HTTP 200/ok.
+  At 04:34 UTC, six recent accounting records were observed; the newest update was ten seconds old.
+
+Google Drive archive and disk
+  The existing admin OAuth connection was valid, but its cached archive root
+  returned 404. No accessible matching folder existed. Root resolution now checks
+  folder type, writable capability and trashed status before reuse. A missing or
+  trashed cached root can be recovered under the same configured parent/name.
+  Authorization, permission, rate-limit and transport failures do not create a
+  replacement. Read-only/non-folder cached roots fail explicitly. A lock prevents
+  concurrent creation and a per-process cache avoids repeated metadata requests.
+
+  The same admin connection recovered this archive root:
+    https://drive.google.com/drive/folders/1bqvQQp6YYSyCb5dvpIOlf4yTzCApG60c
+  Actual admin Test upload verified its object before removing the test object.
+  No terminal OAuth flow, extra scopes or replacement credentials were introduced.
+
+  Local capture cleanup now requires exact remote byte size AND a valid matching
+  MD5 checksum. Missing checksums and trashed objects block cleanup. The native
+  worker completed a batch of 500 uploaded, 500 verified/deleted, zero failures;
+  independent checks covered empty and nonempty real captures. Later scheduled
+  archival continued. Retention, minimum capture age and batch size were retained.
+  Destination preflight fails once instead of attempting hundreds of doomed
+  uploads. Worker/admin status distinguishes running, successful and failed work.
+
+  Package download caches were cleaned. Seven old deployment archives totaling
+  1,362,112,022 bytes were copied into private local storage, and every size and
+  SHA-256 was verified before originals were removed. The local archive is:
+    C:\Users\DummYBoY\.codex\artifacts\nister-vps-archives-20261026
+  manifest-verified.json records the verification. Initial disk use was about
+  96%, with 988 MB free; the final health snapshot was about 87%, with 3.3 GB free.
+  The disk remains above the warning threshold. Thresholds were not weakened.
+  NetFlow files were removed only by the uploader after remote verification.
+
+Boundaries and remaining observations
+  The active router Wi-Fi certificate expires 22 January 2027 and matches the
+  server's wifi/api certificate. The payment certificate expires 12 January 2027.
+  An older expired router certificate is retained but is not the active one.
+  Paid mac-cookie/CHAP/HTTPS login remains enabled. Winbox tunnel checks passed.
+
+  All eleven protected credential/config hashes, OAuth client ID/secret/refresh
+  token hashes and the server boot identity matched their original baselines.
+  SSH configuration, authorized_keys, credentials, SMTP, NisterAI and PostgreSQL
+  were not changed. ADOPT_UNKNOWN_RADIUS_CLIENTS=0 is preserved and the Starlink
+  sync timer remains disabled. Normal OAuth access-token refresh remains enabled.
+
+  systemctl --failed lists certbot.service only: renewal of edu.nister.org fails
+  and that separate certificate expired on 16 July 2026. No failure was reset to
+  hide it. WISP certificates are valid; the education site was left unchanged.
+  Account queue sync, health check and NetFlow archive units report success.
+  CoA returned an authenticated negative response to a nonexistent session;
+  an actual customer disconnect was not deliberately triggered by this repair.
+
+  Full regression count and final QoS results are recorded in the accompanying
+  bandwidth report. Root-only evidence, source backups and deployment hashes:
+    /root/nister-health-20261026T014538Z

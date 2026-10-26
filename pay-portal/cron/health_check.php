@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/../lib/common.php';
 require_once __DIR__.'/../lib/health.php';
+require_once __DIR__.'/../lib/health_probes.php';
 require_once __DIR__.'/../lib/radius.php';
 
 $ENV = app_boot();
@@ -30,7 +31,7 @@ function ms(float $start, float $end): int {
 $now = new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get()));
 
 // ---- RADIUS auth check ----
-$radiusUser = (string)($ENV['HEALTH_RADIUS_USER'] ?? '');
+$radiusUser = health_radius_probe_username();
 $radiusPass = (string)($ENV['HEALTH_RADIUS_PASS'] ?? '');
 $radiusSecretFile = (string)($ENV['HEALTH_RADIUS_SECRET_FILE'] ?? ($ENV['COA_SECRET_FILE'] ?? '/etc/nister/coa_secret'));
 $radiusSecret = is_readable($radiusSecretFile) ? trim((string)file_get_contents($radiusSecretFile)) : '';
@@ -39,12 +40,15 @@ $radiusOk = null;
 $radiusMs = null;
 $radiusNote = '';
 if ($radiusUser !== '' && $radiusPass !== '' && $radiusSecret !== '') {
-  $payload = "User-Name = \"{$radiusUser}\"\nUser-Password = \"{$radiusPass}\"\n";
+  $payload = health_radius_probe_payload($radiusUser, $radiusPass);
   $start = microtime(true);
-  [$rc, $out] = sh("printf %s " . escapeshellarg($payload) . " | /usr/bin/radclient -x 127.0.0.1 auth " . escapeshellarg($radiusSecret));
+  try { $databaseReady = health_radius_database_ready(rdb_pdo()); }
+  catch (Throwable $e) { $databaseReady = false; }
+  [$rc, $out] = $databaseReady ? health_probe_process(['/usr/bin/radclient','-s','-r','1','-t','3',
+    '-S',$radiusSecretFile,'127.0.0.1','auth'], $payload) : [1,''];
   $radiusMs = ms($start, microtime(true));
-  $radiusOk = (strpos($out, 'Access-Accept') !== false) ? 1 : 0;
-  if ($radiusOk === 0) $radiusNote = 'radius_auth_failed';
+  $radiusOk = health_radius_probe_accepted($rc, $out) ? 1 : 0;
+  if ($radiusOk === 0) $radiusNote = $databaseReady ? 'radius_auth_failed' : 'radius_db_failed';
 } else {
   $radiusOk = null;
   $radiusNote = 'radius_auth_skipped';
@@ -190,6 +194,7 @@ if ($coaSecret !== '' && $coaUser !== '') {
 
 // ---- Download speed ----
 $speedMpbs = null;
+$speedNote = '';
 $speedUrl = (string)($ENV['HEALTH_SPEED_URL'] ?? '');
 if ($speedUrl === '' && isset($ENV['HEALTH_SPEED_GDRIVE'])) {
   $speedUrl = (string)$ENV['HEALTH_SPEED_GDRIVE'];
@@ -202,12 +207,16 @@ if ($speedUrl !== '') {
   if (preg_match('~drive\\.google\\.com/file/d/([A-Za-z0-9_-]+)~', $speedUrl, $m)) {
     $speedUrl = 'https://drive.google.com/uc?export=download&id='.$m[1];
   }
-  $start = microtime(true);
-  [$rc, $out] = sh("curl -L --connect-timeout 5 --max-time 20 -o /dev/null -w '%{speed_download}' " . escapeshellarg($speedUrl));
-  if ($rc === 0 && is_numeric(trim($out))) {
-    $bytesPerSec = (float)trim($out);
-    $speedMpbs = round(($bytesPerSec * 8) / 1000000, 2);
+  $probe = health_speed_probe($speedUrl);
+  if (!$probe['ok']) {
+    $speedNote = 'speed_probe_invalid:'.$probe['reason'];
+    $fallback = (string)($ENV['HEALTH_SPEED_FALLBACK_URL'] ?? 'https://speed.cloudflare.com/__down?bytes=2000000');
+    if ($fallback !== '' && $fallback !== $speedUrl) {
+      $probe = health_speed_probe($fallback);
+      if ($probe['ok']) $speedNote = 'speed_probe_fallback';
+    }
   }
+  if ($probe['ok']) $speedMpbs = $probe['mbps'];
 }
 
 $disk = health_disk_snapshot($ENV);
@@ -220,6 +229,7 @@ if ($coaOk === 0) $overallOk = 0;
 $noteParts = array_filter([
   $radiusNote,
   $coaNote,
+  $speedNote,
   ($tunnelOk === 0 ? ($tunnelNote !== '' ? $tunnelNote : 'tunnel_down') : ''),
   (string)($disk['disk_note'] ?? ''),
 ]);

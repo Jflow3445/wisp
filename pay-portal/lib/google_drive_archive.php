@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__.'/common.php';
 require_once __DIR__.'/settings.php';
+require_once __DIR__.'/archive_integrity.php';
+require_once __DIR__.'/drive_folders.php';
 
 const NISTER_GOOGLE_OAUTH_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const NISTER_GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -337,7 +339,7 @@ function gdrive_api_request(string $method, string $url, ?array $payload = null,
   }
   if ($res['code'] < 200 || $res['code'] >= 300 || ($res['body'] !== '' && $res['json'] === null)) {
     $detail = is_array($res['json']) ? (string)($res['json']['error']['message'] ?? 'google_drive_api_failed') : 'google_drive_api_failed';
-    throw new RuntimeException($detail);
+    throw new RuntimeException($detail, $res['code']);
   }
   return $res['json'] ?? [];
 }
@@ -384,12 +386,22 @@ function gdrive_find_or_create_folder(string $name, ?string $parentId = null): s
 }
 
 function gdrive_ensure_archive_root(): string {
-  $existing = trim((string)(settings_get('GOOGLE_DRIVE_ROOT_FOLDER_ID', '') ?? ''));
-  if ($existing !== '') return $existing;
-  $parent = trim((string)(settings_get('GOOGLE_DRIVE_PARENT_FOLDER_ID', '') ?? ''));
-  $id = gdrive_find_or_create_folder(gdrive_root_folder_name(), $parent !== '' ? $parent : null);
-  settings_set('GOOGLE_DRIVE_ROOT_FOLDER_ID', $id);
-  return $id;
+  static $verified = null;
+  if ($verified !== null) return $verified;
+  global $PDO;
+  $locked = (int)$PDO->query("SELECT GET_LOCK('nister_netflow_drive_root', 10)")->fetchColumn() === 1;
+  if (!$locked) throw new RuntimeException('google_drive_archive_folder_busy');
+  try {
+    $verified = gdrive_resolve_archive_root(
+      trim((string)(settings_get('GOOGLE_DRIVE_ROOT_FOLDER_ID', '') ?? '')),
+      trim((string)(settings_get('GOOGLE_DRIVE_PARENT_FOLDER_ID', '') ?? '')),
+      gdrive_root_folder_name(), 'gdrive_file_metadata', 'gdrive_find_or_create_folder',
+      static function(string $id): void { settings_set('GOOGLE_DRIVE_ROOT_FOLDER_ID', $id); }
+    );
+    return $verified;
+  } finally {
+    $PDO->query("SELECT RELEASE_LOCK('nister_netflow_drive_root')");
+  }
 }
 
 function gdrive_ensure_archive_day_folder(string $stamp): array {
@@ -453,16 +465,14 @@ function gdrive_upload_file(string $path, string $driveName, string $parentId): 
 
 function gdrive_file_metadata(string $fileId): array {
   $url = NISTER_GOOGLE_DRIVE_API . '/files/' . rawurlencode($fileId) . '?' . http_build_query([
-    'fields' => 'id,name,size,md5Checksum,trashed',
+    'fields' => 'id,name,size,md5Checksum,trashed,mimeType,parents,capabilities(canAddChildren)',
   ], '', '&', PHP_QUERY_RFC3986);
   return gdrive_api_request('GET', $url, null, 45);
 }
 
 function gdrive_verify_uploaded_file(string $fileId, int $localSize, string $localMd5): array {
   $meta = gdrive_file_metadata($fileId);
-  $remoteSize = (int)($meta['size'] ?? -1);
-  $remoteMd5 = strtolower((string)($meta['md5Checksum'] ?? ''));
-  $ok = $remoteSize === $localSize && ($localMd5 === '' || $remoteMd5 === '' || hash_equals(strtolower($localMd5), $remoteMd5));
+  $ok = gdrive_uploaded_metadata_matches($meta, $localSize, $localMd5);
   return ['ok' => $ok, 'metadata' => $meta];
 }
 

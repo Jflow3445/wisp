@@ -1,0 +1,14 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync('pay-portal/assets/topup.js', 'utf8');
+const body = source.match(/function fmtRate\(rate\)\{([\s\S]*?)\n  \}/);
+assert(body, 'Plan speed formatter must exist');
+const format = vm.runInNewContext('(function(rate){' + body[1] + '})');
+assert.equal(format('3M/5M'), '5M down / 3M up');
+assert.equal(format('5M/8M'), '8M down / 5M up');
+assert.equal(format('10M/15M'), '15M down / 10M up');
+assert.equal(format('2M'), '2M down / 2M up');
+assert.equal(format('3M/5M 9M/15M 2M/4M 16/16'), '5M down / 3M up');
+assert.equal(format(''), 'Managed speed');
+console.log('Plan download/upload display checks passed (6).');

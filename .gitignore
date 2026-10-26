@@ -83,5 +83,6 @@ deploy_backup_manifest_*.txt
 *.rsc
 !ops/hotspot_account_login.rsc
 !ops/hotspot_account_logout.rsc
+!ops/hotspot_qos_guard.rsc
 __pycache__/
 mikrotik_backups/

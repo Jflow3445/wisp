@@ -744,7 +744,7 @@ $ADMIN_CSRF = admin_csrf_token();
         <input id="plan_data" type="text" placeholder="Leave empty for unlimited">
       </div>
       <div class="field">
-        <label for="plan_rate">Rate limit</label>
+        <label for="plan_rate">Rate limit (upload/download)</label>
         <input id="plan_rate" type="text" placeholder="2M/2M">
       </div>
       <div class="field">
@@ -766,7 +766,7 @@ $ADMIN_CSRF = admin_csrf_token();
       <table class="table" id="plans_tbl">
         <thead>
           <tr>
-            <th>Code</th><th>Name</th><th>Price</th><th>Days</th><th>Data</th><th>Rate</th><th>Address list</th><th>Status</th><th>Action</th>
+            <th>Code</th><th>Name</th><th>Price</th><th>Days</th><th>Data</th><th>Rate (up/down)</th><th>Address list</th><th>Status</th><th>Action</th>
           </tr>
         </thead>
         <tbody><tr><td colspan="9" class="muted">Loading plan catalog...</td></tr></tbody>
@@ -891,7 +891,7 @@ $ADMIN_CSRF = admin_csrf_token();
       <table class="table small" id="user_states_tbl">
         <thead>
           <tr>
-            <th>User</th><th>Group</th><th>Expires</th><th>Quota</th><th>Used</th><th>Window</th><th>Expired</th><th>Exhausted</th><th>Rate</th><th>Action</th>
+            <th>User</th><th>Group</th><th>Expires</th><th>Quota</th><th>Used</th><th>Window</th><th>Expired</th><th>Exhausted</th><th>Rate (up/down)</th><th>Action</th>
           </tr>
         </thead>
         <tbody><tr><td colspan="10" class="muted">Loading user states...</td></tr></tbody>
@@ -962,7 +962,7 @@ $ADMIN_CSRF = admin_csrf_token();
             <input id="tool_addrlist" type="text" placeholder="HS_ACTIVE / HS_LIMITED / HS_NOPAID">
           </div>
           <div class="field">
-            <label for="tool_rate">Rate limit</label>
+            <label for="tool_rate">Rate limit (upload/download)</label>
             <input id="tool_rate" type="text" placeholder="2M/2M">
           </div>
           <div class="field">
@@ -2736,7 +2736,9 @@ async function loadDriveStatus(){
   parts.push(d.enabled ? 'hourly archive on' : 'hourly archive off');
   parts.push(d.delete_after_upload ? 'verified cleanup on' : 'verified cleanup off');
   if (d.last_status) parts.push(`last run: ${d.last_status}`);
-  setDriveStatus(parts.join(' | '), d.connected ? 'success' : '');
+  const archiveFailed = String(d.last_status || '').startsWith('failed:');
+  const archiveRunning = String(d.last_status || '').startsWith('running:');
+  setDriveStatus(parts.join(' | '), archiveFailed ? 'error' : (d.connected && !archiveRunning ? 'success' : ''));
   return true;
 }
 
@@ -3066,7 +3068,7 @@ function renderUserSnapshot(data){
 
   meta.innerHTML = `
     <div><span class="muted">Plan:</span> ${planDisplay}</div>
-    <div><span class="muted">Rate limit:</span> ${rate}</div>
+    <div><span class="muted">Rate limit (upload/download):</span> ${rate}</div>
     <div><span class="muted">Address list:</span> ${addr}</div>
     <div><span class="muted">Last purchase:</span> ${lastLine}</div>
     <div><span class="muted">Last CoA fail:</span> ${coaLine}</div>

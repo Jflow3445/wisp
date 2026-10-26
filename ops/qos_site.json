@@ -1,0 +1,7 @@
+{
+  "upload_bps": 0,
+  "download_bps": 300000000,
+  "configured_utc": "2026-10-26",
+  "purpose": "Burst eligibility references only; never WAN bandwidth caps. Zero means unknown, so that direction keeps its plan rate.",
+  "source": "Administrator reports download can reach 300 Mbps; upload capacity is unknown. Live latency, loss, CPU and load checks must also pass."
+}

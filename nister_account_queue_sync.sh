@@ -12,7 +12,7 @@ SERVER_ALIVE_INTERVAL="${SERVER_ALIVE_INTERVAL:-5}"
 SERVER_ALIVE_COUNT_MAX="${SERVER_ALIVE_COUNT_MAX:-2}"
 QUEUE_PREFIX="${QUEUE_PREFIX:-nister-acct-}"
 QUEUE_COMMENT_PREFIX="${QUEUE_COMMENT_PREFIX:-NISTER ACCOUNT SHAPER}"
-QUEUE_TYPE="${QUEUE_TYPE:-default-small/default-small}"
+QUEUE_TYPE="${QUEUE_TYPE:-nister-fair-up/nister-fair-down}"
 FALLBACK_MAX_LIMIT="${FALLBACK_MAX_LIMIT:-1M/1M}"
 MYSQL_DEFAULTS_FILE="${MYSQL_DEFAULTS_FILE:-}"
 PRINT_STATUS="${PRINT_STATUS:-0}"
@@ -50,6 +50,7 @@ need mysql
 need ssh
 need sort
 need sed
+need date
 
 LOCK_DIR="$STATE_DIR/.lock"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -301,9 +302,23 @@ active_pairs="$tmpdir/active-pairs.tsv"
 desired="$tmpdir/desired.tsv"
 ros_file="$tmpdir/sync.rsc"
 
-if ! router_ssh ':foreach a in=[/ip hotspot active find] do={ :put ("ACTIVE|" . [/ip hotspot active get $a user] . "|" . [/ip hotspot active get $a address]) }' >"$active_raw" 2>"$tmpdir/router.err"; then
+snapshot_query=':local tick [/system scheduler find where name="nister-qos-tick"]; :local guard [/system script find where name="nister-qos-guard"]; :local enabled false; :local started ""; :if (([:len $tick] = 1) && ([:len $guard] = 1)) do={ :set enabled (![/system scheduler get $tick disabled]); :set started [/system script get $guard last-started]; }; :put ("GUARD|" . $enabled . "|" . $started . "|" . [/system clock get date] . " " . [/system clock get time]); :foreach a in=[/ip hotspot active find] do={ :put ("ACTIVE|" . [/ip hotspot active get $a user] . "|" . [/ip hotspot active get $a address]) }'
+if ! router_ssh "$snapshot_query" >"$active_raw" 2>"$tmpdir/router.err"; then
   log "status=skipped reason=router_active_failed detail=$(tr '\n' ' ' <"$tmpdir/router.err" | head -c 200)"
   exit 1
+fi
+
+# RouterOS scheduler globals live in a different event environment. Check native
+# script metadata against the router's own clock instead of cross-context globals.
+burst_guard_alive=false
+guard_enabled=false; guard_started=""; guard_now=""
+IFS='|' read -r guard_enabled guard_started guard_now < <(awk -F '|' '/^GUARD\|/ {gsub(/\r/, ""); print $2 "|" $3 "|" $4; exit}' "$active_raw") || true
+if [[ "$guard_enabled" == "true" && -n "$guard_started" && -n "$guard_now" ]]; then
+  if guard_start_seconds="$(date -u -d "$guard_started" +%s 2>/dev/null)" &&
+     guard_now_seconds="$(date -u -d "$guard_now" +%s 2>/dev/null)"; then
+    guard_age=$((guard_now_seconds - guard_start_seconds))
+    if (( guard_age >= 0 && guard_age <= 30 )); then burst_guard_alive=true; fi
+  fi
 fi
 
 awk -F '|' '
@@ -368,13 +383,34 @@ ROS
     comment="${QUEUE_COMMENT_PREFIX} user=${user} rate=${max_limit}"
     printf ':local targets [$targetsFor "%s"]; :if ([:len $targets] > 0) do={\n' "$(ros_escape "$user")"
     printf ':local q [/queue simple find where name="%s"];\n' "$(ros_escape "$queue_name")"
-    printf ':if ([:len $q] = 0) do={ /queue simple add name="%s" target=$targets max-limit=%s limit-at=0/0 queue=%s comment="%s"; :set changed ($changed + 1) } else={ /queue simple set $q target=$targets max-limit=%s limit-at=0/0 queue=%s disabled=no comment="%s"; :set changed ($changed + 1) }; };\n' \
-      "$(ros_escape "$queue_name")" "$max_limit" "$QUEUE_TYPE" "$(ros_escape "$comment")" \
-      "$max_limit" "$QUEUE_TYPE" "$(ros_escape "$comment")"
+    printf ':if ([:len $q] = 0) do={ /queue simple add name="%s" target=$targets max-limit=%s limit-at=0/0 burst-limit=0/0 queue=%s comment="%s"; :set changed ($changed + 1) } else={\n' \
+      "$(ros_escape "$queue_name")" "$max_limit" "$QUEUE_TYPE" "$(ros_escape "$comment")"
+    # Do not reset token buckets/burst averages on every 20-second sync tick.
+    printf ':if ([:tostr [/queue simple get $q target]] != [:tostr [:toarray $targets]]) do={ /queue simple set $q target=$targets; :set changed ($changed + 1) };\n'
+    printf ':if ([:tostr [/queue simple get $q max-limit]] != "%s") do={ /queue simple set $q max-limit=%s burst-limit=0/0; :set changed ($changed + 1) };\n' "$max_limit" "$max_limit"
+    printf ':if ([:tostr [/queue simple get $q queue]] != "%s") do={ /queue simple set $q queue=%s; :set changed ($changed + 1) };\n' "$QUEUE_TYPE" "$QUEUE_TYPE"
+    printf ':if ([:tostr [/queue simple get $q limit-at]] != "0/0") do={ /queue simple set $q limit-at=0/0; :set changed ($changed + 1) };\n'
+    printf ':if ([/queue simple get $q disabled]) do={ /queue simple set $q disabled=no; :set changed ($changed + 1) };\n'
+    printf ':if ([/queue simple get $q comment] != "%s") do={ /queue simple set $q comment="%s"; :set changed ($changed + 1) };\n' "$(ros_escape "$comment")" "$(ros_escape "$comment")"
+    printf '}; };\n'
   done <"$desired"
-  printf ':foreach q in=[/queue simple find where comment~"^%s"] do={ /queue simple move $q 0 };\n' "$QUEUE_COMMENT_PREFIX"
-  printf ':put ("status=ok action=account_queue_sync active_accounts=%s active_sessions=%s changed=" . $changed);\n' \
-    "$(wc -l <"$desired" | tr -d '[:space:]')" "$(wc -l <"$active_pairs" | tr -d '[:space:]')"
+  # RouterOS item number 0 can refer to a previously printed item. Use stable
+  # internal IDs so the broad fallback can never sit above paid account queues.
+  printf ':local fallback [:pick [/queue simple find where name="nister-unclassified"] 0];\n'
+  # Moving a queue restarts its burst window. Repair an invalid order once;
+  # leave the entire queue list untouched when it is already correctly ordered.
+  printf ':local ordered true; :local previousTier 0; :foreach q in=[/queue simple find] do={ :local tier 3; :if ([/queue simple get $q comment] ~ "^%s") do={ :set tier 0 }; :if ([/queue simple get $q name] = "nister-infra-management") do={ :set tier 1 }; :if ($q = $fallback) do={ :set tier 2 }; :if ($tier < $previousTier) do={ :set ordered false }; :set previousTier $tier; };\n' "$QUEUE_COMMENT_PREFIX"
+  printf ':if (!$ordered) do={\n'
+  printf ':local first [:pick [/queue simple find] 0]; :if ($fallback != $first) do={ /queue simple move $fallback $first };\n'
+  printf ':local before $fallback; :local infra [/queue simple find where name="nister-infra-management"]; :if ([:len $infra] = 1) do={ :set before [:pick $infra 0]; /queue simple move $before $fallback };\n'
+  printf ':foreach q in=[/queue simple find where comment~"^%s"] do={ /queue simple move $q $before };\n' "$QUEUE_COMMENT_PREFIX"
+  printf ':set changed ($changed + 1); };\n'
+  # The local scheduler guards bursts every five seconds. A stopped/missing
+  # scheduler must not leave a previously enabled burst permanently enabled.
+  printf ':if ([:len [/system scheduler find where name="nister-qos-tick" and disabled=no]] != 1) do={ /queue simple set [find where comment~"^%s"] burst-limit=0/0 };\n' "$QUEUE_COMMENT_PREFIX"
+  printf ':if (!%s) do={ /queue simple set [find where comment~"^%s"] burst-limit=0/0 };\n' "$burst_guard_alive" "$QUEUE_COMMENT_PREFIX"
+  printf ':put ("status=ok action=account_queue_sync active_accounts=%s active_sessions=%s burst_guard=%s changed=" . $changed);\n' \
+    "$(wc -l <"$desired" | tr -d '[:space:]')" "$(wc -l <"$active_pairs" | tr -d '[:space:]')" "$burst_guard_alive"
 } >"$ros_file"
 
 ros_cmd="$(tr '\n' ' ' <"$ros_file")"
