@@ -17,12 +17,15 @@ CAPPORT_API_URL="${CAPPORT_API_URL:-https://wifi.nister.org/api.json?v=20260601-
 VPS_TUNNEL_IP="${VPS_TUNNEL_IP:-10.99.99.1}"
 WINBOX_PORT="${WINBOX_PORT:-8291}"
 WINBOX_INTERFACE="${WINBOX_INTERFACE:-l2tp-over-vps}"
+NETFLOW_COLLECTOR_IP="${NETFLOW_COLLECTOR_IP:-10.99.99.1}"
+NETFLOW_ROUTER_SRC_IP="${NETFLOW_ROUTER_SRC_IP:-10.10.20.2}"
+NETFLOW_PORT="${NETFLOW_PORT:-2055}"
 
 if [[ "$CAPPORT_API_URL" == *\"* || "$CAPPORT_API_URL" == *";"* || "$CAPPORT_API_URL" == *$'\n'* || "$CAPPORT_API_URL" == *$'\r'* ]]; then
   printf 'invalid CAPPORT_API_URL: unsafe RouterOS characters\n' >&2
   exit 1
 fi
-for value_name in VPS_TUNNEL_IP WINBOX_INTERFACE; do
+for value_name in VPS_TUNNEL_IP WINBOX_INTERFACE NETFLOW_COLLECTOR_IP NETFLOW_ROUTER_SRC_IP; do
   value="${!value_name}"
   if [[ "$value" == *\"* || "$value" == *";"* || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
     printf 'invalid %s: unsafe RouterOS characters\n' "$value_name" >&2
@@ -31,6 +34,17 @@ for value_name in VPS_TUNNEL_IP WINBOX_INTERFACE; do
 done
 if [[ ! "$WINBOX_PORT" =~ ^[0-9]+$ ]]; then
   printf 'invalid WINBOX_PORT: must be numeric\n' >&2
+  exit 1
+fi
+for value_name in NETFLOW_COLLECTOR_IP NETFLOW_ROUTER_SRC_IP; do
+  value="${!value_name}"
+  if [[ ! "$value" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+    printf 'invalid %s: must be an IPv4 address\n' "$value_name" >&2
+    exit 1
+  fi
+done
+if [[ ! "$NETFLOW_PORT" =~ ^[0-9]+$ || "$NETFLOW_PORT" -lt 1 || "$NETFLOW_PORT" -gt 65535 ]]; then
+  printf 'invalid NETFLOW_PORT: must be 1-65535\n' >&2
   exit 1
 fi
 
@@ -185,6 +199,14 @@ if ros "$anti_share_cmd" >/dev/null 2>&1; then
   log "status=ok action=anti_share_refreshed"
 else
   log "status=warn action=anti_share_refresh_failed"
+  critical_failed=1
+fi
+
+traffic_flow_cmd=':do { /ip traffic-flow set enabled=yes interfaces=all cache-entries=64k active-flow-timeout=1m inactive-flow-timeout=15s } on-error={ :log warning "nister: traffic-flow base refresh failed"; :error "traffic-flow base refresh failed" }; :do { /ip traffic-flow target remove [find] } on-error={ :log warning "nister: traffic-flow target cleanup failed" }; :do { /ip traffic-flow target add src-address='"$NETFLOW_ROUTER_SRC_IP"' dst-address='"$NETFLOW_COLLECTOR_IP"' port='"$NETFLOW_PORT"' version=9 v9-template-refresh=20 v9-template-timeout=1m } on-error={ :log warning "nister: traffic-flow target refresh failed"; :error "traffic-flow target refresh failed" }'
+if ros "$traffic_flow_cmd" >/dev/null 2>&1; then
+  log "status=ok action=traffic_flow_refreshed target=${NETFLOW_ROUTER_SRC_IP}->${NETFLOW_COLLECTOR_IP}:${NETFLOW_PORT}"
+else
+  log "status=warn action=traffic_flow_refresh_failed target=${NETFLOW_ROUTER_SRC_IP}->${NETFLOW_COLLECTOR_IP}:${NETFLOW_PORT}"
   critical_failed=1
 fi
 
