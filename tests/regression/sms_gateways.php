@@ -63,6 +63,22 @@ $result=sms_gateway_response('arkesel',sms_response('{"balance":0}'),true);
 sms_check('empty_balance_is_unhealthy',!$result['accepted'] && $result['error']==='insufficient_balance');
 $result=sms_gateway_response('pilosms',sms_response('{"balance":39.29,"units":1309}'),true);
 sms_check('pilosms_balance_recognized',$result['accepted']);
+$now=strtotime('2026-10-28T22:51:41Z');
+$bundle='{"balance":"0.00","units":{"non-expiry":0,"expiry":241,"expiry_date":"2026-11-21 12:57:54"}}';
+$result=sms_gateway_response('pilosms',sms_response($bundle),true,1,$now);
+sms_check('pilosms_bundle_credits_override_empty_cash_wallet',$result['accepted'] && $result['balance']===0.0 && $result['sms_units']===241.0 && $result['sms_units_expiring']===241.0 && $result['error']===null);
+$result=sms_gateway_response('pilosms',sms_response($bundle),true,1,strtotime('2026-11-21T12:57:54Z'));
+sms_check('pilosms_expired_bundle_not_counted',!$result['accepted'] && $result['sms_units']===0.0 && $result['error']==='insufficient_balance');
+$result=sms_gateway_response('pilosms',sms_response('{"balance":0,"units":{"non-expiry":15,"expiry":241,"expiry_date":"2026-01-01 00:00:00"}}'),true,1,$now);
+sms_check('pilosms_non_expiring_units_remain_usable',$result['accepted'] && $result['sms_units']===15.0);
+$result=sms_gateway_response('pilosms',sms_response('{"balance":0,"units":20}'),true,1,$now);
+sms_check('pilosms_legacy_numeric_units_supported',$result['accepted'] && $result['sms_units']===20.0);
+$result=sms_gateway_response('pilosms',sms_response('{"balance":0,"units":{"non-expiry":0,"expiry":0}}'),true,1,$now);
+sms_check('pilosms_exhausted_only_when_wallet_and_known_units_empty',!$result['accepted'] && $result['gateway_failure'] && $result['error']==='insufficient_balance');
+foreach (['{"balance":0}', '{"balance":0,"units":{"unexpected_bundle":241}}','{"balance":0,"units":{"non-expiry":0,"expiry":0,"unexpected_bundle":241}}','{"balance":0,"units":{"non-expiry":0,"expiry":241,"expiry_date":"invalid"}}','{"balance":0,"units":{"non-expiry":0,"expiry":241,"expiry_date":"2026-02-30 00:00:00"}}'] as $unknown) {
+  $result=sms_gateway_response('pilosms',sms_response($unknown),true,1,$now);
+  sms_check('pilosms_unknown_balance_cannot_start_cooldown',!$result['accepted'] && !$result['gateway_failure'] && $result['error']==='balance_unverified');
+}
 $result=sms_gateway_response('pilosms',sms_response('{"status":1001,"errors":{"count":1}}'),false,3);
 sms_check('partial_bulk_not_resent_to_another_gateway',!$result['accepted'] && $result['accepted_count']===2 && !$result['failover']);
 $g=sms_gateway_configs($s)['mnotify'];$request=sms_gateway_request($g,'233190000001,233190000002','Bulk test');

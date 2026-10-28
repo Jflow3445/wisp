@@ -33,9 +33,10 @@ Validation:
 - Only the pre-existing certbot.service failure remains in systemctl --failed.
 
 Observed gateway readiness at rollout:
-- PiloSMS remains enabled with the existing configured key and sender. Its live
-  balance check reports insufficient_balance. It needs credit or another usable
-  enabled provider before SMS delivery can resume successfully.
+- The initial PiloSMS check incorrectly inferred insufficient_balance from its
+  zero cash wallet. A same-day recheck found 241 valid bundle units expiring on
+  2026-11-21. The parser was corrected and the false cooldown cleared; see
+  ops/pilo-balance-fix-2026-10-28.txt. The configured key and sender were retained.
 - Arkesel and mNotify have no independent credentials configured and remain off.
   The supplied Arkesel examples contained an empty API-key field. Enter its API
   key and approved Sender ID at /admin/sms.php before enabling it. Arkesel request

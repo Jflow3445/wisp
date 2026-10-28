@@ -17,7 +17,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     } elseif ($action==='probe') {
       $probe=sms_probe_gateway((string)($_POST['provider'] ?? ''));
       $notice=$probe['ok'] ? 'Gateway balance check passed. This does not send an SMS or confirm handset delivery.' : 'Gateway check failed: '.($probe['error'] ?? 'unknown');
-      if ($probe['ok'] && isset($probe['balance'])) $notice.=' Reported balance: '.$probe['balance'].'.';
+      if ($probe['ok'] && isset($probe['sms_units'])) $notice.=' Usable SMS credits: '.$probe['sms_units'].'.';
+      if ($probe['ok'] && isset($probe['balance'])) $notice.=' Reported '.((string)($_POST['provider'] ?? '')==='pilosms' ? 'cash wallet balance' : 'balance').': '.$probe['balance'].'.';
+      if ($probe['ok'] && !empty($probe['sms_units_expiring']) && isset($probe['sms_expiry_date'])) $notice.=' Bundle expiry: '.$probe['sms_expiry_date'].' UTC.';
     } else { throw new InvalidArgumentException('Unknown action.'); }
     $_SESSION['sms_notice']=$notice;
     header('Location: /admin/sms.php',true,303); exit;

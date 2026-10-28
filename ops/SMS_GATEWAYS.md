@@ -30,6 +30,12 @@ Open **https://pay.nister.org/admin/sms.php** from the admin menu.
   paused. A healthy balance response does not prove handset delivery or override
   an unresolved sender/delivery rejection. Admins can explicitly check a gateway
   after correcting its configuration.
+- PiloSMS reports a cash wallet separately from purchased SMS units. A zero cash
+  wallet does not mean SMS is exhausted. Checks count non-expiring units plus
+  expiring bundle units whose expiry date is still in the future, and also accept
+  the older numeric `units` format. Unknown unit formats or invalid expiry dates
+  are shown as unverified and cannot start a delivery cooldown. The connection
+  check displays usable SMS credits separately from cash balance.
 
 Arkesel uses the supplied HTTPS V1 `/sms/api` contract, with URL encoding,
 `action=send-sms`, `api_key`, `to`, `from`, and `sms`. Only a JSON `code: ok` response

@@ -111,10 +111,13 @@ function sms_probe_gateway(string $id): array {
   $h=sms_health_load($id);
   if (($h['config_hash'] ?? '')!==$g['config_hash']) $h=[];
   $h['config_hash']=$g['config_hash']; $h['last_checked']=time(); $h['last_http_status']=$result['http_status'];
-  $h['last_error']=$result['error']; $h['failures']=$result['accepted'] ? 0 : (int)($h['failures'] ?? 0)+1;
-  $h['retry_after']=$result['accepted'] ? 0 : time()+60;
+  $h['last_error']=$result['error'];
+  if ($result['accepted']) { $h['failures']=0; $h['retry_after']=0; }
+  elseif ($result['gateway_failure']) { $h['failures']=(int)($h['failures'] ?? 0)+1; $h['retry_after']=time()+60; }
+  // An unfamiliar balance format is advisory; it must not create or extend a delivery block.
   sms_health_save($id,$h);
-  return ['ok'=>$result['accepted'],'error'=>$result['error'],'balance'=>$result['balance'] ?? null];
+  return ['ok'=>$result['accepted'],'error'=>$result['error']]+array_intersect_key($result,
+    array_flip(['balance','sms_units','sms_units_non_expiry','sms_units_expiring','sms_expiry_date']));
 }
 
 function sms_admin_save_gateways(array $input): void {

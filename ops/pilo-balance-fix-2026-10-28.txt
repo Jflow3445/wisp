@@ -1,0 +1,30 @@
+PiloSMS balance interpretation correction — 2026-10-28 UTC
+
+The new gateway health parser incorrectly treated PiloSMS's cash wallet balance
+as the only source of SMS credit. The balance endpoint actually returned:
+  balance: 0.00
+  units.non-expiry: 0
+  units.expiry: 241
+  units.expiry_date: 2026-11-21 12:57:54
+
+The prior insufficient_balance report was incorrect. It created an unnecessary
+health cooldown even though 241 purchased SMS units remained valid. This affects
+the newly added health check; it was not evidence of a PiloSMS delivery rejection.
+
+The parser now recognizes both numeric units and the current bundle structure.
+Expired bundle units do not count; non-expiring units remain usable. An unknown
+balance schema cannot create or extend a delivery cooldown. Admin connection
+checks label usable SMS credits separately from the cash wallet balance.
+
+Validation covers this exact live payload, expiry boundaries, non-expiring units,
+the older numeric response, genuine exhaustion and unknown/invalid unit formats.
+All 236 regression groups passed, including 36 SMS behavioral checks.
+The live balance-only check confirms usable credits and clears the erroneous
+cooldown. No SMS was sent to customers as part of this check. Gateway acceptance
+and handset delivery are distinct; no new handset delivery test was performed.
+
+Existing gateway credentials, sender, enable switches, priority and SMS pause
+setting were preserved. No router or network policy changes were made.
+
+Private before/after evidence and file rollback are in the root-only directory
+identified by /root/.nister-pilo-recheck-task-dir.

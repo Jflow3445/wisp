@@ -60,7 +60,43 @@ function sms_gateway_request(array $g, string $to, string $message, ?string $sen
   return ['url'=>$url,'method'=>$method,'headers'=>$headers,'body'=>$body];
 }
 
-function sms_gateway_response(string $id, array $http, bool $probe=false, int $expected=1): array {
+/** Pilo's cash wallet and SMS bundles are separate balances. Unknown schemas must not disable sending. */
+function sms_pilosms_balance(array $data, int $now): array {
+  $validNumber=static function($value): bool { return is_numeric($value) && is_finite((float)$value) && (float)$value>=0; };
+  $out=['accepted'=>false,'gateway_failure'=>false,'error'=>'balance_unverified'];
+  $walletKnown=$validNumber($data['balance'] ?? null);
+  if ($walletKnown) $out['balance']=(float)$data['balance'];
+  $units=$data['units'] ?? null; $unitsKnown=false;
+  if ($validNumber($units)) {
+    $out['sms_units']=(float)$units; $unitsKnown=true;
+  } elseif (is_array($units)) {
+    $nonExpiry=$units['non-expiry'] ?? null; $expiring=$units['expiry'] ?? null;
+    $nonExpiryKnown=$validNumber($nonExpiry); $expiringKnown=$validNumber($expiring);
+    $expiry=null;
+    if (is_string($units['expiry_date'] ?? null)) {
+      $date=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$units['expiry_date'],new DateTimeZone('UTC'));
+      if ($date && $date->format('Y-m-d H:i:s')===$units['expiry_date']) {
+        $expiry=$date->getTimestamp(); $out['sms_expiry_date']=$units['expiry_date'];
+      }
+    }
+    if ($nonExpiryKnown) $out['sms_units_non_expiry']=(float)$nonExpiry;
+    if ($expiringKnown && ((float)$expiring===0.0 || $expiry!==null)) {
+      $out['sms_units_expiring']=$expiry!==null && $expiry>$now ? (float)$expiring : 0.0;
+    }
+    $knownPositive=(float)($out['sms_units_non_expiry'] ?? 0)+(float)($out['sms_units_expiring'] ?? 0);
+    $unitsKnown=$nonExpiryKnown && isset($out['sms_units_expiring'])
+      && !array_diff(array_keys($units),['non-expiry','expiry','expiry_date']);
+    if ($unitsKnown || $knownPositive>0) $out['sms_units']=$knownPositive;
+  }
+  if ((float)($out['sms_units'] ?? 0)>0 || (float)($out['balance'] ?? 0)>0) {
+    $out['accepted']=true; $out['error']=null;
+  } elseif ($walletKnown && $unitsKnown) {
+    $out['gateway_failure']=true; $out['error']='insufficient_balance';
+  }
+  return $out;
+}
+
+function sms_gateway_response(string $id, array $http, bool $probe=false, int $expected=1, ?int $now=null): array {
   $status = (int)($http['status'] ?? 0);
   $result = ['accepted'=>false,'accepted_count'=>0,'failover'=>true,'gateway_failure'=>true,'error'=>'gateway_rejected','http_status'=>$status];
   if (!empty($http['error'])) {
@@ -77,6 +113,7 @@ function sms_gateway_response(string $id, array $http, bool $probe=false, int $e
   $j = json_decode((string)($http['body'] ?? ''), true);
   if (!is_array($j)) { $result['error']=$probe ? 'probe_invalid_response' : 'delivery_uncertain'; $result['failover']=$probe; return $result; }
   if ($probe) {
+    if ($id==='pilosms') return array_replace($result,sms_pilosms_balance($j,$now ?? time()));
     $balance = $id === 'mnotify' ? ($j['sms_balance'] ?? $j['balance'] ?? null) : ($j['balance'] ?? null);
     if (is_numeric($balance)) {
       $result['balance'] = (float)$balance;
