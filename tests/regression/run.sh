@@ -577,5 +577,9 @@ pass "qos_capacity_and_retirement_behavior"
 pass "shared_congestion_control_behavior"
 node tests/regression/plan_rate_display.js
 pass "plan_download_upload_display_behavior"
+php tests/regression/sms_gateways.php
+pass "sms_gateway_failover_behavior"
+php tests/regression/admin_registration.php
+pass "admin_registration_behavior"
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

@@ -295,29 +295,10 @@ sms_to_e164(){
 }
 sms_send(){
   local to="$1" msg="$2"
-  local api_key sender base url payload to_e164
-  api_key="$(sms_setting MNOTIFY_API_KEY)"
-  sender="$(sms_setting MNOTIFY_SENDER)"
-  base="$(sms_setting MNOTIFY_BASE)"
-  [[ -z "${api_key:-}" || -z "${sender:-}" || -z "${msg:-}" ]] && return 0
-  [[ -z "${base:-}" ]] && base="https://api.pilosms.com/v1"
-  base="${base%/}"
-  if [[ "${base,,}" == */send-message ]]; then base="${base%/send-message}"; fi
-  if [[ "${base,,}" == */sms/quick ]]; then base="${base%/sms/quick}"; fi
-  if [[ "${base,,}" == *"pilosms"* ]]; then
-    to_e164="$(sms_to_e164 "$to")"
-    [[ -z "${to_e164:-}" ]] && return 0
-    url="${base}/send-message?apikey=${api_key}"
-    curl -sS -m 8 -X POST "$url" \
-      --form-string "sender=${sender}" \
-      --form-string "message=${msg}" \
-      --form-string "receipients=${to_e164}" >/dev/null 2>&1 || true
-    return 0
-  fi
-  url="${base}/sms/quick?key=${api_key}"
-  payload=$(printf '{"recipient":["%s"],"sender":"%s","message":"%s","is_schedule":false,"schedule_date":""}' \
-    "$to" "$sender" "${msg//\"/\\\"}")
-  curl -sS -m 8 -X POST "$url" -H 'Content-Type: application/json' -d "$payload" >/dev/null 2>&1 || true
+  [[ -z "$to" || -z "$msg" ]] && return 0
+  # Keep secrets/messages off argv and route every alert through shared SMS controls.
+  printf '%s\0%s' "$to" "$msg" | python3 -c 'import sys,json;to,message=sys.stdin.buffer.read().decode().split("\0",1);print(json.dumps({"to":to,"message":message}))' |
+    php /var/www/pay/cron/sms_send.php >/dev/null 2>&1 || true
 }
 sms_should_send(){
   local stamp="$1" now="$2" debounce="$3"

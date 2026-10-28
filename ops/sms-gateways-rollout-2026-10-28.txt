@@ -1,0 +1,49 @@
+NISTER SMS gateways and admin registration — 2026-10-28 UTC
+
+Added Arkesel alongside PiloSMS and mNotify, independent provider switches and
+priority, global delivery pause/resume, persistent health cooldowns and failover.
+All existing send paths now share the policy, including the previously separate
+public signup, admin broadcast and shell quota-alert senders. Broadcasts retain
+100-recipient batches; partial or uncertain sends are not automatically duplicated.
+
+Added authenticated, CSRF-protected admin pages for gateway management and direct
+user registration. New users start unpaid, with zero wallet balance and a maximum
+of two devices. Credentials, wallet, customer name and site are created atomically.
+No paid entitlement is granted by registration. Welcome SMS is optional and cannot
+turn a committed registration into an apparent failure.
+
+Production-only owner platform/admin routing additions were preserved by applying
+targeted patches to backed-up live files. Public signup was still assigning
+Simultaneous-Use=1 in production; its new registrations now use the agreed value 2.
+The source baseline already had 2. Production login-domain defaults were preserved.
+
+Validation:
+- Full regression suite: 236 groups passed, including 26 SMS behavioral checks and
+  11 registration checks.
+- Native MariaDB temporary-table tests: both aliases, two-device policy, zero
+  balance, duplicate protection and rollback after a late insertion failure.
+  No real test subscriber was created.
+- Authenticated desktop (1366px) and mobile (390px) browser checks: both admin
+  pages render without horizontal overflow or JavaScript errors; key inputs are
+  empty; invalid registration is rejected; passwords are not echoed into forms.
+- Anonymous requests redirect to admin login; invalid CSRF requests are rejected.
+- Existing wifi/API/pay web responses remain 200/400/200 as expected.
+- nister-sms-health.service exits successfully; its two-minute timer is enabled.
+- Protected credential/configuration file hashes remain unchanged.
+- Only the pre-existing certbot.service failure remains in systemctl --failed.
+
+Observed gateway readiness at rollout:
+- PiloSMS remains enabled with the existing configured key and sender. Its live
+  balance check reports insufficient_balance. It needs credit or another usable
+  enabled provider before SMS delivery can resume successfully.
+- Arkesel and mNotify have no independent credentials configured and remain off.
+  The supplied Arkesel examples contained an empty API-key field. Enter its API
+  key and approved Sender ID at /admin/sms.php before enabling it. Arkesel request
+  and failure handling were tested with fixtures; live delivery is not yet proven.
+
+No router, VPN, firewall, payment-credit rules, SMTP, OAuth credentials, PostgreSQL
+or unrelated services were changed. No reboot or customer disconnection occurred.
+ADOPT_UNKNOWN_RADIUS_CLIENTS=0 and the disabled Starlink sync timer are preserved.
+
+Private production evidence: /root/nister-sms-gateways-20261028T223839Z
+Rollback: python3 /root/nister-sms-gateways-20261028T223839Z/rollback.py

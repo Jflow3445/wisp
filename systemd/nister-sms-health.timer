@@ -1,0 +1,11 @@
+[Unit]
+Description=Check enabled Nister SMS gateways every two minutes
+
+[Timer]
+OnBootSec=90
+OnUnitInactiveSec=120
+RandomizedDelaySec=10
+Unit=nister-sms-health.service
+
+[Install]
+WantedBy=timers.target

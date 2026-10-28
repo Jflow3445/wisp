@@ -281,9 +281,6 @@ function settings_allowed_keys(): array {
     'PAYSTACK_SECRET_KEY',
     'PAYSTACK_CURRENCY',
     'PAYSTACK_CALLBACK_URL',
-    'MNOTIFY_BASE',
-    'MNOTIFY_API_KEY',
-    'MNOTIFY_SENDER',
     'SMS_LOGIN_URL',
     'SMS_WELCOME_TEXT',
     'SMS_QUOTA_WARN_TEXT',
@@ -3270,22 +3267,6 @@ try {
       }
       $locationId = isset($smsScope['location_id']) && $smsScope['location_id'] !== null ? (int)$smsScope['location_id'] : null;
 
-      $apiKey = settings_get('MNOTIFY_API_KEY', '') ?? '';
-      $base = settings_get('MNOTIFY_BASE', '') ?? '';
-      $senderDefault = settings_get('MNOTIFY_SENDER', '') ?? '';
-      if ($sender === '') $sender = $senderDefault;
-      if ($base === '') $base = 'https://api.pilosms.com/v1';
-      $base = rtrim($base, '/');
-      $provider = admin_sms_provider_from_base($base);
-      if ($provider === 'pilosms') $base = preg_replace('~/send-message$~i', '', $base) ?? $base;
-      if ($provider !== 'pilosms') $base = preg_replace('~/sms/quick$~i', '', $base) ?? $base;
-
-      if ($apiKey === '' || $sender === '') {
-        http_response_code(400);
-        echo json_encode(['ok'=>false,'error'=>'sms_settings_missing','detail'=>'SMS API key and Sender ID are required']);
-        break;
-      }
-
       $recipients = [];
       try {
         $r = rdb_pdo();
@@ -3309,9 +3290,6 @@ try {
         break;
       }
 
-      $url = ($provider === 'pilosms')
-        ? ($base . '/send-message?apikey=' . rawurlencode($apiKey))
-        : ($base . '/sms/quick?key=' . rawurlencode($apiKey));
       $chunkSize = 100;
       $sent = 0;
       $skipped = 0;
@@ -3339,109 +3317,20 @@ try {
         break;
       }
 
-      foreach (array_chunk(array_values($recipients), $chunkSize) as $idx => $chunk) {
-        if ($provider === 'pilosms') {
-          $targetChunk = [];
-          foreach ($chunk as $rcpt) {
-            $e164 = sms_recipient_e164((string)$rcpt);
-            if ($e164 !== '') $targetChunk[] = $e164;
-          }
-          $targetChunk = array_values(array_unique($targetChunk));
-          $skipped += max(0, count($chunk) - count($targetChunk));
-          if (!$targetChunk) continue;
-          $payload = [
-            'sender' => $sender,
-            'message' => $message,
-            'receipients' => implode(',', $targetChunk),
-          ];
-        } else {
-          $targetChunk = $chunk;
-          $payload = [
-            'recipient' => $targetChunk,
-            'sender' => $sender,
-            'message' => $message,
-            'is_schedule' => false,
-            'schedule_date' => '',
-          ];
-        }
-
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        if ($provider === 'pilosms') {
-          curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
-          curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($payload));
-        } else {
-          curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-          curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-        }
-        $resp = curl_exec($ch);
-        $err = curl_error($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($resp === false) {
-          http_response_code(500);
-          echo json_encode(['ok'=>false,'error'=>'sms_http_failed','detail'=>$err,'batch'=>$idx+1]);
+      foreach (array_chunk($recipients,$chunkSize) as $chunk) {
+        $result = sms_send_batch_result($chunk, $message, $sender !== '' ? $sender : null);
+        $sent += (int)$result['accepted_count'];
+        if (!$result['sent']) {
+          http_response_code(503);
+          echo json_encode(['ok'=>false,'error'=>$result['error'],'recipients'=>$sent,'failed'=>count($chunk)-(int)$result['accepted_count'],
+            'remaining'=>count($recipients)-$sent,'provider'=>$result['provider'],
+            'location_id'=>$locationId,'out_of_scope'=>$scopeSkipped]);
           break 2;
         }
-
-        $j = json_decode((string)$resp, true);
-        if ($provider === 'pilosms') {
-          $status = is_array($j) ? (int)($j['status'] ?? 0) : 0;
-          if ($code < 200 || $code >= 300 || $status !== 1001) {
-            $detail = '';
-            if (is_array($j)) {
-              if (!empty($j['detail'])) $detail = (string)$j['detail'];
-              elseif (!empty($j['message'])) $detail = (string)$j['message'];
-              elseif (!empty($j['error'])) $detail = (string)$j['error'];
-            }
-            if ($detail === '') $detail = 'PiloSMS send failed';
-            http_response_code(502);
-            echo json_encode([
-              'ok'=>false,
-              'error'=>'sms_gateway_error',
-              'detail'=>$detail,
-              'status_code'=>$code,
-              'response'=>$j ?: $resp,
-              'batch'=>$idx+1
-            ]);
-            break 2;
-          }
-        } elseif ($code < 200 || $code >= 300) {
-          $detail = '';
-          if (is_array($j)) {
-            if (!empty($j['message'])) $detail = (string)$j['message'];
-            elseif (!empty($j['error'])) $detail = (string)$j['error'];
-          }
-          http_response_code(502);
-          echo json_encode([
-            'ok'=>false,
-            'error'=>'sms_gateway_error',
-            'detail'=>$detail,
-            'status_code'=>$code,
-            'response'=>$j ?: $resp,
-            'batch'=>$idx+1
-          ]);
-          break 2;
-        }
-
-        $lastGateway = $j;
-        $sent += count($targetChunk);
-        if (count($chunk) === $chunkSize) {
-          usleep(200000);
-        }
+        $lastGateway = $result['provider'];
       }
-
-      echo json_encode([
-        'ok'=>true,
-        'provider'=>$provider,
-        'gateway'=>$lastGateway,
-        'location_id'=>$locationId,
-        'recipients'=>$sent,
-        'skipped'=>$skipped,
-        'out_of_scope'=>$scopeSkipped,
-      ]);
+      echo json_encode(['ok'=>true,'provider'=>$lastGateway,'location_id'=>$locationId,
+        'recipients'=>$sent,'skipped'=>$skipped,'out_of_scope'=>$scopeSkipped]);
       break;
     }
 

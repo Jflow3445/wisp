@@ -244,6 +244,8 @@ $ADMIN_CSRF = admin_csrf_token();
           <button class="btn" data-section="overview" type="button" onclick="setSection('overview')">Overview</button>
           <button class="btn" data-section="billing" type="button" onclick="setSection('billing')">Billing</button>
           <button class="btn" data-section="plans" type="button" onclick="setSection('plans')">Plans</button>
+          <a class="btn" href="/admin/sms.php">SMS gateways</a>
+          <a class="btn" href="/admin/register.php">Register user</a>
           <button class="btn" data-section="settings" type="button" onclick="setSection('settings')">Settings</button>
           <button class="btn" data-section="alerts" type="button" onclick="setSection('alerts')">Alerts</button>
           <button class="btn" data-section="users" type="button" onclick="setSection('users')">Users</button>
@@ -450,18 +452,7 @@ $ADMIN_CSRF = admin_csrf_token();
         <label for="set_referral_hold">Referral hold (days)</label>
         <input id="set_referral_hold" type="text" placeholder="60">
       </div>
-      <div class="field">
-        <label for="set_sms_base">SMS API base</label>
-        <input id="set_sms_base" type="text" placeholder="https://api.pilosms.com/v1">
-      </div>
-      <div class="field">
-        <label for="set_sms_key">SMS API key</label>
-        <input id="set_sms_key" type="text" placeholder="YOUR_API_KEY">
-      </div>
-      <div class="field">
-        <label for="set_sms_sender">SMS Sender ID</label>
-        <input id="set_sms_sender" type="text" placeholder="PiloSMS">
-      </div>
+      <div class="field"><label>SMS delivery and gateways</label><a href="/admin/sms.php">Manage pause, gateways, priority and health</a></div>
       <div class="field">
         <label for="set_sms_login_url">SMS login URL</label>
         <input id="set_sms_login_url" type="text" placeholder="http://wifi.nister.org/login.html">
@@ -2569,9 +2560,6 @@ async function loadSettings(){
   set('set_referral_lifetime', centsToAmount(s.REFERRAL_LIFETIME_CAP_CENTS || ''));
   set('set_referral_window', s.REFERRAL_WINDOW_DAYS || '');
   set('set_referral_hold', s.REFERRAL_PENDING_HOLD_DAYS || '');
-  set('set_sms_base', s.MNOTIFY_BASE || '');
-  set('set_sms_key', s.MNOTIFY_API_KEY || '');
-  set('set_sms_sender', s.MNOTIFY_SENDER || '');
   set('set_sms_login_url', s.SMS_LOGIN_URL || '');
   set('set_sms_welcome', s.SMS_WELCOME_TEXT || '');
   set('set_sms_quota_warn', s.SMS_QUOTA_WARN_TEXT || '');
@@ -2631,9 +2619,6 @@ async function saveSettings(){
     REFERRAL_LIFETIME_CAP_CENTS: referralLifetimeRaw ? String(parseAmountCents(referralLifetimeRaw)) : '',
     REFERRAL_WINDOW_DAYS: toolValue('set_referral_window'),
     REFERRAL_PENDING_HOLD_DAYS: toolValue('set_referral_hold'),
-    MNOTIFY_BASE: toolValue('set_sms_base'),
-    MNOTIFY_API_KEY: toolValue('set_sms_key'),
-    MNOTIFY_SENDER: toolValue('set_sms_sender'),
     SMS_LOGIN_URL: toolValue('set_sms_login_url'),
     SMS_WELCOME_TEXT: toolValue('set_sms_welcome'),
     SMS_QUOTA_WARN_TEXT: toolValue('set_sms_quota_warn'),
@@ -3631,6 +3616,8 @@ async function sendSms(){
       else if (typeof j.response === 'string') msg = `${j.error}: ${j.response}`;
       else msg = `${j.error}: ${JSON.stringify(j.response)}`;
     }
+    if (Number(j.recipients || 0)>0) msg += ` ${j.recipients} recipients were already accepted; do not resend the entire list.`;
+    if (j.error==='delivery_uncertain') msg += ' Gateway acceptance is uncertain; do not immediately resend.';
     setSmsStatus(msg, 'error');
     return;
   }
