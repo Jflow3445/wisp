@@ -15,6 +15,7 @@ try {
   hotspot_include_paylib('settings.php');
   hotspot_include_paylib('location.php');
   hotspot_require_paylib('referrals.php');
+  hotspot_require_paylib('sms.php');
 } catch (Throwable $e) {
   error_log('Signup bootstrap error: ' . $e->getMessage());
 }
@@ -99,113 +100,6 @@ function fail(string $code, string $username = '', string $dst = '', string $nam
   header('Cache-Control: no-store');
   header('Location: ' . $url, true, 303);
   exit;
-}
-
-function sms_setting(string $k, ?string $default=null): ?string {
-  if (function_exists('settings_get')) {
-    return settings_get($k, $default);
-  }
-  return $default;
-}
-
-function sms_template(string $tpl, array $vars): string {
-  foreach ($vars as $k=>$v) {
-    $tpl = str_replace('{' . $k . '}', (string)$v, $tpl);
-  }
-  return $tpl;
-}
-
-function sms_normalize_local(string $raw): string {
-  $d = preg_replace('/\D+/', '', $raw);
-  if ($d === '') return '';
-  if (preg_match('/^233\d{9}$/', $d)) return '0' . substr($d, 3);
-  if (preg_match('/^0\d{9}$/', $d)) return $d;
-  return $d;
-}
-
-function sms_normalize_e164(string $raw): string {
-  $d = preg_replace('/\D+/', '', $raw);
-  if ($d === '') return '';
-  if (preg_match('/^233\d{9}$/', $d)) return $d;
-  if (preg_match('/^0\d{9}$/', $d)) return '233' . substr($d, 1);
-  if (preg_match('/^\d{9}$/', $d)) return '233' . $d;
-  return $d;
-}
-
-function sms_send_gateway(string $to, string $message): void {
-  $apiKey = trim((string)(sms_setting('MNOTIFY_API_KEY', '') ?? ''));
-  $sender = trim((string)(sms_setting('MNOTIFY_SENDER', '') ?? ''));
-  $base = trim((string)(sms_setting('MNOTIFY_BASE', '') ?? ''));
-  if ($apiKey === '' || $sender === '' || $message === '') return;
-  if ($base === '') $base = 'https://api.pilosms.com/v1';
-  $base = rtrim($base, '/');
-  $isPilo = stripos($base, 'pilosms') !== false;
-  if ($isPilo) $base = preg_replace('~/send-message$~i', '', $base) ?? $base;
-  if (!$isPilo) $base = preg_replace('~/sms/quick$~i', '', $base) ?? $base;
-
-  if ($isPilo) {
-    $toE164 = sms_normalize_e164($to);
-    if ($toE164 === '') return;
-    $payload = [
-      'sender' => $sender,
-      'message' => $message,
-      'receipients' => $toE164,
-    ];
-    $url = $base . '/send-message?apikey=' . rawurlencode($apiKey);
-
-    if (function_exists('curl_init')) {
-      $ch = curl_init($url);
-      curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-      curl_setopt($ch, CURLOPT_POST, true);
-      curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-      curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-      curl_exec($ch);
-      curl_close($ch);
-      return;
-    }
-
-    $opts = [
-      'http' => [
-        'method' => 'POST',
-        'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
-        'content' => http_build_query($payload),
-        'timeout' => 8,
-      ],
-    ];
-    @file_get_contents($url, false, stream_context_create($opts));
-    return;
-  }
-
-  $payload = [
-    'recipient' => [$to],
-    'sender' => $sender,
-    'message' => $message,
-    'is_schedule' => false,
-    'schedule_date' => '',
-  ];
-  $url = $base . '/sms/quick?key=' . rawurlencode($apiKey);
-
-  if (function_exists('curl_init')) {
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
-    curl_exec($ch);
-    curl_close($ch);
-    return;
-  }
-
-  $opts = [
-    'http' => [
-      'method' => 'POST',
-      'header' => "Content-Type: application/json\r\n",
-      'content' => json_encode($payload),
-      'timeout' => 8,
-    ],
-  ];
-  @file_get_contents($url, false, stream_context_create($opts));
 }
 
 $reqMethod = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
@@ -387,7 +281,7 @@ try {
       'LOGIN_URL' => $loginUrl,
     ]);
     $to = sms_normalize_local($username);
-    if ($to !== '' && $msg !== '') sms_send_gateway($to, $msg);
+    if ($to !== '' && $msg !== '') sms_send($to, $msg);
   }
 } catch (Throwable $e) {
   // ignore SMS failures
