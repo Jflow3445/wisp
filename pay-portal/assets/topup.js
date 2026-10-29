@@ -654,6 +654,7 @@
   }
 
   // ---------- boot ----------
+  window.addEventListener('nister:wallet-updated', callRefreshUser);
   window.addEventListener('DOMContentLoaded', function(){
     // auto-load from URL
     var qp = new URLSearchParams(window.location.search);

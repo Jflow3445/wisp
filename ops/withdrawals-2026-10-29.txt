@@ -1,0 +1,89 @@
+Manual MoMo wallet withdrawals
+
+Customer entry: existing Wallet panel at /portal.php#wallet_section.
+Administration: /admin/withdrawals.php, linked from the existing WISP console.
+Initial minimum: GHS 100.00, configured by the administrator. Admin can change
+the minimum on the withdrawals page. Existing accepted requests retain their amount.
+Customer notice: Withdrawals are processed during working hours, within a maximum
+of 48 hours. This is a manual processing commitment; no unprovided business-hours
+schedule or automatic external transfer is configured.
+
+Existing WISP accounts and administrator sessions are reused. There is no new
+registration, separate wallet, extra MFA, Paystack transfer, or SMS step.
+Customers provide their MoMo account name and network. The recipient phone is
+their registered account number and is checked against the authenticated session.
+Promotional wallet grants are excluded from withdrawable funds. No withdrawal fee
+is charged by this implementation.
+
+Money flow:
+- Pending: deduct the requested amount from the available wallet, record a negative
+  withdrawal_hold ledger entry and persist the request/event in one transaction.
+- Approved: admin commits to the payout; funds remain held. Approval does not send
+  MoMo or debit the wallet again. Send funds manually to the displayed recipient.
+- Paid: admin records the successful MoMo transaction reference. References are
+  unique across withdrawals. The held liability is cleared; there is no second debit.
+- Declined: a pending request receives one exact withdrawal_refund and the reason
+  appears to the customer. Approved or paid requests cannot be automatically refunded.
+  Approve only when the payout can be completed; verify the number and name first.
+- One pending/approved request per account. Retries return the original request,
+  including after payment. Concurrent submissions and decisions serialize on the
+  existing wallet row. Account deletion is blocked while a payout remains open.
+- If a declined request cannot fit under the existing wallet integer capacity,
+  the entire decline rolls back and funds remain held. Retry after capacity is available.
+
+Schema / installation:
+  php pay-portal/cron/migrate_withdrawals.php
+This CLI-only, repeatable migration creates wallet_withdrawals and
+wallet_withdrawal_events, then seeds WITHDRAWAL_MIN_CENTS=10000 and
+WITHDRAWALS_ENABLED=1 only when absent. It preserves existing wallet tables,
+balances and settings. No new financial service or recurring worker is installed.
+
+Operations:
+Both snapshots/history and pending/approved queue totals remain available while
+new requests are paused. WITHDRAWALS_ENABLED=0 blocks new holds but keeps exact
+accepted-request retries, admin decisions, refunds and payout completion working.
+Do not remove the tables, restore a pre-deployment wallet dump over transactions,
+or remove payout administration while held funds exist.
+
+Validation:
+Isolated MySQL/MariaDB integration checks cover validation, promotional credits,
+duplicate/concurrent requests, single refunds, journal failure rollback, wallet
+capacity, unique MoMo references, account deletion, pausing intake, and simultaneous
+Flight settlement/reconciliation. Browser cases cover desktop/mobile requests,
+approval/payment, rejection/refund, changed minimum, session/CSRF/origin/privacy
+boundaries and lost-response recovery. Existing WISP regression checks are required.
+
+Tests use the isolated nister_spin_test database (33080 / 8038), never production
+customer funds. Generated screenshots, traces and reports are ignored under
+artifacts/withdrawals/.
+
+Local use: run tests/spin/local.ps1 -Action Start, log in with the existing test
+customer, and open the Wallet panel. The usual local admin login opens Withdrawals.
+Start applies the new schema without resetting existing local wallet/game history.
+
+Production deployment - 2026-10-29 UTC
+15 presentation/service/migration files installed through the existing Apache/PHP
+application. Production-only Owner Platform additions in admin/index.php were
+preserved with a targeted insertion. Authentication, Paystack, router configuration,
+Flight mathematics, signing configuration and existing environment hashes are unchanged.
+Live checks confirmed minimum_cents=10000, intake enabled, and no customer withdrawal
+requests at verification. No production request, approval, transfer or refund was
+submitted as part of testing. The current admin session opened the new queue without
+another login or MFA, with no JavaScript errors. HTTP asset bytes match release hashes;
+anonymous APIs and pages enforce existing WISP login. All existing game timers remain
+healthy and Flight remains available.
+
+Validation completed: 50 withdrawal integration checks, ten withdrawal browser cases
+(desktop/mobile), 236 WISP regression checks, and 42 existing Flight browser cases.
+One Flight screenshot consumed a timed offer during the initial full run; its capture
+was moved after collection and both desktop/mobile variants passed on repeat. Test rate
+limits now use their isolated runtime so repeat runs do not share counters with local
+interactive users. Production limits remain enabled. Local Start upgrades were checked
+without resetting the existing test wallet or pending withdrawal.
+
+Root-only source snapshots, wallet/ledger/settings SQL snapshot, manifests and evidence:
+  /root/nister-withdrawals-20261029T002929Z
+To pause new withdrawal holds while preserving all accepted obligations and history:
+  sudo php /root/nister-withdrawals-20261029T002929Z/disable-new-requests.php
+Keep the module and its administrative payout/refund functions installed until all
+accepted requests are resolved. Do not restore wallet-before.sql over later transactions.

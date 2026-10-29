@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+if (getenv('SPIN_TEST_RUNTIME')) require_once __DIR__.'/rate_limit.php';
 require_once __DIR__.'/../../pay-portal/lib/spin/service.php';
 require_once __DIR__.'/../../pay-portal/lib/spin/migrations.php';
 require_once __DIR__.'/../../pay-portal/lib/common.php';
@@ -28,9 +29,11 @@ function spin_test_reset(PDO $db, bool $acceptTerms=true): void {
     foreach(preg_split('/;\s*(?:\r?\n|$)/',file_get_contents($path)) as $sql) if(trim($sql)!=='') $db->exec($sql);
   }
   spin_apply_migrations($db);
+  foreach(preg_split('/;\s*(?:\r?\n|$)/',file_get_contents(__DIR__.'/../../pay-portal/migrations/005_wallet_withdrawals.sql')) as $sql) if(trim($sql)!=='') $db->exec($sql);
   $game=new SpinService($db,spin_test_env());$game->upgradeWalletExperience();$game->upgradeFlightExperience();$game->upgradeHouseEdgeControl();$game->upgradeBalancedFlights();
   $GLOBALS['PDO']=$db;
   foreach(['233201234567','233201234568','233201234569'] as $u) {
+    nister_rate_limit_clear('wallet_withdrawal',$u);
     $db->prepare('INSERT INTO accounts(msisdn,balance_cents) VALUES(?,100000)')->execute([$u]);
     $db->prepare("INSERT INTO ledger(msisdn,type,amount_cents,ref,notes) VALUES(?,'deposit',100000,?,'Verified test deposit')")->execute([$u,'TEST-DEPOSIT-'.$u]);
     $db->prepare("INSERT INTO spin_players(msisdn,birth_date,verified_at,verified_by,verification_ref) VALUES(?,'1990-01-01',UTC_TIMESTAMP(),'test','test-verification')")->execute([$u]);

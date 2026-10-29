@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 $db=spin_test_db();spin_apply_migrations($db);$game=new SpinService($db,spin_test_env());$game->upgradeWalletExperience();$game->upgradeFlightExperience();$game->upgradeHouseEdgeControl();$game->upgradeBalancedFlights();
+foreach(preg_split('/;\s*(?:\r?\n|$)/',file_get_contents(__DIR__.'/../../pay-portal/migrations/005_wallet_withdrawals.sql')) as $sql) if(trim($sql)!=='') $db->exec($sql);
 // Reverse only the original development preset, preserving the user's test spins and cash balance.
 $user='233201234567';$seed=$db->prepare("SELECT 1 FROM spin_credit_entries WHERE msisdn=? AND kind='correction' AND amount_cents=3850 AND notes='Automated integration verification' LIMIT 1");$seed->execute([$user]);
 if($seed->fetchColumn() && $game->creditBalance($user)>=3850) {

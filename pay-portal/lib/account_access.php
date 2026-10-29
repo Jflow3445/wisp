@@ -168,6 +168,16 @@ function account_access_purge(PDO $portal, PDO $radius, string $raw): array {
   $deleted = ['radius'=>[], 'portal'=>[]];
   try {
     foreach ($connections as $connection) $connection->beginTransaction();
+    if (account_access_table_exists($portal, 'wallet_withdrawals')) {
+      // Serialize with withdrawal holds so deletion cannot orphan an accepted payout.
+      if (account_access_table_exists($portal, 'accounts')) {
+        $lock = $portal->prepare("SELECT msisdn FROM accounts WHERE msisdn IN ($userPh)" . ($portal->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql' ? ' FOR UPDATE' : ''));
+        $lock->execute($users); $lock->fetchAll();
+      }
+      $pending = $portal->prepare("SELECT 1 FROM wallet_withdrawals WHERE msisdn IN ($userPh) AND status IN ('pending','approved') LIMIT 1");
+      $pending->execute($users);
+      if ($pending->fetchColumn()) throw new RuntimeException('withdrawal_pending_complete_before_purge');
+    }
     account_access_record($radius, $raw, 'purge');
     $sets = [
       'radius' => [$radius, 'username', ['radcheck','radreply','radusergroup','radpostauth','radacct','radippool',

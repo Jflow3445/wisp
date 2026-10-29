@@ -134,8 +134,7 @@ test('one consent, held stake, exact collection, refresh recovery and account th
   await page.reload();
   await expect(page.locator('#collect-flight')).toBeEnabled();
   await expect(page.locator('#confirm-dialog')).toBeHidden();
-  fs.mkdirSync(path.resolve(__dirname, '../../artifacts/spin'), { recursive: true });
-  await page.screenshot({ path: path.resolve(__dirname, '../../artifacts/spin/flight-' + info.project.name + '.png'), fullPage: true });
+  // Capture after collection so screenshot work cannot consume the short offer window.
   const collected = page.waitForResponse(r => r.url().endsWith('/spin-api.php') && r.request().method() === 'POST' && r.request().postDataJSON()?.action === 'collect');
   await page.locator('#collect-flight').click(); const response = await collected; expect(response.status()).toBe(200);
   const view = (await response.json()).flight;
@@ -143,6 +142,8 @@ test('one consent, held stake, exact collection, refresh recovery and account th
   await expect(page.locator('#result')).toContainText('returned to your wallet');
   await expect(page.locator('#cash-balance')).toHaveText('GHS ' + (view.wallet_cents / 100).toFixed(2));
   await expect(page.locator('#review-stake')).toBeEnabled();
+  fs.mkdirSync(path.resolve(__dirname, '../../artifacts/spin'), { recursive: true });
+  await page.screenshot({ path: path.resolve(__dirname, '../../artifacts/spin/flight-' + info.project.name + '.png'), fullPage: true });
   await page.locator('#stake').fill('20.00'); await page.locator('#review-stake').click();
   await expect(page.locator('#confirm-dialog')).toBeHidden(); await expect(page.locator('#collect-flight')).toBeEnabled();
   expect(control('consents')).toBe(1);
