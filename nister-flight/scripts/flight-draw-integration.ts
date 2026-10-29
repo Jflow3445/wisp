@@ -29,8 +29,8 @@ async function main(){
  const replies=await Promise.all(Array.from({length:5},()=>startFlight(a,500,key,FLIGHT_TERMS,offer.id,offer.commitment)));
  const r=replies[0],row=await prisma.flightRound.findUniqueOrThrow({where:{id:r.id}}),rules=row.rulesJson as unknown as DrawRules;
  check(replies.every(x=>x.id===r.id)&&await balance(a)===before-515,"concurrent entry retries debit one stake and one play fee");
- check(r.engine===8&&!r.pilot&&!r.mission&&r.draw?.prizeCents===1000&&!('proof' in r)&&!r.offerId,"new draws have no controls, contests, cashout or early seed disclosure");
- check(drawCommitment(row.seed,rules,500)===offer.commitment&&row.reservationCents===1000,"the accepted configuration remains committed and the complete prize is reserved");
+ check(r.engine===9&&!r.pilot&&!r.mission&&r.draw?.prizeCents===1000&&!('proof' in r)&&!r.offerId,"new draws have no controls, contests, cashout or early seed disclosure");
+ check(drawCommitment(row.seed,rules,500)===offer.commitment&&row.reservationCents===0,"the accepted configuration remains committed and the pool condition is recorded without inventing a guaranteed liability");
  await assert.rejects(()=>pilotFlight(a,r.id,1,500,0),/no piloting/);
  await assert.rejects(()=>abortMission(a,r.id),/finish automatically/);
  await assert.rejects(()=>collectFlight(a,r.id,'0'.repeat(32)),/still running/);
@@ -57,7 +57,8 @@ async function main(){
  // Existing accepted engine-7 missions retain their original physical settlement.
  offer=await offerDraw(a,500);const legacy=await startFlight(a,500,randomUUID(),FLIGHT_TERMS,offer.id,offer.commitment);
  const oldRules=missionRules(500,64250),seed='accepted-legacy-mission',run=flyMission(seed,oldRules),at=new Date(Date.now()-run.state.tick*20-1000);
- await prisma.flightRound.update({where:{id:legacy.id},data:{engineVersion:7,seed,commitment:missionCommitment(seed,oldRules,500,1000),rulesJson:oldRules as unknown as Prisma.InputJsonValue,missionSeedJson:[],pilotStateJson:run.state as unknown as Prisma.InputJsonValue,pilotInputsJson:run.inputs as Prisma.InputJsonValue,startedAt:at,endsAt:new Date(at.getTime()+60000)}});
+ await prisma.flightControl.update({where:{id:1},data:{reservedCents:{increment:1000}}});
+ await prisma.flightRound.update({where:{id:legacy.id},data:{engineVersion:7,reservationCents:1000,seed,commitment:missionCommitment(seed,oldRules,500,1000),rulesJson:oldRules as unknown as Prisma.InputJsonValue,missionSeedJson:[],pilotStateJson:run.state as unknown as Prisma.InputJsonValue,pilotInputsJson:run.inputs as Prisma.InputJsonValue,startedAt:at,endsAt:new Date(at.getTime()+60000)}});
  const old=await recoverFlight(a,legacy.id);
  check(old.engine===7&&old.payoutCents===(run.state.stop==='LANDED'?625:0),"already accepted missions keep their original objectives and prize during the change");
  check((await flightSnapshot(a)).termsVersion===FLIGHT_TERMS,"new rules require explicit updated consent while retaining the existing account");

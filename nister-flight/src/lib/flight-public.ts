@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { prisma } from "./prisma";
 
-export type PublicFlightSummary = { referral: { enabled: boolean; bps: number }; wins: Array<{ alias: string; profitCents: number; minute: string }> };
+export type PublicFlightSummary = { referral: { enabled: boolean; bps: number; ratesBps?: number[] }; wins: Array<{ alias: string; profitCents: number; minute: string }> };
 let cache: { until: number; data: PublicFlightSummary } | null = null;
 let pending: Promise<PublicFlightSummary> | null = null;
 
@@ -15,7 +15,7 @@ export async function publicFlightSummary(): Promise<PublicFlightSummary> {
   if (cache && cache.until > Date.now()) return cache.data;
   if (pending) return pending;
   pending = (async () => {
-    const control = await prisma.flightControl.findUniqueOrThrow({ where: { id: 1 }, select: { liveLaunchedAt: true, season: true, referralsEnabled: true, referralBps: true } });
+    const control = await prisma.flightControl.findUniqueOrThrow({ where: { id: 1 }, select: { liveLaunchedAt: true, season: true, referralsEnabled: true, referralBps: true, referralLevel2Bps: true, referralLevel3Bps: true } });
     const rows = control.liveLaunchedAt ? await prisma.$queryRaw<Array<{ id: string; profitCents: number | bigint; settledAt: Date }>>`
       SELECT id, payoutCents-stakeCents-feeCents AS profitCents, settledAt
       FROM FlightRound
@@ -23,7 +23,7 @@ export async function publicFlightSummary(): Promise<PublicFlightSummary> {
       AND settledAt >= UTC_TIMESTAMP(3) - INTERVAL 30 MINUTE
       AND payoutCents > stakeCents+feeCents
       ORDER BY settledAt DESC LIMIT 12` : [];
-    const data = { referral: { enabled: control.referralsEnabled && control.referralBps > 0, bps: control.referralBps }, wins: rows.map(row => ({ alias: publicWinnerAlias(row.id), profitCents: Number(row.profitCents), minute: row.settledAt.toISOString().slice(0, 16) + ":00.000Z" })) };
+    const data = { referral: { enabled: control.referralsEnabled && control.referralBps + control.referralLevel2Bps + control.referralLevel3Bps > 0, bps: control.referralBps, ratesBps: [control.referralBps, control.referralLevel2Bps, control.referralLevel3Bps] }, wins: rows.map(row => ({ alias: publicWinnerAlias(row.id), profitCents: Number(row.profitCents), minute: row.settledAt.toISOString().slice(0, 16) + ":00.000Z" })) };
     cache = { until: Date.now() + 10000, data };
     return data;
   })();

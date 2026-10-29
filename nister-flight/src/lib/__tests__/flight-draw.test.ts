@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { drawCommitment, drawPrice, drawResult } from "../flight-draw";
+import { drawCommitment, drawPrice, drawResult, poolDrawResult } from "../flight-draw";
 
 test("draw results are deterministic, bounded and independent of flight controls", () => {
   const { rules } = drawPrice(500, 64250);
@@ -33,4 +33,13 @@ test("winning returns exceed the entry cost and fee rounding remains unchanged",
   }
   assert.throws(() => drawPrice(1, 64250));
   assert.throws(() => drawPrice(500, -1));
+});
+
+test("pool settlement applies the exact 10% boundary after random selection", () => {
+  const { rules } = drawPrice(500, 64250);
+  let seed = "pool-win-0"; for (let i = 1; !drawResult(seed, "nonce", rules).payoutCents; i++) seed = `pool-win-${i}`;
+  assert.equal(poolDrawResult(seed, "nonce", rules, 10000).payoutCents, 1000);
+  assert.equal(poolDrawResult(seed, "nonce", rules, 9999).payoutCents, 0);
+  assert.equal(poolDrawResult(seed, "nonce", rules, 9999).reason, "POOL_LIMIT");
+  assert.equal(drawPrice(500, 64250).retainedCents, 0);
 });

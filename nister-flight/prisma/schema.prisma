@@ -1592,6 +1592,8 @@ model FlightControl {
   insuranceBalanceCents    Int      @default(0)
   referralsEnabled         Boolean  @default(true)
   referralBps              Int      @default(100)
+  referralLevel2Bps        Int      @default(0)
+  referralLevel3Bps        Int      @default(0)
   referralsPaidCents        Int      @default(0)
   id                       Int      @id @default(1)
   enabled                  Boolean  @default(false)
@@ -1633,7 +1635,10 @@ model FlightRound {
   feeCents      Int      @default(0)
   referralUserId String?
   referralCents Int      @default(0)
-  referralReward FlightReferralReward?
+  referralPlanJson Json?
+  poolCentsAtSettlement Int?
+  resultReason String?
+  referralRewards FlightReferralReward[]
   id            String   @id @default(cuid())
   userId        String
   activeUserId  String?  @unique
@@ -1728,7 +1733,9 @@ model FlightAudit {
 
 model FlightReferralReward {
   id             String   @id @default(cuid())
-  roundId        String   @unique
+  roundId        String
+  level          Int      @default(1)
+  rateBps        Int      @default(0)
   userId         String
   referredUserId String
   amountCents    Int
@@ -1738,6 +1745,9 @@ model FlightReferralReward {
   round          FlightRound @relation(fields: [roundId], references: [id], onDelete: Restrict)
   recipient      User @relation("FlightReferralRecipient", fields: [userId], references: [id], onDelete: Restrict)
   referredUser   User @relation("FlightReferralSource", fields: [referredUserId], references: [id], onDelete: Restrict)
+  @@unique([roundId, level])
+  @@unique([roundId, userId])
+  @@index([userId, referredUserId, status])
   @@index([userId, status, createdAt])
   @@index([status, createdAt])
 }

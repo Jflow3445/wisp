@@ -11,7 +11,7 @@ import { MAX_REFERRAL_BPS } from "@/lib/flight-economy";
 
 export const dynamic = "force-dynamic";
 const schema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("settings"), enabled: z.boolean(), depositsEnabled: z.boolean(), withdrawalsEnabled: z.boolean(), minStakeCents: z.number().int().min(1).max(1000000), maxStakeCents: z.number().int().min(1).max(1000000), minWithdrawalCents: z.number().int().min(1).max(1000000), houseEdgePpm: z.number().int().min(0).max(500000), referralsEnabled: z.boolean(), referralBps: z.number().int().min(0).max(MAX_REFERRAL_BPS), note: z.string().trim().min(5).max(500) }).strict(),
+  z.object({ action: z.literal("settings"), enabled: z.boolean(), depositsEnabled: z.boolean(), withdrawalsEnabled: z.boolean(), minStakeCents: z.number().int().min(2).max(1000000), maxStakeCents: z.number().int().min(1).max(1000000), minWithdrawalCents: z.number().int().min(1).max(1000000), houseEdgePpm: z.number().int().min(0).max(500000), referralsEnabled: z.boolean(), referralBps: z.number().int().min(0).max(MAX_REFERRAL_BPS), referralLevel2Bps: z.number().int().min(0).max(MAX_REFERRAL_BPS), referralLevel3Bps: z.number().int().min(0).max(MAX_REFERRAL_BPS), note: z.string().trim().min(5).max(500) }).strict(),
   z.object({ action: z.literal("launch"), confirmation: z.string().max(30), previewToken: z.string().length(64) }).strict(),
   z.object({ action: z.literal("reserve"), deltaCents: z.number().int().min(-MAX_BALANCE).max(MAX_BALANCE), note: z.string().trim().min(5).max(500) }).strict(),
   z.object({ action: z.literal("user"), userId: z.string().max(64), state: z.enum(["ACTIVE", "SUSPENDED"]), verified: z.boolean(), blocked: z.boolean(), note: z.string().trim().min(5).max(500) }).strict(),
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     const actor = await authorize(request, true);
     const url = new URL(request.url), search = (url.searchParams.get("search") ?? "").slice(0, 100);
     const page = Math.min(10000, Math.max(0, Number(url.searchParams.get("page")) || 0));
-    const [control, users, userCount, withdrawals, deposits, audit, total, paid, balance] = await Promise.all([
+    const [control, users, userCount, withdrawals, deposits, audit, total, paid, balance, poolLimited] = await Promise.all([
       controls(), prisma.user.findMany({ where: search ? { OR: [{ email: { contains: search } }, { name: { contains: search } }] } : {}, skip: Math.floor(page) * 25, take: 25, orderBy: { createdAt: "desc" }, select: { id: true, name: true, email: true, role: true, emailVerifiedAt: true, createdAt: true, tradingProfile: { select: { accountState: true, availableFundsUsdCents: true } }, flightPlayer: true } }),
       prisma.user.count(),
       prisma.flightWithdrawal.findMany({ take: 100, orderBy: { createdAt: "desc" }, include: { user: { select: { email: true } } } }),
@@ -31,8 +31,9 @@ export async function GET(request: Request) {
       prisma.flightAudit.findMany({ take: 30, orderBy: { createdAt: "desc" } }), prisma.flightRound.count(),
       prisma.flightWithdrawal.aggregate({ where: { status: "PAID" }, _sum: { amountCents: true } }),
       prisma.userTradingProfile.aggregate({ _sum: { availableFundsUsdCents: true } }),
+      prisma.flightRound.count({ where: { resultReason: "POOL_LIMIT" } }),
     ]);
-    return Response.json({ currency: "USD", settlementCurrency: "USDT", usdPerUsdt: "1.00", control, launch: await launchPreview(actor.id), users, userCount, page, withdrawals, deposits: deposits.map(d => ({ ...d, invoiceAmountMicros: d.invoiceAmountMicros.toString() })), audit, stats: { totalRounds: total, paidCents: paid._sum.amountCents ?? 0, walletCents: balance._sum.availableFundsUsdCents ?? 0 } }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({ currency: "USD", settlementCurrency: "USDT", usdPerUsdt: "1.00", control, launch: await launchPreview(actor.id), users, userCount, page, withdrawals, deposits: deposits.map(d => ({ ...d, invoiceAmountMicros: d.invoiceAmountMicros.toString() })), audit, stats: { poolLimitedRounds: poolLimited, totalRounds: total, paidCents: paid._sum.amountCents ?? 0, walletCents: balance._sum.availableFundsUsdCents ?? 0 } }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) { return apiError(error); }
 }
 
@@ -55,13 +56,14 @@ export async function POST(request: Request) {
       return Response.json({ result: await decideWithdrawal(user.id, input.id, input.decision, input.note, hash) });
     }
     if (input.action === "settings" && input.minStakeCents > input.maxStakeCents) throw new Error("Minimum stake must not exceed maximum stake.");
+    if (input.action === "settings" && input.referralBps + input.referralLevel2Bps + input.referralLevel3Bps > MAX_REFERRAL_BPS) throw new Error("The combined referral rates must not exceed the 3% play fee.");
     await atomic(async tx => {
       await tx.$queryRaw`SELECT id FROM FlightControl WHERE id = 1 FOR UPDATE`;
       const control = await controls(tx);
       if ((await tx.user.findUniqueOrThrow({ where: { id: user.id }, select: { role: true } })).role !== "ADMIN") throw new Error("Administrator access required.");
       if (input.action === "settings") {
-        const { enabled, depositsEnabled, withdrawalsEnabled, minStakeCents, maxStakeCents, minWithdrawalCents, houseEdgePpm, referralsEnabled, referralBps } = input;
-        const settings = { enabled, depositsEnabled, withdrawalsEnabled, minStakeCents, maxStakeCents, minWithdrawalCents, houseEdgePpm, referralsEnabled, referralBps };
+        const { enabled, depositsEnabled, withdrawalsEnabled, minStakeCents, maxStakeCents, minWithdrawalCents, houseEdgePpm, referralsEnabled, referralBps, referralLevel2Bps, referralLevel3Bps } = input;
+        const settings = { enabled, depositsEnabled, withdrawalsEnabled, minStakeCents, maxStakeCents, minWithdrawalCents, houseEdgePpm, referralsEnabled, referralBps, referralLevel2Bps, referralLevel3Bps };
         await tx.flightControl.update({ where: { id: 1 }, data: settings });
       }
       if (input.action === "reserve") {

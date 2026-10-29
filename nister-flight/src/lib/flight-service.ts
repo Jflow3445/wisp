@@ -1,4 +1,4 @@
-import { DRAW_ENGINE, drawPrice, drawResult, drawCommitment, drawConfigurationHash, type DrawRules } from "./flight-draw";
+import { DRAW_ENGINE, LEGACY_DRAW_ENGINE, poolDrawResult, drawPrice, drawResult, drawCommitment, drawConfigurationHash, type DrawRules } from "./flight-draw";
 import { advanceMission, MISSION, MISSION_ENGINE, missionObjective, missionScore, type MissionState } from "./flight-mission";
 import { canonicalJson, missionEngineFault, missionWind, type MissionRules } from "./flight-mission-server";
 import { contestOutcome } from "./flight-mission-economy";
@@ -7,15 +7,15 @@ import { AIRCRAFT } from "./flight-physics";
 import { advancePilot, PILOT_ENGINE, pilotCollectId, pilotValue, pilotView, type PilotLog, type PilotState } from "./flight-pilot";
 import { ensureUserReferralCode } from "./referrals";
 import { depositReceiveAddress } from "./tron-payments";
-import { playCharge, effectiveStakeLimit } from "@/lib/flight-economy";
-import { qualifiedReferral, settleRoundReferral, tryPayReferral } from "@/lib/flight-referral";
+import { playCharge } from "@/lib/flight-economy";
+import { qualifiedReferrals, referralRates, settleRoundReferral, tryPayReferral } from "@/lib/flight-referral";
 import { randomBytes } from "node:crypto";
 import { Prisma, type FlightRound } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { currentStep, MAX_BALANCE, offerId, type FlightPath } from "@/lib/flight-math";
 
 type Tx = Prisma.TransactionClient;
-export const FLIGHT_TERMS = "flight-draw-2026-10-29-v5";
+export const FLIGHT_TERMS = "flight-pool-referrals-2026-10-29-v6";
 
 export async function atomic<T>(operation: (tx: Tx) => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
@@ -122,13 +122,17 @@ async function settleMission(tx: Tx, round: FlightRound, time: Date, collect: bo
 }
 
 async function settle(tx: Tx, round: FlightRound, time: Date, collect: boolean, expectedOffer?: string) {
-  if (round.engineVersion === DRAW_ENGINE) {
+  if ([DRAW_ENGINE, LEGACY_DRAW_ENGINE].includes(round.engineVersion)) {
     if (round.status !== "FLYING") return round;
     if (time < round.endsAt) {
       if (collect) throw new Error("The draw is still running. Your result appears automatically.");
       return round;
     }
-    const outcome = drawResult(round.seed, round.requestKey, round.rulesJson as unknown as DrawRules);
+    const current = await tx.flightControl.findUniqueOrThrow({ where: { id: 1 } });
+    const availablePool = current.houseBalanceCents - current.protectedHouseCents - current.reservedCents;
+    const rules = round.rulesJson as unknown as DrawRules;
+    const outcome = round.engineVersion === DRAW_ENGINE ? poolDrawResult(round.seed, round.requestKey, rules, availablePool) : { ...drawResult(round.seed, round.requestKey, rules), reason: "LEGACY_DRAW" };
+    if (round.engineVersion === DRAW_ENGINE) await tx.flightRound.update({ where: { id: round.id }, data: { poolCentsAtSettlement: availablePool, resultReason: outcome.reason } });
     return finishMission(tx, round, outcome.payoutCents, time, outcome.payoutCents ? "WIN" : "LOSS");
   }
   if (round.engineVersion === MISSION_ENGINE) return settleMission(tx, round, time, collect);
@@ -153,7 +157,7 @@ async function settle(tx: Tx, round: FlightRound, time: Date, collect: boolean, 
 }
 
 function view(round: FlightRound, time: Date) {
-  const draw = round.engineVersion === DRAW_ENGINE ? round.rulesJson as unknown as DrawRules : null;
+  const draw = [DRAW_ENGINE, LEGACY_DRAW_ENGINE].includes(round.engineVersion) ? round.rulesJson as unknown as DrawRules : null;
   const flight = round.pathJson as unknown as FlightPath;
   const index = currentStep(flight.offsets, time.getTime() - round.startedAt.getTime());
   const complete = !["FLYING", "AWAITING_RESULT"].includes(round.status);
@@ -171,7 +175,7 @@ function view(round: FlightRound, time: Date) {
     startedAt: round.startedAt.toISOString(), endsAt: round.endsAt.toISOString(), serverNow: time.toISOString(),
     offerId: complete || mission || draw ? null : pilot ? pilotCollectId(round.seed, round.id) : offerId(round.seed, index), currentCents: complete ? round.payoutCents! : mission || draw ? 0 : pilot ? pilotValue(pilot, flight) : flight.path[index],
     points: mission || draw ? [] : complete ? flight.path : flight.path.slice(0, index + 1),
-    ...(complete ? { proof: { seed: round.seed, rules: draw ? { kind: "DRAW", version: 1, prizeCents: draw.prizeCents, durationMs: draw.durationMs, configurationCommitment: drawConfigurationHash(draw), clientNonce: round.requestKey } : round.rulesJson, engine: round.engineVersion, ...(pilot || mission ? { aircraft: AIRCRAFT, inputs, finalState: mission ?? pilot, basePath: mission ? null : flight } : {}), ...(mission ? { mission: MISSION, contributions: round.missionSeedJson, opponent: round.opponentReplayJson } : {}) } } : {}),
+    ...(complete ? { proof: { seed: round.seed, rules: draw ? { kind: "DRAW", version: draw.version, prizeCents: draw.prizeCents, durationMs: draw.durationMs, configurationCommitment: drawConfigurationHash(draw), clientNonce: round.requestKey } : round.rulesJson, engine: round.engineVersion, ...(pilot || mission ? { aircraft: AIRCRAFT, inputs, finalState: mission ?? pilot, basePath: mission ? null : flight } : {}), ...(mission ? { mission: MISSION, contributions: round.missionSeedJson, opponent: round.opponentReplayJson } : {}) } } : {}),
   };
 }
 
@@ -185,7 +189,7 @@ export async function offerDraw(userId: string, stake: number) {
       const seed = randomBytes(32).toString("hex");
       offer = await tx.flightOffer.create({ data: { userId, stakeCents: stake, retainedCents: price.retainedCents, seed, commitment: drawCommitment(seed, price.rules, stake), rulesJson: price.rules as unknown as Prisma.InputJsonValue, expiresAt: new Date(time.getTime() + 60000) } });
     }
-    return { id: offer.id, engine: DRAW_ENGINE, commitment: offer.commitment, stakeCents: stake, totalCents: price.charge.totalCents, feeCents: price.charge.feeCents, prizeCents: price.rules.prizeCents, durationMs: price.rules.durationMs, rulesVersion: FLIGHT_TERMS, expiresAt: offer.expiresAt.toISOString(), available: stake <= effectiveStakeLimit(control) };
+    return { id: offer.id, engine: DRAW_ENGINE, commitment: offer.commitment, stakeCents: stake, totalCents: price.charge.totalCents, feeCents: price.charge.feeCents, prizeCents: price.rules.prizeCents, durationMs: price.rules.durationMs, rulesVersion: FLIGHT_TERMS, expiresAt: offer.expiresAt.toISOString(), available: true };
   });
 }
 
@@ -220,13 +224,12 @@ export async function startFlight(userId: string, stakeCents: number, requestKey
     if (!offer || offer.usedRoundId || offer.stakeCents !== stakeCents || offer.commitment !== offerCommitment || offer.expiresAt <= time) throw new Error("Refresh the draw offer and review its prize before entering.");
     const rules = offer.rulesJson as unknown as DrawRules;
     if (rules.kind !== "DRAW" || rules.prizeCents !== cap || drawCommitment(offer.seed, rules, stakeCents) !== offer.commitment) throw new Error("Refresh the draw offer before entering.");
-    if (stakeCents > effectiveStakeLimit(control)) throw new Error("Rounds at this stake are currently unavailable. Choose another amount or try again shortly.");
     const seed = offer.seed, startedAt = time;
-    const referral = await qualifiedReferral(tx, userId, stakeCents, charge.feeCents, control, time);
+    const referralPlan = await qualifiedReferrals(tx, userId, stakeCents, charge.feeCents, control, time);
     await debit(tx, userId, charge.totalCents);
-    const round = await tx.flightRound.create({ data: { userId, activeUserId: userId, requestKey, engineVersion: DRAW_ENGINE, reservationCents: cap, operatorMarginCents: offer.retainedCents, season: control.season, feeCents: charge.feeCents, referralUserId: referral?.userId, referralCents: referral?.amountCents ?? 0, stakeCents, capCents: cap, seed, commitment: offer.commitment, rulesJson: rules as unknown as Prisma.InputJsonValue, pathJson: { path: [], offsets: [] }, startedAt, endsAt: new Date(startedAt.getTime() + rules.durationMs) } });
+    const round = await tx.flightRound.create({ data: { userId, activeUserId: userId, requestKey, engineVersion: DRAW_ENGINE, reservationCents: 0, operatorMarginCents: 0, referralPlanJson: referralPlan as unknown as Prisma.InputJsonValue, season: control.season, feeCents: charge.feeCents, referralUserId: referralPlan.find(p => p.level === 1)?.userId, referralCents: referralPlan.reduce((sum,p) => sum + p.amountCents, 0), stakeCents, capCents: cap, seed, commitment: offer.commitment, rulesJson: rules as unknown as Prisma.InputJsonValue, pathJson: { path: [], offsets: [] }, startedAt, endsAt: new Date(startedAt.getTime() + rules.durationMs) } });
     await tx.flightOffer.update({ where: { id: offer.id }, data: { usedRoundId: round.id } });
-    await tx.flightControl.update({ where: { id: 1 }, data: { houseBalanceCents: { increment: stakeCents }, protectedHouseCents: { increment: offer.retainedCents }, reservedCents: { increment: cap }, insuranceBalanceCents: { increment: charge.feeCents }, feesCollectedCents: { increment: charge.feeCents } } });
+    await tx.flightControl.update({ where: { id: 1 }, data: { houseBalanceCents: { increment: stakeCents }, insuranceBalanceCents: { increment: charge.feeCents }, feesCollectedCents: { increment: charge.feeCents } } });
     await entry(tx, userId, -stakeCents, "FLIGHT_STAKE", `flight:${round.id}:stake`);
     await entry(tx, userId, -charge.feeCents, "PLAY_FEE", `flight:${round.id}:fee`);
     return view(await settle(tx, round, time, false), time);
@@ -248,7 +251,7 @@ export async function abortMission(userId: string, id: string) {
     await lock(tx);
     let round = await tx.flightRound.findFirst({ where: { id, userId } });
     if (!round) throw new Error("Flight not found.");
-    if (round.engineVersion === DRAW_ENGINE) throw new Error("Accepted draws finish automatically. Check your result.");
+    if ([DRAW_ENGINE, LEGACY_DRAW_ENGINE].includes(round.engineVersion)) throw new Error("Accepted draws finish automatically. Check your result.");
     if (round.engineVersion !== MISSION_ENGINE) throw new Error("Use collection for this earlier flight.");
     const time = await now(tx);
     round = await settle(tx, round, time, false);
@@ -326,7 +329,7 @@ export async function flightSnapshot(userId: string) {
     const testingAccess = !!control.liveLaunchedAt || user.role === "ADMIN" || !!user.flightPlayer?.isTestAccount;
     return { currency: "USD" as const, settlementCurrency: "USDT" as const, network: "TRC20" as const, usdPerUsdt: "1.00", user: { name: user.name, email: user.email, role: user.role }, availableCents: user.tradingProfile?.availableFundsUsdCents ?? 0, heldCents: held._sum.amountCents ?? 0,
       depositReceiveAddress: receiveAddress, eligible: allowed && testingAccess, termsVersion: FLIGHT_TERMS, termsAccepted: user.flightPlayer?.termsVersion === FLIGHT_TERMS, isTestAccount: !!user.flightPlayer?.isTestAccount && !control.liveLaunchedAt,
-      referral: { enabled: control.referralsEnabled, bps: control.referralBps, code: user.referralCode, earnedCents: rewards._sum.amountCents ?? 0, pendingCents: pending._sum.amountCents ?? 0 }, totalRounds,
+      referral: { enabled: control.referralsEnabled, ratesBps: referralRates(control), bps: control.referralBps, code: user.referralCode, earnedCents: rewards._sum.amountCents ?? 0, pendingCents: pending._sum.amountCents ?? 0 }, totalRounds,
       control: { enabled: control.enabled, depositsEnabled: control.depositsEnabled, withdrawalsEnabled: control.withdrawalsEnabled, minStakeCents: control.minStakeCents, maxStakeCents: control.maxStakeCents, minWithdrawalCents: control.minWithdrawalCents, feeBps: 300, isLive: !!control.liveLaunchedAt },
       rounds: rounds.map(r => view(r, time)), withdrawals, entries, deposits: deposits.map(d => ({ ...d, invoiceAmountMicros: d.invoiceAmountMicros.toString() })), serverNow: time.toISOString() };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });

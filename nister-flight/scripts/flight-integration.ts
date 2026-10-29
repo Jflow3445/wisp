@@ -140,7 +140,7 @@ async function main() {
   // A reward recipient at capacity cannot break the referred player's settlement.
   await prisma.userTradingProfile.update({ where: { userId: bob.id }, data: { availableFundsUsdCents: MAX_BALANCE } });
   const deferred = await startFlight(alice.id, 500, randomUUID()); await finish(deferred.id);
-  check((await prisma.flightRound.findUniqueOrThrow({ where: { id: deferred.id } })).status !== "FLYING" && (await prisma.flightReferralReward.findUniqueOrThrow({ where: { roundId: deferred.id } })).status === "PENDING", "full recipient wallets defer rewards without blocking settlement");
+  check((await prisma.flightRound.findUniqueOrThrow({ where: { id: deferred.id } })).status !== "FLYING" && (await prisma.flightReferralReward.findUniqueOrThrow({ where: { roundId_level: { roundId: deferred.id, level: 1 } } })).status === "PENDING", "full recipient wallets defer rewards without blocking settlement");
   await prisma.userTradingProfile.update({ where: { userId: bob.id }, data: { availableFundsUsdCents: 0 } }); await settleExpiredFlights();
   check(await balance(bob.id) === 5, "deferred rewards recover once wallet capacity is available");
   await prisma.user.update({ where: { id: admin.id }, data: { emailVerifiedAt: null } });
@@ -157,6 +157,7 @@ async function main() {
   assert.equal(piloted.status, "FLYING");
   const pilotPath = { path: Array(8).fill(500), offsets: Array.from({ length: 8 }, (_, n) => n * 3000) }, pilotSeed = "isolated-pilot-fixture", pilotRules = { ...DEFAULT_RULES, stepMs: 3000 };
   let start = new Date(Date.now() - 400);
+  await prisma.flightControl.update({ where: { id: 1 }, data: { reservedCents: { increment: 1000 } } });
   await prisma.flightRound.update({ where: { id: piloted.id }, data: { engineVersion: 6, pilotInputsJson: [], seed: pilotSeed, commitment: pilotCommitment(pilotSeed, pilotRules, 500, 1000), pathJson: pilotPath, rulesJson: pilotRules, startedAt: start, endsAt: new Date(start.getTime() + 24000), pilotStateJson: initialPilot() as unknown as Prisma.InputJsonValue } });
   await assert.rejects(() => pilotFlight(bob.id, piloted.id, 1, 600, 350), /not found/);
   await assert.rejects(() => pilotFlight(alice.id, piloted.id, 1, 1001, 350), /valid flight controls/);
@@ -184,6 +185,7 @@ async function main() {
   const legacy = await startFlight(alice.id, 100, randomUUID());
   if (legacy.status === "FLYING") {
     const legacyPath = { path: [95, 120], offsets: [0, 1500] }, legacySeed = "isolated-legacy-fixture";
+    await prisma.flightControl.update({ where: { id: 1 }, data: { reservedCents: { increment: 200 } } });
     await prisma.flightRound.update({ where: { id: legacy.id }, data: { engineVersion: 5, seed: legacySeed, commitment: commitment(legacySeed, DEFAULT_RULES, 100, 200), pathJson: legacyPath, rulesJson: DEFAULT_RULES, startedAt: new Date(), endsAt: new Date(Date.now() + 12000), pilotStateJson: Prisma.DbNull, pilotInputsJson: Prisma.DbNull } });
     await assert.rejects(() => pilotFlight(alice.id, legacy.id, 1, 400, 0), /no piloting controls/);
     const receipt = await collectFlight(alice.id, legacy.id, offerId(legacySeed, 0));
