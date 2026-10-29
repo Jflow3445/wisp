@@ -2,14 +2,15 @@
 import { useEffect, useRef } from "react";
 import { api, type Round } from "./client";
 
-export function usePilotTransport(round: Round | null, throttle: number, elevator: number, observe: (r: Round) => void, refresh: () => Promise<void>) {
+export function usePilotTransport(round: Round | null, throttle: number, elevator: number, observe: (r: Round) => void, refresh: () => Promise<void>, enabled = true) {
   const latest = useRef({ round, throttle, elevator, observe, refresh });
   useEffect(() => { latest.current = { round, throttle, elevator, observe, refresh }; }, [round, throttle, elevator, observe, refresh]);
-  const activeId = round?.status === "FLYING" && round.engine === 6 ? round.id : null;
+  const activeId = round?.status === "FLYING" && [6, 7].includes(round.engine) && enabled ? round.id : null;
   useEffect(() => {
     if (!activeId) return;
     let cancelled = false, busy = false, seq = latest.current.round?.pilot?.lastSeq ?? 0;
-    let sent = { throttle: 400, elevator: 0 }, packet: { id: string; seq: number; throttle: number; elevator: number } | null = null;
+    const acknowledged = latest.current.round?.pilot;
+    let sent = { throttle: Math.round((acknowledged?.throttle ?? .4) * 1000), elevator: Math.round((acknowledged?.elevator ?? 0) * 1000) }, packet: { id: string; seq: number; throttle: number; elevator: number } | null = null;
     const send = async () => {
       const value = latest.current;
       if (cancelled || busy || value.round?.id !== activeId || value.round.status !== "FLYING") return;
@@ -38,5 +39,5 @@ export function PilotControls({ throttle, elevator, onThrottle, onElevator, disa
     onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => { if ([" ", "Enter"].includes(event.key)) { event.preventDefault(); onElevator(value); } },
     onKeyUp: () => onElevator(0), onBlur: () => onElevator(0),
   });
-  return <div className="f-pilot-controls"><div className="f-pitch-control"><span>Pitch <small>hold gently</small></span><div><button {...handlers(-350)} disabled={disabled} className={elevator < 0 ? "pressed" : ""} aria-label="Pitch nose down"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M5 5l14 14M7 19h12V7"/></svg><span>Nose down</span></button><button {...handlers(350)} disabled={disabled} className={elevator > 0 ? "pressed" : ""} aria-label="Pitch nose up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M5 19 19 5M7 5h12v12"/></svg><span>Nose up</span></button></div></div><label className="f-throttle-control"><span>Throttle <b>{Math.round(throttle / 10)}%</b></span><input type="range" aria-label="Engine throttle" min="0" max="1000" step="10" value={throttle} onChange={event => onThrottle(Number(event.target.value))} disabled={disabled}/><small>Less power <span>More power</span></small></label></div>;
+  return <div className="f-pilot-controls"><div className="f-pitch-control"><span>Pitch <small>hold gently</small></span><div><button {...handlers(-350)} disabled={disabled} className={elevator < 0 ? "pressed" : ""} aria-label="Pitch nose down"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M5 5l14 14M7 19h12V7"/></svg><span>Nose down</span></button><button {...handlers(350)} disabled={disabled} className={elevator > 0 ? "pressed" : ""} aria-label="Pitch nose up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M5 19 19 5M7 5h12v12"/></svg><span>Nose up</span></button></div><input className="f-pitch-range" type="range" aria-label="Pitch control" min="-1000" max="1000" step="10" value={elevator} onChange={event => onElevator(Number(event.target.value))} disabled={disabled}/></div><label className="f-throttle-control"><span>Throttle <b>{Math.round(throttle / 10)}%</b></span><input type="range" aria-label="Engine throttle" min="0" max="1000" step="10" value={throttle} onChange={event => onThrottle(Number(event.target.value))} disabled={disabled}/><small>Less power <span>More power</span></small></label></div>;
 }

@@ -1602,6 +1602,7 @@ model FlightControl {
   minWithdrawalCents       Int      @default(1000)
   houseEdgePpm             Int      @default(64250)
   houseBalanceCents        Int      @default(0)
+  protectedHouseCents      Int      @default(0)
   reservedCents            Int      @default(0)
   updatedAt                DateTime @updatedAt
 }
@@ -1618,6 +1619,13 @@ model FlightPlayer {
 }
 
 model FlightRound {
+  reservationCents Int @default(0)
+  missionSeedJson Json?
+  operatorMarginCents Int @default(0)
+  matchId String?
+  match FlightMatch? @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  contestResult String?
+  opponentReplayJson Json?
   engineVersion Int @default(5)
   pilotStateJson Json?
   pilotInputsJson Json?
@@ -1646,6 +1654,35 @@ model FlightRound {
   @@index([season, settledAt])
   @@index([status, endsAt])
   @@index([userId, startedAt])
+  @@index([engineVersion, status, startedAt, matchId])
+  @@unique([matchId, userId])
+}
+
+model FlightMatch {
+  id String @id @default(cuid())
+  season Int
+  stakeCents Int
+  prizeCents Int
+  status String @default("FLYING")
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  settledAt DateTime? @db.DateTime(3)
+  rounds FlightRound[]
+  @@index([status, createdAt])
+}
+
+model FlightOffer {
+  id String @id @default(cuid())
+  userId String @unique
+  stakeCents Int
+  retainedCents Int
+  seed String
+  commitment String
+  rulesJson Json
+  expiresAt DateTime @db.DateTime(3)
+  usedRoundId String? @unique
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  @@index([userId, stakeCents, expiresAt])
+  @@index([expiresAt])
 }
 
 model FlightWithdrawal {

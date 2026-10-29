@@ -1,5 +1,9 @@
+import { advanceMission, initialMission, MISSION, MISSION_ENGINE, missionObjective, missionScore, type MissionState } from "./flight-mission";
+import { canonicalJson, combinedMissionSeed, missionCommitment, missionEngineFault, missionRules, missionWind, weatherForReserve, type MissionRules, type SeedContribution } from "./flight-mission-server";
+import { contestOutcome, missionPrice } from "./flight-mission-economy";
+import { conditionBps } from "./flight-physics";
 import { AIRCRAFT } from "./flight-physics";
-import { advancePilot, initialPilot, PILOT_ENGINE, pilotCollectId, pilotCommitment, pilotValue, pilotView, type PilotLog, type PilotState } from "./flight-pilot";
+import { advancePilot, PILOT_ENGINE, pilotCollectId, pilotValue, pilotView, type PilotLog, type PilotState } from "./flight-pilot";
 import { ensureUserReferralCode } from "./referrals";
 import { depositReceiveAddress } from "./tron-payments";
 import { playCharge, effectiveStakeLimit } from "@/lib/flight-economy";
@@ -7,10 +11,10 @@ import { qualifiedReferral, settleRoundReferral, tryPayReferral } from "@/lib/fl
 import { randomBytes } from "node:crypto";
 import { Prisma, type FlightRound } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { currentStep, DEFAULT_RULES, generateFlight, MAX_BALANCE, offerId, seededRandom, type FlightPath, type FlightRules } from "@/lib/flight-math";
+import { currentStep, MAX_BALANCE, offerId, type FlightPath } from "@/lib/flight-math";
 
 type Tx = Prisma.TransactionClient;
-export const FLIGHT_TERMS = "flight-pilot-2026-10-29-v3";
+export const FLIGHT_TERMS = "flight-mission-2026-10-29-v4";
 
 export async function atomic<T>(operation: (tx: Tx) => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
@@ -58,7 +62,15 @@ async function debit(tx: Tx, userId: string, amount: number) {
 }
 
 async function evolve(tx: Tx, round: FlightRound, time: Date) {
-  if (round.status !== "FLYING" || round.engineVersion !== PILOT_ENGINE) return round;
+  if (round.status !== "FLYING") return round;
+  if (round.engineVersion === MISSION_ENGINE) {
+    const previous = round.pilotStateJson as unknown as MissionState, rules = round.rulesJson as unknown as MissionRules;
+    if (!previous || previous.version !== 2) throw new Error("This mission needs a recovery check. Contact support.");
+    const state = advanceMission(previous, time.getTime() - round.startedAt.getTime(), rules.course, ms => missionWind(round.seed, ms, rules.weather), missionEngineFault(round.seed, rules.weather));
+    if (state.tick === previous.tick && state.stop === previous.stop) return round;
+    return tx.flightRound.update({ where: { id: round.id }, data: { pilotStateJson: state as unknown as Prisma.InputJsonValue } });
+  }
+  if (round.engineVersion !== PILOT_ENGINE) return round;
   const previous = round.pilotStateJson as unknown as PilotState;
   if (!previous || previous.version !== 1) throw new Error("This flight needs a recovery check. Contact support.");
   const state = advancePilot(previous, time.getTime() - round.startedAt.getTime(), round.endsAt.getTime() - round.startedAt.getTime(), round.pathJson as unknown as FlightPath, round.seed);
@@ -66,7 +78,50 @@ async function evolve(tx: Tx, round: FlightRound, time: Date) {
   return tx.flightRound.update({ where: { id: round.id }, data: { pilotStateJson: state as unknown as Prisma.InputJsonValue } });
 }
 
+async function finishMission(tx: Tx, round: FlightRound, payout: number, time: Date, result: string, opponent?: FlightRound, releaseReservation = true) {
+  if (round.status === "SETTLED") return round;
+  const peer = opponent ? { commitment: opponent.commitment, inputs: opponent.pilotInputsJson, finalState: opponent.pilotStateJson, score: missionScore(opponent.pilotStateJson as unknown as MissionState) } : null;
+  await tx.flightRound.update({ where: { id: round.id }, data: { status: "SETTLED", activeUserId: null, payoutCents: payout, settledAt: time, contestResult: result, ...(peer ? { opponentReplayJson: peer as Prisma.InputJsonValue } : {}) } });
+  if (payout > 0) await addBalance(tx, round.userId, payout);
+  await entry(tx, round.userId, payout, "FLIGHT_RETURN", `flight:${round.id}:return`);
+  await tx.flightControl.update({ where: { id: 1 }, data: { houseBalanceCents: { decrement: payout }, reservedCents: { decrement: releaseReservation ? round.reservationCents : 0 } } });
+  await settleRoundReferral(tx, round);
+  return tx.flightRound.findUniqueOrThrow({ where: { id: round.id } });
+}
+
+async function settleMission(tx: Tx, round: FlightRound, time: Date, collect: boolean) {
+  if (round.status === "SETTLED") return round;
+  round = await evolve(tx, round, time);
+  const state = round.pilotStateJson as unknown as MissionState;
+  if (collect && !state.stop) throw new Error("Pass the checkpoints and land on the runway to complete this mission.");
+  if (!round.matchId) {
+    if (!state.stop) return round;
+    const rules = round.rulesJson as unknown as MissionRules;
+    return finishMission(tx, round, state.stop === "LANDED" ? rules.prizes.soloCents : 0, time, state.stop === "LANDED" ? "WIN" : "LOSS");
+  }
+  const match = await tx.flightMatch.findUniqueOrThrow({ where: { id: round.matchId } });
+  if (match.status === "SETTLED") return tx.flightRound.findUniqueOrThrow({ where: { id: round.id } });
+  const paired = await tx.flightRound.findMany({ where: { matchId: match.id }, orderBy: { id: "asc" } });
+  if (paired.length !== 2) throw new Error("This contest needs a recovery check. Contact support.");
+  const advanced = [];
+  for (const item of paired) {
+    let fresh = await evolve(tx, item, time);
+    if ((fresh.pilotStateJson as unknown as MissionState).stop && fresh.status === "FLYING") fresh = await tx.flightRound.update({ where: { id: fresh.id }, data: { status: "AWAITING_RESULT" } });
+    advanced.push(fresh);
+  }
+  const [a, b] = advanced, sa = a.pilotStateJson as unknown as MissionState, sb = b.pilotStateJson as unknown as MissionState;
+  if (!sa.stop || !sb.stop) return tx.flightRound.findUniqueOrThrow({ where: { id: round.id } });
+  const result = contestOutcome(sa, sb, match.stakeCents, match.prizeCents);
+  if (result.refundAllocation) await tx.flightControl.update({ where: { id: 1 }, data: { protectedHouseCents: { decrement: a.operatorMarginCents + b.operatorMarginCents } } });
+  await tx.flightControl.update({ where: { id: 1 }, data: { reservedCents: { decrement: a.reservationCents + b.reservationCents } } });
+  await finishMission(tx, a, result.a, time, result.aResult, b, false);
+  await finishMission(tx, b, result.b, time, result.bResult, a, false);
+  await tx.flightMatch.update({ where: { id: match.id }, data: { status: "SETTLED", settledAt: time } });
+  return tx.flightRound.findUniqueOrThrow({ where: { id: round.id } });
+}
+
 async function settle(tx: Tx, round: FlightRound, time: Date, collect: boolean, expectedOffer?: string) {
+  if (round.engineVersion === MISSION_ENGINE) return settleMission(tx, round, time, collect);
   if (round.status !== "FLYING") return round;
   round = await evolve(tx, round, time);
   const flight = round.pathJson as unknown as FlightPath;
@@ -90,21 +145,41 @@ async function settle(tx: Tx, round: FlightRound, time: Date, collect: boolean, 
 function view(round: FlightRound, time: Date) {
   const flight = round.pathJson as unknown as FlightPath;
   const index = currentStep(flight.offsets, time.getTime() - round.startedAt.getTime());
-  const complete = round.status !== "FLYING";
+  const complete = !["FLYING", "AWAITING_RESULT"].includes(round.status);
   const pilot = round.engineVersion === PILOT_ENGINE ? round.pilotStateJson as unknown as PilotState : null;
+  const mission = round.engineVersion === MISSION_ENGINE ? round.pilotStateJson as unknown as MissionState : null;
+  const rules = mission ? round.rulesJson as unknown as MissionRules : null;
   const inputs = (round.pilotInputsJson ?? []) as unknown as PilotLog;
+  const missionPilot = mission ? { ...mission.aircraft, tick: mission.tick, conditionBps: conditionBps(mission.aircraft), throttle: mission.throttle, elevator: mission.elevator, lastSeq: inputs.length, stop: mission.stop, timeScale: MISSION.timeScale } : null;
   return {
     id: round.id, requestKey: round.requestKey, status: round.status, stakeCents: round.stakeCents,
     capCents: round.capCents, feeCents: round.feeCents, totalCostCents: round.stakeCents + round.feeCents, payoutCents: round.payoutCents, commitment: round.commitment,
-    engine: round.engineVersion, pilot: pilot ? pilotView(pilot, inputs.length) : null, settledAt: round.settledAt?.toISOString() ?? null,
+    engine: round.engineVersion, pilot: missionPilot ?? (pilot ? pilotView(pilot, inputs.length) : null), settledAt: round.settledAt?.toISOString() ?? null,
+    mission: mission && rules ? { course: rules.course, prizes: rules.prizes, gate: mission.gate, engineOut: mission.engineOut, objective: missionObjective(mission, rules.course), score: missionScore(mission), mode: round.matchId ? "PVP" as const : "SOLO" as const, result: round.contestResult, opponentScore: round.opponentReplayJson ? (round.opponentReplayJson as { score: number }).score : null } : null,
     startedAt: round.startedAt.toISOString(), endsAt: round.endsAt.toISOString(), serverNow: time.toISOString(),
-    offerId: complete ? null : pilot ? pilotCollectId(round.seed, round.id) : offerId(round.seed, index), currentCents: complete ? round.payoutCents! : pilot ? pilotValue(pilot, flight) : flight.path[index],
-    points: complete ? flight.path : flight.path.slice(0, index + 1),
-    ...(complete ? { proof: { seed: round.seed, rules: round.rulesJson, engine: round.engineVersion, ...(pilot ? { aircraft: AIRCRAFT, inputs, finalState: pilot, basePath: flight } : {}) } } : {}),
+    offerId: complete || mission ? null : pilot ? pilotCollectId(round.seed, round.id) : offerId(round.seed, index), currentCents: complete ? round.payoutCents! : mission ? 0 : pilot ? pilotValue(pilot, flight) : flight.path[index],
+    points: mission ? [] : complete ? flight.path : flight.path.slice(0, index + 1),
+    ...(complete ? { proof: { seed: round.seed, rules: round.rulesJson, engine: round.engineVersion, ...(pilot || mission ? { aircraft: AIRCRAFT, inputs, finalState: mission ?? pilot, basePath: mission ? null : flight } : {}), ...(mission ? { mission: MISSION, contributions: round.missionSeedJson, opponent: round.opponentReplayJson } : {}) } } : {}),
   };
 }
 
-export async function startFlight(userId: string, stakeCents: number, requestKey: string, rulesVersion = FLIGHT_TERMS) {
+export async function offerMission(userId: string, stake: number) {
+  return atomic(async tx => {
+    const control = await lock(tx), time = await now(tx), priced = missionPrice(stake, control.houseEdgePpm);
+    const partner = priced.prizes.contestCents ? await tx.flightRound.findFirst({ where: { engineVersion: MISSION_ENGINE, status: "FLYING", matchId: null, userId: { not: userId }, stakeCents: stake, operatorMarginCents: priced.retainedCents, season: control.season, startedAt: { gte: new Date(time.getTime() + 5000) } }, orderBy: { startedAt: "asc" } }) : null;
+    const rules = partner ? partner.rulesJson as unknown as MissionRules : missionRules(stake, control.houseEdgePpm, weatherForReserve(control));
+    if (stake < control.minStakeCents || stake > control.maxStakeCents) throw new Error("Choose a stake within the current limits.");
+    let offer = await tx.flightOffer.findUnique({ where: { userId } });
+    if (!offer || offer.usedRoundId || offer.expiresAt.getTime() < time.getTime() + 10000 || offer.stakeCents !== stake || canonicalJson(offer.rulesJson) !== canonicalJson(rules)) {
+      if (offer) await tx.flightOffer.delete({ where: { id: offer.id } });
+      const seed = randomBytes(32).toString("hex");
+      offer = await tx.flightOffer.create({ data: { userId, stakeCents: stake, retainedCents: priced.retainedCents, seed, commitment: missionCommitment(seed, rules, stake, 2 * stake), rulesJson: rules as unknown as Prisma.InputJsonValue, expiresAt: new Date(time.getTime() + 60000) } });
+    }
+    return { id: offer.id, commitment: offer.commitment, stakeCents: stake, totalCents: priced.charge.totalCents, feeCents: priced.charge.feeCents, rulesVersion: FLIGHT_TERMS, course: rules.course, prizes: rules.prizes, expiresAt: offer.expiresAt.toISOString(), available: !!partner || stake <= effectiveStakeLimit(control) };
+  });
+}
+
+export async function startFlight(userId: string, stakeCents: number, requestKey: string, rulesVersion = FLIGHT_TERMS, offerId?: string, offerCommitment?: string) {
   return atomic(async tx => {
     let control = await lock(tx);
     const time = await now(tx);
@@ -122,22 +197,37 @@ export async function startFlight(userId: string, stakeCents: number, requestKey
     if (!Number.isSafeInteger(stakeCents) || stakeCents < control.minStakeCents || stakeCents > control.maxStakeCents) throw new Error("Choose a stake within the current limits.");
     if (!control.liveLaunchedAt && user.role !== "ADMIN" && !user.flightPlayer?.isTestAccount) throw new Error("Flight is preparing for launch. Your wallet remains available.");
     const active = await tx.flightRound.findUnique({ where: { activeUserId: userId } });
-    if (active && (await settle(tx, active, time, false)).status === "FLYING") throw new Error("You already have a flight in progress.");
+    if (active && (await settle(tx, active, time, false)).activeUserId) throw new Error("You already have a flight in progress.");
     control = await tx.flightControl.findUniqueOrThrow({ where: { id: 1 } });
     const cap = 2 * stakeCents;
-    if (Math.floor(control.houseBalanceCents / 10) - control.reservedCents < cap) throw new Error("The flight reserve is currently full. Try again later.");
     const profile = await tx.userTradingProfile.findUnique({ where: { userId }, select: { availableFundsUsdCents: true } });
     const pendingWithdrawals = await tx.flightWithdrawal.aggregate({ where: { userId, status: { in: ["PENDING", "APPROVED"] } }, _sum: { amountCents: true } });
     const balance = profile?.availableFundsUsdCents ?? 0;
     const charge = playCharge(stakeCents);
     if (control.insuranceBalanceCents + charge.feeCents > MAX_BALANCE || control.feesCollectedCents + charge.feeCents > MAX_BALANCE) throw new Error("Flights are temporarily paused for an account review.");
     if (balance - charge.totalCents + cap + (pendingWithdrawals._sum.amountCents ?? 0) > MAX_BALANCE || control.houseBalanceCents + stakeCents > MAX_BALANCE) throw new Error("Wallet capacity exceeded.");
-    const rules: FlightRules = { ...DEFAULT_RULES, stepMs: 3000, houseEdgePpm: control.houseEdgePpm };
-    const seed = randomBytes(32).toString("hex"), path = generateFlight(stakeCents, cap, rules, seededRandom(seed));
+    const offer = offerId ? await tx.flightOffer.findFirst({ where: { id: offerId, userId } }) : null;
+    if (!offer || offer.usedRoundId || offer.stakeCents !== stakeCents || offer.commitment !== offerCommitment || offer.expiresAt <= time) throw new Error("Refresh the mission offer and review its prize before taking flight.");
+    const rules = offer.rulesJson as unknown as MissionRules;
+    if (rules.prizes.soloCents <= charge.totalCents || rules.prizes.soloCents > cap || missionCommitment(offer.seed, rules, stakeCents, cap) !== offer.commitment) throw new Error("Refresh the mission offer before taking flight.");
+    if (rules.prizes.contestCents !== null && (rules.prizes.contestCents <= charge.totalCents || rules.prizes.contestCents > 2 * (stakeCents - offer.retainedCents))) throw new Error("Refresh the contest offer before taking flight.");
+    const contribution: SeedContribution = { serverSeed: offer.seed, clientNonce: requestKey, commitment: offer.commitment };
+    let contributions = [contribution], seed = combinedMissionSeed(contributions);
+    let partner = rules.prizes.contestCents ? await tx.flightRound.findFirst({ where: { engineVersion: MISSION_ENGINE, userId: { not: userId }, stakeCents, operatorMarginCents: offer.retainedCents, season: control.season, status: "FLYING", matchId: null, startedAt: { gte: new Date(time.getTime() + 5000) } }, orderBy: { startedAt: "asc" } }) : null;
+    if (partner && canonicalJson(partner.rulesJson) !== canonicalJson(offer.rulesJson)) partner = null;
+    if (!partner && Math.floor((control.houseBalanceCents - control.protectedHouseCents) / 10) - control.reservedCents < cap) throw new Error("Flights at this stake are currently unavailable. Choose another amount or try again shortly.");
+    let matchId: string | null = null;
+    if (partner) {
+      contributions = [...(partner.missionSeedJson as unknown as SeedContribution[]), contribution]; seed = combinedMissionSeed(contributions);
+      const match = await tx.flightMatch.create({ data: { season: control.season, stakeCents, prizeCents: rules.prizes.contestCents! } }); matchId = match.id;
+      await tx.flightRound.update({ where: { id: partner.id }, data: { matchId, reservationCents: stakeCents, seed, missionSeedJson: contributions as unknown as Prisma.InputJsonValue } });
+    }
+    const startedAt = partner?.startedAt ?? new Date(time.getTime() + 10000);
     const referral = await qualifiedReferral(tx, userId, stakeCents, charge.feeCents, control, time);
     await debit(tx, userId, charge.totalCents);
-    const round = await tx.flightRound.create({ data: { userId, activeUserId: userId, requestKey, engineVersion: PILOT_ENGINE, pilotStateJson: initialPilot() as unknown as Prisma.InputJsonValue, pilotInputsJson: [], season: control.season, feeCents: charge.feeCents, referralUserId: referral?.userId, referralCents: referral?.amountCents ?? 0, stakeCents, capCents: cap, seed, commitment: pilotCommitment(seed, rules, stakeCents, cap), rulesJson: rules, pathJson: path as unknown as Prisma.InputJsonValue, startedAt: time, endsAt: new Date(time.getTime() + rules.steps * rules.stepMs) } });
-    await tx.flightControl.update({ where: { id: 1 }, data: { houseBalanceCents: { increment: stakeCents }, reservedCents: { increment: cap }, insuranceBalanceCents: { increment: charge.feeCents }, feesCollectedCents: { increment: charge.feeCents } } });
+    const round = await tx.flightRound.create({ data: { userId, activeUserId: userId, requestKey, engineVersion: MISSION_ENGINE, reservationCents: partner ? stakeCents : cap, operatorMarginCents: offer.retainedCents, matchId, missionSeedJson: contributions as unknown as Prisma.InputJsonValue, pilotStateJson: initialMission() as unknown as Prisma.InputJsonValue, pilotInputsJson: [], season: control.season, feeCents: charge.feeCents, referralUserId: referral?.userId, referralCents: referral?.amountCents ?? 0, stakeCents, capCents: cap, seed, commitment: offer.commitment, rulesJson: rules as unknown as Prisma.InputJsonValue, pathJson: { path: [], offsets: [] }, startedAt, endsAt: new Date(startedAt.getTime() + MISSION.durationMs) } });
+    await tx.flightOffer.update({ where: { id: offer.id }, data: { usedRoundId: round.id } });
+    await tx.flightControl.update({ where: { id: 1 }, data: { houseBalanceCents: { increment: stakeCents }, protectedHouseCents: { increment: offer.retainedCents }, reservedCents: { increment: partner ? 0 : cap }, insuranceBalanceCents: { increment: charge.feeCents }, feesCollectedCents: { increment: charge.feeCents } } });
     await entry(tx, userId, -stakeCents, "FLIGHT_STAKE", `flight:${round.id}:stake`);
     await entry(tx, userId, -charge.feeCents, "PLAY_FEE", `flight:${round.id}:fee`);
     return view(await settle(tx, round, time, false), time);
@@ -154,6 +244,21 @@ export async function collectFlight(userId: string, id: string, expectedOffer: s
   });
 }
 
+export async function abortMission(userId: string, id: string) {
+  return atomic(async tx => {
+    await lock(tx);
+    let round = await tx.flightRound.findFirst({ where: { id, userId } });
+    if (!round) throw new Error("Flight not found.");
+    if (round.engineVersion !== MISSION_ENGINE) throw new Error("Use collection for this earlier flight.");
+    const time = await now(tx);
+    round = await settle(tx, round, time, false);
+    if (round.status !== "FLYING") return view(round, time);
+    const state = { ...(round.pilotStateJson as unknown as MissionState), stop: "ABORTED" as const };
+    round = await tx.flightRound.update({ where: { id }, data: { pilotStateJson: state as unknown as Prisma.InputJsonValue } });
+    return view(await settle(tx, round, time, false), time);
+  });
+}
+
 export async function recoverFlight(userId: string, id: string) {
   return atomic(async tx => {
     await lock(tx);
@@ -165,13 +270,15 @@ export async function recoverFlight(userId: string, id: string) {
 }
 
 export async function pilotFlight(userId: string, id: string, seq: number, throttle: number, elevator: number) {
-  if (!Number.isInteger(seq) || seq < 1 || seq > 100 || !Number.isInteger(throttle) || throttle < 0 || throttle > 1000 || !Number.isInteger(elevator) || Math.abs(elevator) > 1000) throw new Error("Choose valid flight controls.");
+  if (!Number.isInteger(seq) || seq < 1 || seq > MISSION.maxInputs || !Number.isInteger(throttle) || throttle < 0 || throttle > 1000 || !Number.isInteger(elevator) || Math.abs(elevator) > 1000) throw new Error("Choose valid flight controls.");
   return atomic(async tx => {
     await lock(tx);
     let round = await tx.flightRound.findFirst({ where: { id, userId } });
     if (!round) throw new Error("Flight not found.");
     const time = await now(tx);
-    if (round.engineVersion !== PILOT_ENGINE) throw new Error("Piloting controls open on your next flight.");
+    if (![PILOT_ENGINE, MISSION_ENGINE].includes(round.engineVersion)) throw new Error("Piloting controls open on your next flight.");
+    if (round.engineVersion === PILOT_ENGINE && seq > 100) throw new Error("Choose valid flight controls.");
+    if (time < round.startedAt) throw new Error("Flight controls open at takeoff.");
     const log = (round.pilotInputsJson ?? []) as unknown as PilotLog;
     if (seq <= log.length) {
       if (log[seq - 1][1] !== throttle || log[seq - 1][2] !== elevator) throw new Error("Flight controls changed. Refresh to synchronize them.");
@@ -194,7 +301,7 @@ export async function flightSnapshot(userId: string) {
   if (active) {
     const time = new Date();
     const flight = active.pathJson as unknown as FlightPath;
-    if (active.engineVersion === PILOT_ENGINE || time >= active.endsAt || flight.path[currentStep(flight.offsets, time.getTime() - active.startedAt.getTime())] === 0) await atomic(async tx => {
+    if ([PILOT_ENGINE, MISSION_ENGINE].includes(active.engineVersion) || time >= active.endsAt || flight.path[currentStep(flight.offsets, time.getTime() - active.startedAt.getTime())] === 0) await atomic(async tx => {
       await lock(tx);
       const fresh = await tx.flightRound.findUniqueOrThrow({ where: { id: active.id } });
       await settle(tx, fresh, await now(tx), false);
@@ -220,7 +327,7 @@ export async function flightSnapshot(userId: string) {
     return { currency: "USD" as const, settlementCurrency: "USDT" as const, network: "TRC20" as const, usdPerUsdt: "1.00", user: { name: user.name, email: user.email, role: user.role }, availableCents: user.tradingProfile?.availableFundsUsdCents ?? 0, heldCents: held._sum.amountCents ?? 0,
       depositReceiveAddress: receiveAddress, eligible: allowed && testingAccess, termsVersion: FLIGHT_TERMS, termsAccepted: user.flightPlayer?.termsVersion === FLIGHT_TERMS, isTestAccount: !!user.flightPlayer?.isTestAccount && !control.liveLaunchedAt,
       referral: { enabled: control.referralsEnabled, bps: control.referralBps, code: user.referralCode, earnedCents: rewards._sum.amountCents ?? 0, pendingCents: pending._sum.amountCents ?? 0 }, totalRounds,
-      control: { enabled: control.enabled, depositsEnabled: control.depositsEnabled, withdrawalsEnabled: control.withdrawalsEnabled, minStakeCents: control.minStakeCents, maxStakeCents: effectiveStakeLimit(control), minWithdrawalCents: control.minWithdrawalCents, feeBps: 300, isLive: !!control.liveLaunchedAt },
+      control: { enabled: control.enabled, depositsEnabled: control.depositsEnabled, withdrawalsEnabled: control.withdrawalsEnabled, minStakeCents: control.minStakeCents, maxStakeCents: control.maxStakeCents, minWithdrawalCents: control.minWithdrawalCents, feeBps: 300, isLive: !!control.liveLaunchedAt },
       rounds: rounds.map(r => view(r, time)), withdrawals, entries, deposits: deposits.map(d => ({ ...d, invoiceAmountMicros: d.invoiceAmountMicros.toString() })), serverNow: time.toISOString() };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });
 }

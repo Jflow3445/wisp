@@ -20,6 +20,6 @@ export function canonicalReferralEmail(email: string) {
   return domain === "gmail.com" ? `${local.split("+")[0].replaceAll(".", "")}@${domain}` : `${local}@${domain}`;
 }
 
-export function effectiveStakeLimit(control: { houseBalanceCents: number; reservedCents: number; maxStakeCents: number }) {
-  return Math.max(0, Math.min(control.maxStakeCents, Math.floor((Math.floor(control.houseBalanceCents / 10) - control.reservedCents) / 2)));
+export function effectiveStakeLimit(control: { houseBalanceCents: number; protectedHouseCents?: number; reservedCents: number; maxStakeCents: number }) {
+  return Math.max(0, Math.min(control.maxStakeCents, Math.floor((Math.floor((control.houseBalanceCents - (control.protectedHouseCents ?? 0)) / 10) - control.reservedCents) / 2)));
 }

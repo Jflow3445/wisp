@@ -7,7 +7,7 @@ async function inspect(tx: Prisma.TransactionClient | typeof prisma, actorId: st
   const [control, balances, active, withdrawals, funded] = await Promise.all([
     tx.flightControl.findUniqueOrThrow({ where: { id: 1 } }),
     tx.userTradingProfile.aggregate({ where: { availableFundsUsdCents: { gt: 0 } }, _sum: { availableFundsUsdCents: true }, _count: true }),
-    tx.flightRound.count({ where: { status: "FLYING" } }),
+    tx.flightRound.count({ where: { activeUserId: { not: null } } }),
     tx.flightWithdrawal.count({ where: { status: { in: ["PENDING", "APPROVED"] } } }),
     tx.userTradingProfile.count({ where: { availableFundsUsdCents: { gt: 0 }, user: { paymentOrders: { some: { status: "PAID", metadataJson: { path: "$.source", equals: "flight_topup" } } } } } }),
   ]);
@@ -46,7 +46,7 @@ export async function launchLiveGame(actorId: string, confirmation: string, prev
     await tx.flightReferralReward.updateMany({ where: { status: "PENDING" }, data: { status: "RESET" } });
     await tx.flightPlayer.updateMany({ data: { isTestAccount: false } });
     const at = new Date();
-    await tx.flightControl.update({ where: { id: 1 }, data: { enabled: true, liveLaunchedAt: at, seasonStartedAt: at, season: { increment: 1 }, houseBalanceCents: preview.openingReserveCents, reservedCents: 0, feesCollectedCents: 0, insuranceBalanceCents: 0, referralsPaidCents: 0 } });
+    await tx.flightControl.update({ where: { id: 1 }, data: { enabled: true, liveLaunchedAt: at, seasonStartedAt: at, season: { increment: 1 }, houseBalanceCents: preview.openingReserveCents, protectedHouseCents: 0, reservedCents: 0, feesCollectedCents: 0, insuranceBalanceCents: 0, referralsPaidCents: 0 } });
     await tx.flightAudit.create({ data: { actorId, action: "START_LIVE_GAME", subjectId: "control", details: { previousSeason: preview.season, clearedWallets: preview.walletCount, clearedCents: preview.clearedCents, openingReserveCents: preview.openingReserveCents, retained: "Accounts, deposits, withdrawal history and audit records" } } });
     return { launched: true, clearedWallets: preview.walletCount, clearedCents: preview.clearedCents };
   });

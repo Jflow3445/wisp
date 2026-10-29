@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       if (input.action === "reserve") {
         const fresh = await tx.flightControl.findUniqueOrThrow({ where: { id: 1 } });
         const next = fresh.houseBalanceCents + input.deltaCents;
-        if (next < fresh.reservedCents || next < 0 || next > MAX_BALANCE) throw new Error("Reserve adjustment would exceed capacity or remove committed funds.");
+        if (next < fresh.reservedCents + fresh.protectedHouseCents || next < 0 || next > MAX_BALANCE) throw new Error("Reserve adjustment would exceed capacity or remove protected or committed funds.");
         const opening = fresh.liveLaunchedAt ? fresh.launchReserveCents : fresh.launchReserveCents + input.deltaCents;
         if (opening < 0 || opening > MAX_BALANCE) throw new Error("Opening reserve is outside the permitted range.");
         await tx.flightControl.update({ where: { id: 1 }, data: { houseBalanceCents: next, launchReserveCents: opening } });

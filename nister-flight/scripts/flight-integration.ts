@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/prisma";
-import { acceptFlightRules, atomic, collectFlight, controls, decideWithdrawal, flightSnapshot, pilotFlight, recoverFlight, requestWithdrawal, settleExpiredFlights, startFlight } from "../src/lib/flight-service";
+import { acceptFlightRules, atomic, collectFlight, controls, decideWithdrawal, flightSnapshot, pilotFlight, recoverFlight, requestWithdrawal, settleExpiredFlights, startFlight as rawStartFlight, offerMission, FLIGHT_TERMS } from "../src/lib/flight-service";
 import { initialPilot, pilotCommitment, pilotValue, replayPilot, type PilotLog, type PilotState } from "../src/lib/flight-pilot";
 import { commitment, DEFAULT_RULES, offerId } from "../src/lib/flight-math";
 import { Prisma } from "@prisma/client";
@@ -19,11 +19,16 @@ const password = process.env.FLIGHT_TEST_PASSWORD;
 if (!password) throw new Error("Set FLIGHT_TEST_PASSWORD in the ignored test environment.");
 let checks = 0;
 const check = (condition: unknown, label: string) => { assert.ok(condition, label); checks++; console.log(`PASS ${label}`); };
+const startFlight = async (userId: string, stake: number, key: string, version = FLIGHT_TERMS) => {
+  if (version !== FLIGHT_TERMS) return rawStartFlight(userId, stake, key, version);
+  const offer = await offerMission(userId, stake);
+  return rawStartFlight(userId, stake, key, version, offer.id, offer.commitment);
+};
 const balance = async (userId: string) => (await prisma.userTradingProfile.findUniqueOrThrow({ where: { userId } })).availableFundsUsdCents!;
 
 async function main() {
   // Reset fixtures ONLY in the explicitly named isolated database above.
-  for (const table of ["FlightReferralReward", "ProcessedTransfer", "PaymentTxSubmission", "PaymentManualReview", "InvoiceAmountReservation", "PaymentOrder", "FlightWalletEntry", "FlightWithdrawal", "FlightRound", "FlightPlayer", "FlightAudit", "FlightControl", "UserTradingProfile", "User"]) {
+  for (const table of ["FlightReferralReward", "ProcessedTransfer", "PaymentTxSubmission", "PaymentManualReview", "InvoiceAmountReservation", "PaymentOrder", "FlightWalletEntry", "FlightWithdrawal", "FlightRound", "FlightMatch", "FlightOffer", "FlightPlayer", "FlightAudit", "FlightControl", "UserTradingProfile", "User"]) {
     await prisma.$executeRawUnsafe(`DELETE FROM \`${table}\``);
   }
   const hash = await bcrypt.hash(password!, 10);
@@ -56,10 +61,10 @@ async function main() {
   if (round.status === "FLYING") {
     check(!("proof" in round) && !("seed" in round), "live flight response hides seed and future path");
     await assert.rejects(() => collectFlight(bob.id, round.id, round.offerId!), /Flight not found/);
-    await assert.rejects(() => collectFlight(alice.id, round.id, "00000000000000000000000000000000"), /offer changed/);
+    await assert.rejects(() => collectFlight(alice.id, round.id, "00000000000000000000000000000000"), /Pass the checkpoints/);
     check(true, "foreign and stale offers cannot settle a live flight");
   }
-  await prisma.flightRound.update({ where: { id: round.id }, data: { endsAt: new Date(Date.now() - 1000) } });
+  await prisma.flightRound.update({ where: { id: round.id }, data: { startedAt: new Date(Date.now() - 66000), endsAt: new Date(Date.now() - 1000) } });
   await settleExpiredFlights();
   await Promise.all(Array.from({ length: 5 }, () => flightSnapshot(alice.id)));
   const settled = await prisma.flightRound.findUniqueOrThrow({ where: { id: round.id } });
@@ -115,7 +120,7 @@ async function main() {
   check(await prisma.flightWalletEntry.count({ where: { userId: alice.id, kind: "PLAY_FEE" } }) === 1 && (await controls()).feesCollectedCents === 15, "concurrent launch recovery charges the 3% fee exactly once");
   await assert.rejects(() => prisma.flightControl.update({ where: { id: 1 }, data: { insuranceBalanceCents: { increment: 1 } } }));
   check(true, "database constraints reject an unreconciled insurance balance");
-  const finish = async (id: string) => { await prisma.flightRound.updateMany({ where: { id, status: "FLYING" }, data: { endsAt: new Date(Date.now() - 1000) } }); await settleExpiredFlights(); };
+  const finish = async (id: string) => { await prisma.flightRound.updateMany({ where: { id, status: "FLYING" }, data: { startedAt: new Date(Date.now() - 66000), endsAt: new Date(Date.now() - 1000) } }); await settleExpiredFlights(); };
   const totalMoney = async () => {
     const c = await controls(), wallets = await prisma.userTradingProfile.aggregate({ _sum: { availableFundsUsdCents: true } }), holds = await prisma.flightWithdrawal.aggregate({ where: { status: { in: ["PENDING", "APPROVED"] } }, _sum: { amountCents: true } });
     return c.houseBalanceCents + c.insuranceBalanceCents + (wallets._sum.availableFundsUsdCents ?? 0) + (holds._sum.amountCents ?? 0);
@@ -152,7 +157,7 @@ async function main() {
   assert.equal(piloted.status, "FLYING");
   const pilotPath = { path: Array(8).fill(500), offsets: Array.from({ length: 8 }, (_, n) => n * 3000) }, pilotSeed = "isolated-pilot-fixture", pilotRules = { ...DEFAULT_RULES, stepMs: 3000 };
   let start = new Date(Date.now() - 400);
-  await prisma.flightRound.update({ where: { id: piloted.id }, data: { seed: pilotSeed, commitment: pilotCommitment(pilotSeed, pilotRules, 500, 1000), pathJson: pilotPath, rulesJson: pilotRules, startedAt: start, endsAt: new Date(start.getTime() + 24000), pilotStateJson: initialPilot() as unknown as Prisma.InputJsonValue } });
+  await prisma.flightRound.update({ where: { id: piloted.id }, data: { engineVersion: 6, pilotInputsJson: [], seed: pilotSeed, commitment: pilotCommitment(pilotSeed, pilotRules, 500, 1000), pathJson: pilotPath, rulesJson: pilotRules, startedAt: start, endsAt: new Date(start.getTime() + 24000), pilotStateJson: initialPilot() as unknown as Prisma.InputJsonValue } });
   await assert.rejects(() => pilotFlight(bob.id, piloted.id, 1, 600, 350), /not found/);
   await assert.rejects(() => pilotFlight(alice.id, piloted.id, 1, 1001, 350), /valid flight controls/);
   await assert.rejects(() => pilotFlight(alice.id, piloted.id, 2, 600, 350), /synchronize/);

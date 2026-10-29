@@ -19,7 +19,7 @@ export async function publicFlightSummary(): Promise<PublicFlightSummary> {
     const rows = control.liveLaunchedAt ? await prisma.$queryRaw<Array<{ id: string; profitCents: number | bigint; settledAt: Date }>>`
       SELECT id, payoutCents-stakeCents-feeCents AS profitCents, settledAt
       FROM FlightRound
-      WHERE season=${control.season} AND status IN ('LANDED','COLLECTED')
+      WHERE season=${control.season} AND status IN ('LANDED','COLLECTED','SETTLED')
       AND settledAt >= UTC_TIMESTAMP(3) - INTERVAL 30 MINUTE
       AND payoutCents > stakeCents+feeCents
       ORDER BY settledAt DESC LIMIT 12` : [];

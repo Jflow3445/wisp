@@ -2,10 +2,11 @@
 import { useEffect, useRef } from "react";
 import { AIRCRAFT, clamp, initialAircraft, stepAircraft, type AircraftState, type PilotInput } from "@/lib/flight-physics";
 import type { Round } from "./client";
+import type { FlightCourse } from "@/lib/flight-mission";
 
-export function Airspace({ round, practice, input, forces }: { round: Round | null; practice: AircraftState | null; input: PilotInput; forces: boolean }) {
-  const canvas = useRef<HTMLCanvasElement>(null), latest = useRef({ round, practice, input, forces, at: 0 });
-  useEffect(() => { latest.current = { round, practice, input, forces, at: round !== latest.current.round || practice !== latest.current.practice ? performance.now() : latest.current.at }; }, [round, practice, input, forces]);
+export function Airspace({ round, practice, input, forces, course, paused = false }: { round: Round | null; practice: AircraftState | null; input: PilotInput; forces: boolean; course?: FlightCourse | null; paused?: boolean }) {
+  const canvas = useRef<HTMLCanvasElement>(null), latest = useRef({ round, practice, input, forces, course, paused, at: 0 });
+  useEffect(() => { latest.current = { round, practice, input, forces, course, paused, at: round !== latest.current.round || practice !== latest.current.practice ? performance.now() : latest.current.at }; }, [round, practice, input, forces, course, paused]);
   useEffect(() => {
     const element = canvas.current!, ctx = element.getContext("2d");
     if (!ctx) return;
@@ -27,14 +28,16 @@ export function Airspace({ round, practice, input, forces }: { round: Round | nu
       const dt = Math.min(.035, Math.max(0, (now - last) / 1000)); last = now;
       if (source && source !== lastSource) { aircraft = { ...source }; lastSource = source; }
       // Short visual prediction only. Server receipts alone determine money.
-      if (source && !value.practice && active && !reduced.matches && now - value.at < 900) {
-        const substeps = Math.max(1, Math.ceil(dt * AIRCRAFT.timeScale / .02));
-        for (let n = 0; n < substeps; n++) aircraft = stepAircraft(aircraft, value.input, aircraft.wind, dt * AIRCRAFT.timeScale / substeps || .001);
+      if (source && !value.practice && active && !value.paused && !reduced.matches && now - value.at < 900) {
+        const scaleTime = value.round?.pilot?.timeScale ?? AIRCRAFT.timeScale, controls = value.round?.mission?.engineOut ? { ...value.input, throttle: 0 } : value.input;
+        const substeps = Math.max(1, Math.ceil(dt * scaleTime / .02));
+        for (let n = 0; n < substeps; n++) aircraft = stepAircraft(aircraft, controls, aircraft.wind, dt * scaleTime / substeps || .001);
       } else if (!source) aircraft = initialAircraft();
       const scale = width < 500 ? .55 : .8, px = width * (width < 500 ? .68 : .55);
+      const horizontalScale = value.course ? width < 500 ? .12 : .18 : scale;
       const py = clamp(height * .54 + (220 - aircraft.y) * .12, height * .34, height * .73);
       const ground = py + aircraft.y * scale;
-      const project = (x: number, y: number) => ({ x: px + (x - aircraft.x) * scale, y: py - (y - aircraft.y) * scale });
+      const project = (x: number, y: number) => ({ x: px + (x - aircraft.x) * horizontalScale, y: py - (y - aircraft.y) * scale });
       const sky = ctx.createLinearGradient(0, 0, 0, height); sky.addColorStop(0, "#060f23"); sky.addColorStop(.64, "#142d43"); sky.addColorStop(1, "#496269");
       ctx.fillStyle = sky; ctx.fillRect(0, 0, width, height);
       const halo = ctx.createRadialGradient(width * .8, height * .18, 2, width * .8, height * .18, width * .7);
@@ -61,8 +64,23 @@ export function Airspace({ round, practice, input, forces }: { round: Round | nu
       if (ground < height + 40) {
         ctx.fillStyle = "#112a29"; ctx.fillRect(0, ground, width, height);
         ctx.fillStyle = "#92b6a2"; ctx.fillRect(0, ground, width, 1.5);
-        ctx.strokeStyle = "#ccd4b5"; ctx.lineWidth = 2; ctx.setLineDash([22, 30]); ctx.lineDashOffset = aircraft.x * scale;
-        ctx.beginPath(); ctx.moveTo(0, ground + 18); ctx.lineTo(width, ground + 18); ctx.stroke(); ctx.setLineDash([]);
+        const start = value.course ? project(value.course.runwayStart, 0).x : 0, end = value.course ? project(value.course.runwayEnd, 0).x : width;
+        ctx.fillStyle = "#3a4546"; ctx.fillRect(start, ground + 1, end - start, 30);
+        ctx.strokeStyle = "#ccd4b5"; ctx.lineWidth = 2; ctx.setLineDash([22, 30]); ctx.lineDashOffset = aircraft.x * horizontalScale;
+        ctx.beginPath(); ctx.moveTo(start, ground + 16); ctx.lineTo(end, ground + 16); ctx.stroke(); ctx.setLineDash([]);
+        if (value.course) {
+          ctx.strokeStyle = "#d8fa8c"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(start, ground - 35); ctx.lineTo(start, ground + 30); ctx.moveTo(end, ground - 35); ctx.lineTo(end, ground + 30); ctx.stroke();
+          ctx.fillStyle = "#d8fa8c"; ctx.font = "600 12px system-ui"; ctx.textAlign = "center"; ctx.fillText("RUNWAY", (start + end) / 2, ground - 12);
+        }
+      }
+      if (value.course) for (let n = 0; n < value.course.gates.length; n++) {
+        const gate = value.course.gates[n], top = project(gate.x, gate.high), bottom = project(gate.x, gate.low);
+        if (top.x < -40 || top.x > width + 40) continue;
+        const passed = value.round?.mission ? n < value.round.mission.gate : aircraft.x > gate.x;
+        ctx.strokeStyle = passed ? "#8bc18e66" : "#d8fa8c"; ctx.fillStyle = passed ? "#8bc18e08" : "#d8fa8c12"; ctx.lineWidth = 2;
+        ctx.fillRect(top.x - 12, top.y, 24, bottom.y - top.y); ctx.strokeRect(top.x - 12, top.y, 24, bottom.y - top.y);
+        ctx.fillStyle = passed ? "#8bc18e88" : "#d8fa8c"; ctx.textAlign = "center"; ctx.font = "600 12px system-ui";
+        ctx.fillText(passed ? "PASSED" : `CHECK ${n + 1}`, top.x, top.y - 12);
       }
       if (active && source && !reduced.matches && (!trail.length || Math.hypot(aircraft.x - trail.at(-1)!.x, aircraft.y - trail.at(-1)!.y) > 3)) {
         trail.push({ x: aircraft.x, y: aircraft.y }); if (trail.length > 150) trail.shift();

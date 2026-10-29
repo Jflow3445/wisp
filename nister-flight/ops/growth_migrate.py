@@ -16,7 +16,7 @@ def migrate_growth(release, database, sql):
     os.chmod(archive / "database.sql", 0o600)
     (archive / "manifest.json").write_text(json.dumps({"release": str(release), "accounts": int(sql("SELECT COUNT(*) FROM User")), "created": int(time.time())}))
     os.chmod(archive / "manifest.json", 0o600)
-    for name in ["202610290002_flight_growth_and_insurance", "202610290003_flight_integrity", "202610290004_pilot_physics"]:
+    for name in ["202610290002_flight_growth_and_insurance", "202610290003_flight_integrity", "202610290004_pilot_physics", "202610290005_flight_missions"]:
         if sql("SELECT COUNT(*) FROM _prisma_migrations WHERE migration_name='" + name + "' AND finished_at IS NOT NULL") == "1":
             continue
         path = release / "prisma/migrations" / name / "migration.sql"
@@ -25,6 +25,12 @@ def migrate_growth(release, database, sql):
         checksum = hashlib.sha256(contents).hexdigest()
         sql("INSERT INTO _prisma_migrations(id,checksum,finished_at,migration_name,started_at,applied_steps_count) VALUES('" + str(uuid.uuid4()) + "','" + checksum + "',UTC_TIMESTAMP(3),'" + name + "',UTC_TIMESTAMP(3),1)")
         print("Applied " + name, flush=True)
+    # Candidate health and cutover must already have the additive table grants.
+    for host in sql("SELECT Host FROM mysql.user WHERE User='nister_ai_user'").splitlines():
+        assert host in ["localhost", "127.0.0.1"]
+        principal = "'nister_ai_user'@'" + host + "'"
+        sql("GRANT SELECT,INSERT,UPDATE ON nister_ai.FlightMatch TO " + principal)
+        sql("GRANT SELECT,INSERT,UPDATE,DELETE ON nister_ai.FlightOffer TO " + principal)
     private = json.loads(Path("/home/nisterai.com/flight-owner-allocation.json").read_text())
     allocation_env = dict(os.environ, FLIGHT_OWNER_TEST_USER_ID=private["test_user_id"])
     subprocess.run(["node", "--env-file=.env", "--import", "tsx", "scripts/flight-owner-allocation.ts"], cwd=release, env=allocation_env, check=True)

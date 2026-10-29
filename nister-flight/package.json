@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:migrate:deploy": "prisma migrate deploy",
     "test": "tsx --test src/lib/__tests__/flight*.test.ts",
-    "test:integration": "node --env-file=.env.test --import tsx scripts/flight-integration.ts"
+    "test:integration": "node --env-file=.env.test --import tsx scripts/flight-integration.ts",
+    "test:risk": "node --import tsx scripts/flight-risk-check.ts"
   },
   "dependencies": {
     "@next/third-parties": "^16.2.0",

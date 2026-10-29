@@ -17,6 +17,7 @@ dependency_ready = dependency_marker.is_file() and json.loads(dependency_marker.
 commands = ([] if (release / "node_modules/.bin/next").exists() else [["npm", "ci", "--no-audit", "--no-fund"]]) + ([] if dependency_ready else [["npx", "prisma", "generate"]]) + [
     ["node", "--env-file=.env.test", "scripts/flight-test-schema.cjs"],
     ["node", "--env-file=.env.test", "--import", "tsx", "scripts/flight-integration.ts"],
+    ["node", "--env-file=.env.test", "--import", "tsx", "scripts/flight-mission-integration.ts"],
     ["npm", "run", "typecheck"],
     ["npm", "run", "build"],
 ]

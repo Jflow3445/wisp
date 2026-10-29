@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { flightSnapshot } from "@/lib/flight-service";
+import type { flightSnapshot, offerMission } from "@/lib/flight-service";
 import { canObserveRound } from "@/lib/flight-observation";
 export type Snapshot = Awaited<ReturnType<typeof flightSnapshot>>;
 export type Round = Snapshot["rounds"][number];
+export type MissionOffer = Awaited<ReturnType<typeof offerMission>>;
 export const money = (cents: number) => (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const date = (value: string | Date) => new Date(value).toLocaleString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -38,7 +39,7 @@ export function useWallet() {
     setData(current => current ? { ...current, serverNow: new Date(watermark.current).toISOString(), rounds: [round, ...current.rounds.filter(r => r.id !== round.id)].slice(0, 20) } : current);
     return true;
   }, []);
-  const fast = data?.rounds[0]?.status === "FLYING";
+  const fast = ["FLYING", "AWAITING_RESULT"].includes(data?.rounds[0]?.status ?? "");
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => {
     let cancelled = false;

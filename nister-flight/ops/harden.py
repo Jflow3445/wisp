@@ -67,7 +67,7 @@ Environment=NODE_OPTIONS=--max-old-space-size=448
             permissions = "SELECT,INSERT,UPDATE,DELETE"
             if table in ["FlightWalletEntry", "FlightAudit"]:
                 permissions = "SELECT,INSERT"
-            elif table in ["FlightRound", "FlightWithdrawal", "FlightReferralReward", "PaymentOrder", "ProcessedTransfer"]:
+            elif table in ["FlightRound", "FlightMatch", "FlightWithdrawal", "FlightReferralReward", "PaymentOrder", "ProcessedTransfer"]:
                 permissions = "SELECT,INSERT,UPDATE"
             elif table == "_prisma_migrations":
                 permissions = "SELECT"
