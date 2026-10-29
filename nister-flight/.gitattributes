@@ -1,0 +1,2 @@
+# Keep migration checksums identical in Windows checkouts and Linux releases.
+*.sql text eol=lf

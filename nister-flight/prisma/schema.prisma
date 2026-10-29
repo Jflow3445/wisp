@@ -1,0 +1,1703 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+enum PlanTier {
+  BASIC
+  PRO_MANAGED
+}
+
+enum AutomationMarket {
+  FOREX
+  STOCKS
+  OPTIONS
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum UserAccountState {
+  PENDING_REVIEW
+  ACTIVE
+  LIMITED
+  SUSPENDED
+  CLOSED
+}
+
+enum UserFundsState {
+  UNFUNDED
+  PENDING_VERIFICATION
+  FUNDED
+  RESTRICTED
+}
+
+enum UserTradeState {
+  ONBOARDING
+  READY
+  LIVE
+  PAUSED
+  STOPPED
+}
+
+enum ExecutionMode {
+  LOCAL
+  MANAGED
+}
+
+enum ExecutionSessionStatus {
+  ACTIVE
+  CLOSED
+  BLOCKED
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PaymentOrderStatus {
+  PENDING
+  PAID
+  EXPIRED
+  MANUAL_REVIEW
+  CANCELLED
+}
+
+enum InvoiceAmountReservationStatus {
+  RESERVED
+  RELEASED
+  CONSUMED
+}
+
+enum ProcessedTransferStatus {
+  CREDITED
+  REJECTED
+}
+
+enum ReferralCommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  REVERSED
+}
+
+enum PartnerPayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  CANCELED
+}
+
+enum MarketEnrollmentStatus {
+  WAITLIST_PENDING
+  WAITLIST
+  WAITLIST_PREPAID
+  ACTIVE
+  RELEASED
+}
+
+enum WaitlistLaunchEmailStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELED
+}
+
+enum MarketingBlastCampaignStatus {
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum MarketingBlastRecipientStatus {
+  PENDING
+  SENT
+  SKIPPED
+  FAILED
+}
+
+enum ReferralIntegrityCaseStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+enum ReferralIntegritySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum NotificationType {
+  PAYMENT
+  SYSTEM
+  SUPPORT
+}
+
+enum BrokerAccountMode {
+  DEMO
+  REAL
+}
+
+enum BrokerAccountStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum AgentHostType {
+  LOCAL
+  VPS
+}
+
+enum AgentStatus {
+  ACTIVE
+  STANDBY
+  REVOKED
+  BLOCKED
+}
+
+enum OfferAddonBilling {
+  ONE_TIME
+  RECURRING
+}
+
+enum SocialAuthProvider {
+  GOOGLE
+  FACEBOOK
+}
+
+model User {
+  id                             String                      @id @default(cuid())
+  email                          String                      @unique
+  name                           String
+  passwordHash                   String
+  emailVerifiedAt                DateTime?
+  role                           UserRole                    @default(MEMBER)
+  referralCode                   String?                     @unique
+  referredById                   String?
+  createdAt                      DateTime                    @default(now())
+  updatedAt                      DateTime                    @updatedAt
+  paymentSubmissions             PaymentSubmission[]
+  reviewedPayments               PaymentSubmission[]         @relation("PaymentReviewedBy")
+  notifications                  Notification[]
+  preference                     UserPreference?
+  tradingProfile                 UserTradingProfile?
+  authRateLimit                  AuthRateLimit?
+  referredBy                     User?                       @relation("UserReferrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals                      User[]                      @relation("UserReferrals")
+  commissionsEarned              ReferralCommission[]        @relation("ReferralCommissionsEarned")
+  commissionsFromMe              ReferralCommission[]        @relation("ReferralCommissionsGenerated")
+  partnerPayouts                 PartnerPayout[]             @relation("PartnerPayouts")
+  partnerIntegrityCases          ReferralIntegrityCase[]     @relation("PartnerIntegrityCases")
+  subscription                   Subscription?
+  supportTickets                 SupportTicket[]
+  emailTokens                    EmailVerificationToken[]
+  passwordResetTokens            PasswordResetToken[]
+  legalAcceptances               LegalAcceptance[]
+  licensedEaClients              LicensedEaClient[]
+  executionSessions              ExecutionSession[]
+  executionLogs                  ExecutionLog[]
+  brokerAccounts                 BrokerAccount[]
+  userPolicies                   UserPolicy[]
+  agents                         Agent[]
+  enrollmentTokens               EnrollmentToken[]           @relation("EnrollmentTokensUser")
+  enrollmentTokensCreated        EnrollmentToken[]           @relation("EnrollmentTokensCreatedBy")
+  commandCandidates              CommandCandidate[]
+  publishedCommands              PublishedCommand[]
+  riskEvents                     RiskEvent[]
+  executionReportsV2             ExecutionReport[]
+  conversionEvents               ConversionEvent[]
+  experimentAssignments          ExperimentAssignment[]
+  onboardingRecoveryState        OnboardingRecoveryState?
+  paymentOrders                  PaymentOrder[]
+  marketEnrollments              MarketEnrollment[]
+  waitlistLaunchEmails           WaitlistLaunchEmail[]
+  companionSessions              CompanionSession[]
+  flightRounds                   FlightRound[]
+  flightWithdrawals              FlightWithdrawal[]
+  flightEntries                  FlightWalletEntry[]
+  flightPlayer                   FlightPlayer?
+  flightReferralRewards          FlightReferralReward[] @relation("FlightReferralRecipient")
+  flightReferredRewards          FlightReferralReward[] @relation("FlightReferralSource")
+  socialAccounts                 UserSocialAccount[]
+  marketingSequenceDispatches    MarketingSequenceDispatch[]
+  marketingBlastCampaignsCreated MarketingBlastCampaign[]    @relation("MarketingBlastCreatedBy")
+  marketingBlastRecipients       MarketingBlastRecipient[]
+
+  @@index([referredById])
+}
+
+model BrokerAccount {
+  id           String              @id @default(cuid())
+  userId       String
+  brokerName   String
+  brokerServer String
+  accountLogin String
+  accountMode  BrokerAccountMode
+  status       BrokerAccountStatus @default(PENDING)
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  policy            UserPolicy?
+  agents            Agent[]
+  enrollmentTokens  EnrollmentToken[]
+  commandCandidates CommandCandidate[]
+  publishedCommands PublishedCommand[]
+  executionReports  ExecutionReport[]
+  heartbeats        AgentHeartbeat[]
+  positionSnapshots PositionSnapshot[]
+  leases            AgentLease[]
+  riskEvents        RiskEvent[]
+
+  @@unique([brokerServer, accountLogin])
+  @@index([userId, status])
+}
+
+model UserPolicy {
+  id                     String   @id @default(cuid())
+  userId                 String
+  brokerAccountId        String   @unique
+  policyVersion          Int      @default(1)
+  aiEnabled              Boolean  @default(true)
+  closeOnlyMode          Boolean  @default(false)
+  manualApprovalMode     Boolean  @default(false)
+  maxRiskPerTradePct     Decimal  @db.Decimal(6, 3)
+  maxDailyLossPct        Decimal  @db.Decimal(6, 3)
+  maxOpenTradesTotal     Int      @default(0)
+  maxOpenTradesPerSymbol Int      @default(0)
+  maxSpreadPoints        Int
+  maxSlippagePoints      Int
+  weekendTradingAllowed  Boolean  @default(false)
+  updatedAt              DateTime @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerAccount BrokerAccount      @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  symbols       UserPolicySymbol[]
+
+  @@index([userId, updatedAt])
+}
+
+model UserPolicySymbol {
+  id        String  @id @default(cuid())
+  policyId  String
+  symbol    String
+  isAllowed Boolean
+
+  policy UserPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, symbol])
+}
+
+model Agent {
+  id                  String        @id @default(cuid())
+  userId              String
+  brokerAccountId     String
+  deviceName          String
+  hostType            AgentHostType
+  terminalFingerprint String
+  signingMode         String
+  agentPublicKey      String?
+  keyVersion          Int           @default(1)
+  status              AgentStatus   @default(ACTIVE)
+  lastHeartbeatAt     DateTime?
+  lastIp              String?
+  lastVersion         String?
+  isExecutionLeader   Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerAccount     BrokerAccount      @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  secrets           AgentSecret[]
+  sessions          AgentSession[]
+  heartbeats        AgentHeartbeat[]
+  nonces            AgentNonce[]
+  publishedCommands PublishedCommand[]
+  executionReports  ExecutionReport[]
+  positionSnapshots PositionSnapshot[]
+  leases            AgentLease[]
+
+  @@unique([brokerAccountId, terminalFingerprint])
+  @@index([brokerAccountId, status, isExecutionLeader])
+}
+
+model AgentSecret {
+  id               String   @id @default(cuid())
+  agentId          String
+  secretCiphertext String
+  secretKeyVersion Int?
+  keyVersion       Int
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, active, keyVersion])
+}
+
+model AgentSession {
+  id               String    @id @default(cuid())
+  agentId          String
+  accessTokenJti   String    @unique
+  refreshTokenHash String
+  issuedAt         DateTime
+  accessExpiresAt  DateTime
+  refreshExpiresAt DateTime
+  revokedAt        DateTime?
+  lastSeenAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, revokedAt, accessExpiresAt])
+}
+
+model EnrollmentToken {
+  id              String         @id @default(cuid())
+  tokenHash       String         @unique
+  userId          String
+  brokerAccountId String
+  allowedHostType AgentHostType?
+  allowLeader     Boolean        @default(true)
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdBy       String
+  createdAt       DateTime       @default(now())
+
+  user          User          @relation("EnrollmentTokensUser", fields: [userId], references: [id], onDelete: Cascade)
+  brokerAccount BrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  creator       User          @relation("EnrollmentTokensCreatedBy", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([brokerAccountId, expiresAt])
+  @@index([userId, createdAt])
+}
+
+model AiService {
+  id                      String   @id @default(cuid())
+  serviceName             String   @unique
+  status                  String
+  keyVersion              Int      @default(1)
+  ipAllowlist             String?
+  signingSecret           String?
+  signingSecretKeyVersion Int?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  models  AiServiceModel[]
+  nonces  AiNonce[]
+  actions AiAction[]
+}
+
+model AiServiceModel {
+  id          String   @id @default(cuid())
+  aiServiceId String
+  modelId     String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  aiService AiService @relation(fields: [aiServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([aiServiceId, modelId])
+}
+
+model AiNonce {
+  id          String   @id @default(cuid())
+  aiServiceId String
+  nonce       String
+  seenAt      DateTime @default(now())
+  expiresAt   DateTime
+
+  aiService AiService @relation(fields: [aiServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([aiServiceId, nonce])
+  @@index([expiresAt])
+}
+
+model AgentNonce {
+  id        String   @id @default(cuid())
+  agentId   String
+  nonce     String
+  seenAt    DateTime @default(now())
+  expiresAt DateTime
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, nonce])
+  @@index([expiresAt])
+}
+
+model AiAction {
+  id                String   @id @default(cuid())
+  actionId          String   @unique
+  aiServiceId       String
+  modelId           String
+  modelVersion      String
+  strategyId        String
+  symbol            String
+  assetClass        String
+  actionType        String
+  side              String
+  confidence        Decimal? @db.Decimal(6, 5)
+  reasonCode        String?
+  riskProfileJson   Json
+  marketContextJson Json
+  issuedAt          DateTime
+  receivedAt        DateTime @default(now())
+  signature         String
+  requestHash       String
+  rawPayloadJson    Json
+
+  aiService         AiService          @relation(fields: [aiServiceId], references: [id], onDelete: Cascade)
+  candidates        CommandCandidate[]
+  publishedCommands PublishedCommand[]
+
+  @@index([symbol, issuedAt])
+}
+
+model CommandCandidate {
+  id                       String   @id @default(cuid())
+  actionId                 String
+  userId                   String
+  brokerAccountId          String
+  targetAgentPolicy        String
+  symbol                   String
+  assetClass               String
+  commandType              String
+  side                     String
+  sizingJson               Json
+  executionConstraintsJson Json
+  sl                       Decimal? @db.Decimal(18, 8)
+  tp                       Decimal? @db.Decimal(18, 8)
+  status                   String
+  blockedReason            String?
+  createdAt                DateTime @default(now())
+
+  action        AiAction      @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerAccount BrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([brokerAccountId, createdAt])
+  @@index([status, createdAt])
+}
+
+model PublishedCommand {
+  id              String   @id @default(cuid())
+  commandId       String   @unique
+  actionId        String
+  userId          String
+  brokerAccountId String
+  agentId         String
+  sequenceNo      BigInt
+  symbol          String
+  assetClass      String
+  commandType     String
+  side            String
+  payloadJson     Json
+  signature       String
+  signatureKeyId  String
+  issuedAt        DateTime
+  expiresAt       DateTime
+  leaseStatus     String
+  executionStatus String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  action        AiAction          @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerAccount BrokerAccount     @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  agent         Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  events        CommandEvent[]
+  reports       ExecutionReport[]
+
+  @@unique([agentId, sequenceNo])
+  @@index([agentId, leaseStatus, sequenceNo])
+  @@index([userId, issuedAt])
+  @@index([agentId, leaseStatus, executionStatus, issuedAt])
+  @@index([agentId, leaseStatus, executionStatus, expiresAt])
+}
+
+model CommandEvent {
+  id               String   @id @default(cuid())
+  commandId        String
+  eventType        String
+  eventPayloadJson Json
+  createdAt        DateTime @default(now())
+
+  command PublishedCommand @relation(fields: [commandId], references: [id], onDelete: Cascade)
+
+  @@index([commandId, createdAt])
+}
+
+model AgentHeartbeat {
+  id                     String   @id @default(cuid())
+  agentId                String
+  brokerAccountId        String
+  lastSequenceSeen       BigInt?
+  equity                 Decimal? @db.Decimal(18, 4)
+  balance                Decimal? @db.Decimal(18, 4)
+  margin                 Decimal? @db.Decimal(18, 4)
+  freeMargin             Decimal? @db.Decimal(18, 4)
+  connectedToTradeServer Boolean
+  tradeAllowedTerminal   Boolean
+  tradeAllowedProgram    Boolean
+  tradeAllowedAccount    Boolean
+  tradeAllowedExpert     Boolean
+  hostHealthJson         Json?
+  localModeFlagsJson     Json?
+  symbolCapabilitiesJson Json?
+  eaVersion              String?
+  sentAt                 DateTime
+  createdAt              DateTime @default(now())
+
+  agent         Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  brokerAccount BrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, sentAt])
+}
+
+model ExecutionReport {
+  id              String   @id @default(cuid())
+  commandId       String
+  agentId         String
+  brokerAccountId String
+  userId          String
+  symbol          String
+  brokerTicket    String?
+  executionResult String
+  rejectionCode   String?
+  executionPrice  Decimal? @db.Decimal(18, 8)
+  executionVolume Decimal? @db.Decimal(18, 4)
+  sl              Decimal? @db.Decimal(18, 8)
+  tp              Decimal? @db.Decimal(18, 8)
+  executionTime   DateTime
+  rawResultJson   Json?
+  createdAt       DateTime @default(now())
+
+  command       PublishedCommand @relation(fields: [commandId], references: [id], onDelete: Cascade)
+  agent         Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  brokerAccount BrokerAccount    @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PositionSnapshot {
+  id              String   @id @default(cuid())
+  agentId         String
+  brokerAccountId String
+  snapshotTime    DateTime
+  equity          Decimal  @db.Decimal(18, 4)
+  balance         Decimal  @db.Decimal(18, 4)
+  margin          Decimal? @db.Decimal(18, 4)
+  freeMargin      Decimal? @db.Decimal(18, 4)
+  positionsJson   Json
+  ordersJson      Json
+  createdAt       DateTime @default(now())
+
+  agent         Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  brokerAccount BrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([brokerAccountId, snapshotTime])
+}
+
+model AgentLease {
+  id              String   @id @default(cuid())
+  brokerAccountId String
+  agentId         String
+  leaseStartedAt  DateTime
+  leaseExpiresAt  DateTime
+  leaseStatus     String
+  createdAt       DateTime @default(now())
+
+  brokerAccount BrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  agent         Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([brokerAccountId, leaseStatus])
+  @@index([agentId, leaseStatus])
+}
+
+model RiskEvent {
+  id              String   @id @default(cuid())
+  userId          String
+  brokerAccountId String
+  symbol          String?
+  eventType       String
+  severity        String
+  detailsJson     Json
+  createdAt       DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerAccount BrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([brokerAccountId, createdAt])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorType    String
+  actorId      String
+  eventType    String
+  entityType   String
+  entityId     String
+  metadataJson Json
+  createdAt    DateTime @default(now())
+
+  @@index([eventType, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([actorType, createdAt])
+  @@index([entityType, createdAt])
+}
+
+model PlatformSetting {
+  id                                       Int      @id
+  requireActiveSubscription                Boolean  @default(true)
+  referralEnabled                          Boolean  @default(true)
+  referralDiscountBps                      Int      @default(500)
+  referralCommissionBps                    Int      @default(1000)
+  supportEmail                             String   @default("support@nisterai.com")
+  telegramUrl                              String   @default("https://t.me/nister_ai")
+  requireEmailVerification                 Boolean  @default(true)
+  loginMaxAttempts                         Int      @default(6)
+  loginLockMinutes                         Int      @default(30)
+  maxPaymentSubmissionsPerDay              Int      @default(5)
+  paymentSubmissionCooldownMins            Int      @default(5)
+  userDefaultRiskBps                       Int      @default(200)
+  userDefaultDailyLossBps                  Int      @default(600)
+  userDefaultMaxConcurrentTrades           Int      @default(3)
+  analyticsEnabled                         Boolean  @default(true)
+  analyticsProvider                        String   @default("internal")
+  analyticsSiteKey                         String?
+  analyticsHost                            String?
+  sessionReplayEnabled                     Boolean  @default(false)
+  sessionReplaySamplePct                   Int      @default(20)
+  ga4Enabled                               Boolean  @default(false)
+  ga4MeasurementId                         String?
+  posthogProjectKey                        String?
+  posthogHost                              String?
+  posthogSessionReplayEnabled              Boolean  @default(false)
+  posthogSessionReplaySamplePct            Int      @default(20)
+  posthogFeatureFlagsEnabled               Boolean  @default(true)
+  turnstileEnabled                         Boolean  @default(false)
+  turnstileSiteKey                         String?
+  turnstileSecretKey                       String?
+  turnstileSecretKeyVersion                Int?
+  turnstileProtectSignup                   Boolean  @default(true)
+  turnstileProtectLogin                    Boolean  @default(true)
+  turnstileProtectForgotPassword           Boolean  @default(true)
+  googleSocialAuthEnabled                  Boolean  @default(false)
+  googleSocialAuthClientId                 String?
+  googleSocialAuthClientSecret             String?
+  googleSocialAuthClientSecretKeyVersion   Int?
+  facebookSocialAuthEnabled                Boolean  @default(false)
+  facebookSocialAuthClientId               String?
+  facebookSocialAuthClientSecret           String?
+  facebookSocialAuthClientSecretKeyVersion Int?
+  signupIpMaxAttempts                      Int      @default(8)
+  signupIpWindowMinutes                    Int      @default(60)
+  signupIpLockMinutes                      Int      @default(60)
+  signupEmailMaxAttempts                   Int      @default(5)
+  signupEmailWindowMinutes                 Int      @default(1440)
+  signupEmailLockMinutes                   Int      @default(1440)
+  signupBlockDisposableDomains             Boolean  @default(true)
+  signupDisposableDomains                  Json?
+  enforceVerifiedEmailForActivation        Boolean  @default(true)
+  experimentPricingEnabled                 Boolean  @default(true)
+  experimentPricingRolloutPct              Int      @default(100)
+  liveChatEnabled                          Boolean  @default(false)
+  liveChatProvider                         String   @default("telegram")
+  liveChatAppId                            String?
+  liveChatSalesPrompt                      String   @default("Questions before you pay? Use live chat and get a direct answer before checkout.")
+  abandonmentRecoveryEnabled               Boolean  @default(true)
+  abandonmentReminderDelayMins             Int      @default(240)
+  abandonmentEscalationDelayMins           Int      @default(1440)
+  abandonmentMaxReminders                  Int      @default(3)
+  trustProofEnabled                        Boolean  @default(true)
+  trustProofWindowDays                     Int      @default(30)
+  trustReviewSlaHours                      Int      @default(6)
+  trustGuaranteeCopy                       String   @default("Manual wallet validation and admin review are required before activation.")
+  offerAddonsEnabled                       Boolean  @default(false)
+  offerUrgencyBannerEnabled                Boolean  @default(true)
+  offerUrgencyCopy                         String   @default("Payment queue is reviewed throughout the day. Submit now to secure the next review cycle.")
+  marketForexEnabled                       Boolean  @default(true)
+  marketStocksEnabled                      Boolean  @default(false)
+  marketOptionsEnabled                     Boolean  @default(false)
+  tronSolidityNodeUrl                      String?
+  tronFullNodeUrl                          String?
+  tronApiKey                               String?
+  tronMerchantReceiveAddress               String?
+  tronUsdtContractAddress                  String?
+  tronInvoiceTtlMinutes                    Int      @default(30)
+  tronInvoiceGraceMinutes                  Int      @default(20)
+  tronAmountReuseCooldownMinutes           Int      @default(240)
+  tronInvoiceOffsetSlots                   Int      @default(99)
+  tronWatcherMaxBlocks                     Int      @default(200)
+  updatedAt                                DateTime @updatedAt
+}
+
+model UserTradingProfile {
+  id                     String           @id @default(cuid())
+  userId                 String           @unique
+  accountState           UserAccountState @default(PENDING_REVIEW)
+  fundsState             UserFundsState   @default(UNFUNDED)
+  tradeState             UserTradeState   @default(ONBOARDING)
+  availableFundsUsdCents Int?
+  allocatedFundsUsdCents Int?
+  maxRiskPerTradeBps     Int              @default(200)
+  dailyLossLimitBps      Int              @default(600)
+  maxConcurrentTrades    Int              @default(3)
+  autotradeEnabled       Boolean          @default(false)
+  manualNotes            String?
+  updatedAt              DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuthRateLimit {
+  id            String    @id @default(cuid())
+  userId        String?   @unique
+  key           String    @unique
+  attempts      Int       @default(0)
+  lockedUntil   DateTime?
+  lastAttemptAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model UserSocialAccount {
+  id                String             @id @default(cuid())
+  userId            String
+  provider          SocialAuthProvider
+  providerAccountId String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+model CompanionSession {
+  id               String    @id @default(cuid())
+  userId           String
+  refreshTokenHash String    @unique
+  refreshExpiresAt DateTime
+  revokedAt        DateTime?
+  replacedById     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, refreshExpiresAt])
+}
+
+model EmailSetting {
+  id                 Int      @id
+  host               String
+  port               Int
+  username           String
+  password           String   @db.LongText
+  passwordKeyVersion Int?
+  fromEmail          String
+  fromName           String?
+  secure             Boolean  @default(false)
+  enabled            Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model LegalAcceptance {
+  id             String   @id @default(cuid())
+  userId         String?
+  email          String
+  ipAddress      String?
+  userAgent      String?
+  termsVersion   String
+  privacyVersion String
+  riskVersion    String
+  context        String
+  acceptedAt     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, acceptedAt])
+  @@index([email, acceptedAt])
+}
+
+model SiteContent {
+  id                Int      @id
+  brandName         String
+  heroEyebrow       String
+  heroTitle         String
+  heroSubtitle      String
+  primaryCtaLabel   String
+  primaryCtaHref    String
+  secondaryCtaLabel String
+  secondaryCtaHref  String
+  trustBar          String
+  loginHeadline     String
+  loginSubhead      String
+  dashboardHeadline String
+  dashboardSubhead  String
+  footerTagline     String
+  telegramUrl       String   @default("https://t.me/nister_ai")
+  updatedAt         DateTime @updatedAt
+}
+
+model PricingPlan {
+  id                          String             @id @default(cuid())
+  slug                        String             @unique
+  tier                        PlanTier?          @unique
+  name                        String
+  subtitle                    String
+  monthlyPriceCents           Int
+  annualPriceCents            Int?
+  badge                       String?
+  ctaLabel                    String
+  ctaHref                     String
+  executionMode               ExecutionMode      @default(LOCAL)
+  automationMarket            AutomationMarket   @default(FOREX)
+  maxAccounts                 Int                @default(1)
+  maxTerminals                Int                @default(1)
+  mt5SetupIncluded            Boolean            @default(false)
+  companionDeploymentIncluded Boolean            @default(false) @map("eaDeploymentIncluded")
+  advancedMonitoring          Boolean            @default(false)
+  autoRecovery                Boolean            @default(false)
+  prioritySupport             Boolean            @default(false)
+  uptimeFocusedOperation      Boolean            @default(false)
+  highlight                   Boolean            @default(false)
+  features                    Json
+  sortOrder                   Int                @default(0)
+  active                      Boolean            @default(true)
+  updatedAt                   DateTime           @updatedAt
+  subscriptions               Subscription[]
+  marketEnrollments           MarketEnrollment[]
+}
+
+model OfferAddon {
+  id            String            @id @default(cuid())
+  slug          String            @unique
+  name          String
+  description   String
+  billing       OfferAddonBilling @default(ONE_TIME)
+  priceUsdCents Int
+  eligibleTiers Json
+  highlight     Boolean           @default(false)
+  active        Boolean           @default(true)
+  sortOrder     Int               @default(0)
+  updatedAt     DateTime          @updatedAt
+}
+
+model HomeMetric {
+  id        String  @id @default(cuid())
+  label     String
+  value     String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+}
+
+model BrokerOption {
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  name          String
+  description   String
+  logoUrl       String?
+  signupUrl     String
+  guideUrl      String?
+  minDepositUsd Int?
+  regionNote    String?
+  setupSteps    Json
+  active        Boolean          @default(true)
+  sortOrder     Int              @default(0)
+  updatedAt     DateTime         @updatedAt
+  preferredBy   UserPreference[]
+}
+
+model UserPreference {
+  id                String            @id @default(cuid())
+  userId            String            @unique
+  preferredBrokerId String?
+  preferredMarket   AutomationMarket?
+  tradingGoal       String?
+  experienceLevel   String?
+  connectionDetails Json?
+  updatedAt         DateTime          @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferredBroker BrokerOption? @relation(fields: [preferredBrokerId], references: [id], onDelete: SetNull)
+}
+
+model PaymentMethod {
+  id            String              @id @default(cuid())
+  displayName   String
+  symbol        String
+  network       String
+  walletAddress String
+  qrImageUrl    String?
+  instructions  String?
+  active        Boolean             @default(true)
+  sortOrder     Int                 @default(0)
+  updatedAt     DateTime            @updatedAt
+  submissions   PaymentSubmission[]
+}
+
+model PaymentSubmission {
+  id                  String        @id @default(cuid())
+  userId              String
+  paymentMethodId     String
+  planSlug            String?
+  visitorId           String?
+  amountUsdCents      Int?
+  planPriceUsdCents   Int?
+  discountUsdCents    Int?
+  addonChargeUsdCents Int?
+  finalAmountUsdCents Int?
+  addonsJson          Json?
+  experimentKey       String?
+  experimentVariant   String?
+  referralCodeUsed    String?
+  txHash              String        @unique
+  note                String?
+  status              PaymentStatus @default(PENDING)
+  reviewNote          String?
+  reviewedById        String?
+  submittedAt         DateTime      @default(now())
+  reviewedAt          DateTime?
+
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentMethod PaymentMethod       @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  reviewer      User?               @relation("PaymentReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  commission    ReferralCommission?
+
+  @@index([status, submittedAt])
+  @@index([userId, submittedAt])
+  @@index([visitorId, submittedAt])
+}
+
+model PaymentOrder {
+  id                     String                     @id @default(cuid())
+  userId                 String?
+  reference              String                     @unique
+  baseAmountMicros       BigInt
+  invoiceAmountMicros    BigInt
+  currency               String                     @default("USDT")
+  network                String                     @default("TRC20")
+  merchantReceiveAddress String
+  declaredSenderAddress  String?
+  status                 PaymentOrderStatus         @default(PENDING)
+  createdAt              DateTime                   @default(now())
+  expiresAt              DateTime
+  graceExpiresAt         DateTime
+  paidAt                 DateTime?
+  manualReviewReason     String?
+  metadataJson           Json?
+  submissions            PaymentTxSubmission[]
+  reservations           InvoiceAmountReservation[]
+  processedTransfers     ProcessedTransfer[]
+  manualReviews          PaymentManualReview[]
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([status, graceExpiresAt])
+  @@index([userId, status, createdAt])
+  @@index([invoiceAmountMicros])
+  @@index([createdAt])
+}
+
+model InvoiceAmountReservation {
+  id                  String                         @id @default(cuid())
+  invoiceAmountMicros BigInt
+  orderId             String
+  reservedAt          DateTime                       @default(now())
+  releaseAt           DateTime
+  status              InvoiceAmountReservationStatus @default(RESERVED)
+
+  order PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId])
+  @@unique([invoiceAmountMicros, status])
+  @@index([status, releaseAt])
+}
+
+model PaymentTxSubmission {
+  id                     String   @id @default(cuid())
+  orderId                String
+  submittedTxHash        String
+  submittedSenderAddress String?
+  submittedAt            DateTime @default(now())
+
+  order PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, submittedTxHash])
+  @@unique([submittedTxHash])
+  @@index([submittedAt])
+}
+
+model ChainPayment {
+  id               String   @id @default(cuid())
+  txHash           String
+  parsedEventIndex Int
+  blockNumber      BigInt
+  blockTimestamp   DateTime
+  tokenContract    String
+  fromAddress      String
+  toAddress        String
+  amountMicros     BigInt
+  success          Boolean
+  source           String   @default("solidity_node")
+  rawPayloadJson   Json?
+  createdAt        DateTime @default(now())
+
+  @@unique([txHash, parsedEventIndex])
+  @@index([toAddress, tokenContract, blockTimestamp])
+  @@index([amountMicros, blockTimestamp])
+}
+
+model ProcessedTransfer {
+  id               String                  @id @default(cuid())
+  txHash           String
+  parsedEventIndex Int
+  tokenContract    String
+  fromAddress      String
+  toAddress        String
+  amountMicros     BigInt
+  orderId          String
+  creditedAt       DateTime                @default(now())
+  creditStatus     ProcessedTransferStatus @default(CREDITED)
+  notes            String?
+  blockNumber      BigInt
+  blockTimestamp   DateTime
+
+  order PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([txHash, parsedEventIndex])
+  @@index([orderId, creditedAt])
+}
+
+model PaymentManualReview {
+  id          String    @id @default(cuid())
+  orderId     String
+  reason      String
+  detailsJson Json?
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+  resolution  String?
+
+  order PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([reason, createdAt])
+  @@index([resolvedAt, createdAt])
+}
+
+model SweepLog {
+  id           String   @id @default(cuid())
+  sweepTxHash  String?
+  amountMicros BigInt
+  fromAddress  String
+  toAddress    String
+  createdAt    DateTime @default(now())
+  status       String
+  notes        String?
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+model PaymentWatcherCursor {
+  id               String   @id @default(cuid())
+  watchKey         String   @unique
+  lastScannedBlock BigInt   @default(0)
+  updatedAt        DateTime @updatedAt
+}
+
+model ReferralCommission {
+  id                   String                   @id @default(cuid())
+  referrerId           String
+  referredUserId       String
+  paymentSubmissionId  String                   @unique
+  status               ReferralCommissionStatus @default(PENDING)
+  commissionPercentBps Int
+  discountPercentBps   Int
+  grossAmountUsdCents  Int
+  discountUsdCents     Int
+  commissionUsdCents   Int
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  referrer          User                    @relation("ReferralCommissionsEarned", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredUser      User                    @relation("ReferralCommissionsGenerated", fields: [referredUserId], references: [id], onDelete: Cascade)
+  paymentSubmission PaymentSubmission       @relation(fields: [paymentSubmissionId], references: [id], onDelete: Cascade)
+  payoutItem        PartnerPayoutItem?
+  integrityCases    ReferralIntegrityCase[]
+
+  @@index([referrerId, createdAt])
+  @@index([referredUserId, createdAt])
+}
+
+model PartnerPayout {
+  id                 String              @id @default(cuid())
+  partnerId          String
+  status             PartnerPayoutStatus @default(PENDING)
+  payoutMethod       String?
+  payoutReference    String?
+  failureReason      String?
+  currency           String              @default("USD")
+  amountUsdCents     Int
+  commissionCount    Int                 @default(0)
+  createdByAdminId   String?
+  processedByAdminId String?
+  metadataJson       Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  processedAt        DateTime?
+  paidAt             DateTime?
+  failedAt           DateTime?
+
+  partner User                @relation("PartnerPayouts", fields: [partnerId], references: [id], onDelete: Cascade)
+  items   PartnerPayoutItem[]
+
+  @@index([partnerId, createdAt])
+  @@index([status, createdAt])
+}
+
+model PartnerPayoutItem {
+  id             String   @id @default(cuid())
+  payoutId       String
+  commissionId   String   @unique
+  amountUsdCents Int
+  createdAt      DateTime @default(now())
+
+  payout     PartnerPayout      @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  commission ReferralCommission @relation(fields: [commissionId], references: [id], onDelete: Cascade)
+
+  @@index([payoutId])
+}
+
+model ReferralIntegrityCase {
+  id                 String                      @id @default(cuid())
+  partnerId          String
+  commissionId       String?
+  referredUserId     String?
+  caseType           String
+  severity           ReferralIntegritySeverity   @default(MEDIUM)
+  status             ReferralIntegrityCaseStatus @default(OPEN)
+  title              String
+  detail             String?
+  signalSnapshotJson Json?
+  resolutionNote     String?
+  openedByAdminId    String?
+  assignedAdminId    String?
+  openedAt           DateTime                    @default(now())
+  resolvedAt         DateTime?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  partner    User                @relation("PartnerIntegrityCases", fields: [partnerId], references: [id], onDelete: Cascade)
+  commission ReferralCommission? @relation(fields: [commissionId], references: [id], onDelete: SetNull)
+
+  @@index([status, severity, createdAt])
+  @@index([partnerId, status, createdAt])
+  @@index([commissionId])
+}
+
+model Subscription {
+  id               String             @id @default(cuid())
+  userId           String             @unique
+  planId           String
+  activeAddonSlugs Json?
+  status           SubscriptionStatus @default(INACTIVE)
+  startedAt        DateTime?
+  expiresAt        DateTime?
+  updatedAt        DateTime           @updatedAt
+  createdAt        DateTime           @default(now())
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan PricingPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([status, expiresAt])
+}
+
+model MarketEnrollment {
+  id                         String                 @id @default(cuid())
+  userId                     String
+  market                     AutomationMarket
+  status                     MarketEnrollmentStatus @default(WAITLIST_PENDING)
+  planId                     String?
+  annualPrepaySelected       Boolean                @default(false)
+  annualPrepayAmountUsdCents Int?
+  annualPrepayPaidAt         DateTime?
+  launchEmailQueuedAt        DateTime?
+  launchEmailSentAt          DateTime?
+  unlockedAt                 DateTime?
+  joinedAt                   DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan              PricingPlan?          @relation(fields: [planId], references: [id], onDelete: SetNull)
+  launchEmailQueues WaitlistLaunchEmail[]
+
+  @@unique([userId, market])
+  @@index([market, status, joinedAt])
+}
+
+model WaitlistLaunchEmail {
+  id           String                    @id @default(cuid())
+  enrollmentId String                    @unique
+  userId       String
+  market       AutomationMarket
+  status       WaitlistLaunchEmailStatus @default(PENDING)
+  scheduledFor DateTime
+  sentAt       DateTime?
+  attempts     Int                       @default(0)
+  lastError    String?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  enrollment MarketEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, scheduledFor])
+  @@index([market, status, scheduledFor])
+}
+
+model ConversionEvent {
+  id            String   @id @default(cuid())
+  userId        String?
+  visitorId     String
+  sessionId     String?
+  eventName     String
+  pagePath      String?
+  referrer      String?
+  experimentKey String?
+  variantKey    String?
+  valueUsdCents Int?
+  metadataJson  Json?
+  createdAt     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([eventName, createdAt])
+  @@index([userId, createdAt])
+  @@index([visitorId, createdAt])
+}
+
+model ExperimentAssignment {
+  id            String   @id @default(cuid())
+  userId        String?
+  visitorId     String
+  experimentKey String
+  variantKey    String
+  assignedAt    DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([visitorId, experimentKey])
+  @@index([userId, experimentKey])
+}
+
+model OnboardingRecoveryState {
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  currentStage       String
+  lastActivityAt     DateTime  @default(now())
+  reminderCount      Int       @default(0)
+  stageReminderCount Int       @default(0)
+  stageEnteredAt     DateTime  @default(now())
+  lastReminderAt     DateTime?
+  escalatedAt        DateTime?
+  completedAt        DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([lastActivityAt])
+  @@index([currentStage, lastActivityAt])
+}
+
+model FaqItem {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+model GuideItem {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  summary   String
+  content   String
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
+model SupportTicket {
+  id         String       @id @default(cuid())
+  userId     String?
+  name       String
+  email      String
+  subject    String
+  message    String
+  status     TicketStatus @default(OPEN)
+  adminReply String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([email, createdAt])
+  @@index([userId, createdAt])
+}
+
+model LicensedEaClient {
+  id            String         @id @default(cuid())
+  userId        String
+  clientKey     String         @unique
+  label         String?
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  lastSeenAt    DateTime?
+  executionLogs ExecutionLog[]
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+}
+
+model ExecutionSession {
+  id        String                 @id @default(cuid())
+  userId    String
+  mode      ExecutionMode
+  status    ExecutionSessionStatus @default(ACTIVE)
+  source    String?
+  startedAt DateTime               @default(now())
+  endedAt   DateTime?
+  updatedAt DateTime               @updatedAt
+  logs      ExecutionLog[]
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, mode, status])
+}
+
+model ExecutionLog {
+  id             String   @id @default(cuid())
+  userId         String
+  sessionId      String?
+  eaClientId     String?
+  eventType      String
+  symbol         String?
+  requestedPrice Float?
+  executedPrice  Float?
+  slippagePips   Float?
+  payload        Json?
+  createdAt      DateTime @default(now())
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session  ExecutionSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  eaClient LicensedEaClient? @relation(fields: [eaClientId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([eaClientId, createdAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType @default(SYSTEM)
+  title     String
+  message   String
+  href      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+}
+
+model MarketingSequenceTemplate {
+  id                 String   @id @default(cuid())
+  stage              String   @unique
+  enabled            Boolean  @default(true)
+  subject            String   @db.LongText
+  body               String   @db.LongText
+  ctaLabel           String?
+  ctaPath            String?
+  ctaHref            String?
+  cadenceMinutesJson Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([stage])
+}
+
+model MarketingSequenceDispatch {
+  id           String   @id @default(cuid())
+  userId       String
+  stage        String
+  attempt      Int
+  sentAt       DateTime @default(now())
+  metadataJson Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stage, attempt])
+  @@index([stage, sentAt])
+}
+
+model MarketingBlastScheduleConfig {
+  id                         Int      @id
+  smallAudienceThreshold     Int      @default(500)
+  smallAudienceWindowMinHrs  Int      @default(48)
+  smallAudienceWindowMaxHrs  Int      @default(72)
+  largeAudienceWindowMinDays Int      @default(7)
+  largeAudienceWindowMaxDays Int      @default(28)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+}
+
+model MarketingBlastCampaign {
+  id               String                       @id @default(cuid())
+  audienceCategory String
+  audienceCount    Int
+  subject          String                       @db.LongText
+  body             String                       @db.LongText
+  ctaLabel         String?
+  ctaPath          String?
+  ctaHref          String?
+  status           MarketingBlastCampaignStatus @default(SCHEDULED)
+  onlyVerified     Boolean                      @default(true)
+  windowStartAt    DateTime
+  windowEndAt      DateTime
+  scheduleSource   String
+  startedAt        DateTime?
+  completedAt      DateTime?
+  totalRecipients  Int                          @default(0)
+  sentRecipients   Int                          @default(0)
+  failedRecipients Int                          @default(0)
+  createdByAdminId String
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+
+  creator    User                      @relation("MarketingBlastCreatedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  recipients MarketingBlastRecipient[]
+
+  @@index([status, windowStartAt])
+  @@index([audienceCategory, createdAt])
+  @@index([createdByAdminId, createdAt])
+}
+
+model MarketingBlastRecipient {
+  id           String                        @id @default(cuid())
+  campaignId   String
+  userId       String
+  scheduledFor DateTime
+  status       MarketingBlastRecipientStatus @default(PENDING)
+  sentAt       DateTime?
+  lastError    String?
+  createdAt    DateTime                      @default(now())
+  updatedAt    DateTime                      @updatedAt
+
+  campaign MarketingBlastCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId, scheduledFor, id])
+  @@index([campaignId, status, scheduledFor, id])
+  @@index([status, scheduledFor])
+  @@index([campaignId, status])
+}
+
+// Additive Flight tables. Existing users, password hashes and balances are retained.
+model FlightControl {
+  season                   Int      @default(1)
+  seasonStartedAt          DateTime @default(now())
+  liveLaunchedAt           DateTime?
+  launchReserveCents       Int      @default(0)
+  feeBps                   Int      @default(300)
+  feesCollectedCents       Int      @default(0)
+  insuranceBalanceCents    Int      @default(0)
+  referralsEnabled         Boolean  @default(true)
+  referralBps              Int      @default(100)
+  referralsPaidCents        Int      @default(0)
+  id                       Int      @id @default(1)
+  enabled                  Boolean  @default(false)
+  depositsEnabled          Boolean  @default(true)
+  withdrawalsEnabled       Boolean  @default(true)
+  minStakeCents            Int      @default(100)
+  maxStakeCents            Int      @default(10000)
+  minWithdrawalCents       Int      @default(1000)
+  houseEdgePpm             Int      @default(64250)
+  houseBalanceCents        Int      @default(0)
+  reservedCents            Int      @default(0)
+  updatedAt                DateTime @updatedAt
+}
+
+model FlightPlayer {
+  isTestAccount Boolean @default(false)
+  userId       String   @id
+  verifiedAt   DateTime?
+  verifiedBy   String?
+  consentAt    DateTime?
+  termsVersion String?
+  blocked      Boolean  @default(false)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+
+model FlightRound {
+  season        Int      @default(1)
+  feeCents      Int      @default(0)
+  referralUserId String?
+  referralCents Int      @default(0)
+  referralReward FlightReferralReward?
+  id            String   @id @default(cuid())
+  userId        String
+  activeUserId  String?  @unique
+  requestKey    String
+  stakeCents    Int
+  capCents      Int
+  payoutCents   Int?
+  status        String   @default("FLYING")
+  seed          String
+  commitment    String
+  rulesJson     Json
+  pathJson      Json
+  startedAt     DateTime @default(now()) @db.DateTime(3)
+  endsAt        DateTime @db.DateTime(3)
+  settledAt     DateTime? @db.DateTime(3)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@unique([userId, requestKey])
+  @@index([season, settledAt])
+  @@index([status, endsAt])
+  @@index([userId, startedAt])
+}
+
+model FlightWithdrawal {
+  id          String   @id @default(cuid())
+  userId      String
+  requestKey  String
+  amountCents Int
+  address     String
+  network     String   @default("TRC20")
+  token       String   @default("USDT")
+  status      String   @default("PENDING")
+  txHash      String?  @unique
+  reviewedBy  String?
+  reviewNote  String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@unique([userId, requestKey])
+  @@index([status, createdAt])
+}
+
+model FlightWalletEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  reference   String   @unique
+  kind        String
+  amountCents Int
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([userId, createdAt])
+}
+
+model FlightAudit {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String
+  subjectId String?
+  details   Json
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+
+
+model FlightReferralReward {
+  id             String   @id @default(cuid())
+  roundId        String   @unique
+  userId         String
+  referredUserId String
+  amountCents    Int
+  status         String   @default("PENDING")
+  createdAt      DateTime @default(now())
+  paidAt         DateTime?
+  round          FlightRound @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  recipient      User @relation("FlightReferralRecipient", fields: [userId], references: [id], onDelete: Restrict)
+  referredUser   User @relation("FlightReferralSource", fields: [referredUserId], references: [id], onDelete: Restrict)
+  @@index([userId, status, createdAt])
+  @@index([status, createdAt])
+}

@@ -1,0 +1,10 @@
+"use client";
+import { useState } from "react";
+import type { launchPreview } from "@/lib/flight-launch";
+import { money, Notice } from "./client";
+export type LaunchPreview = Awaited<ReturnType<typeof launchPreview>>;
+export function LaunchControl({ preview, busy, submit }: { preview: LaunchPreview; busy: boolean; submit: (payload: unknown) => Promise<void> }) {
+  const [confirmation, setConfirmation] = useState("");
+  if (preview.alreadyLive) return <section className="f-panel f-launch-control"><h2>Live play has started</h2><p>The initial balance reset is complete. Use the availability switches to pause or resume flights.</p></section>;
+  return <section className="f-panel f-launch-control"><div className="f-eyebrow">INITIAL PUBLIC LAUNCH</div><h2>Start with a clean runway.</h2><p>This one-time action clears all available test balances, test fees and test rewards, then opens the game to eligible members. Registrations, passwords and transaction history are retained. The opening house reserve is restored.</p><dl className="f-account-details"><div><dt>Wallets to clear</dt><dd>{preview.walletCount}</dd></div><div><dt>Available balances to clear</dt><dd>${money(preview.clearedCents)}</dd></div><div><dt>Opening house reserve</dt><dd>${money(preview.openingReserveCents)}</dd></div></dl><Notice error>{preview.reasons.join(" ")}</Notice><p className="f-helper">Launch is blocked while a flight, pending withdrawal or funded customer balance remains. Refresh this preview if balances change.</p><form className="f-form" onSubmit={event => { event.preventDefault(); if (confirmation === "START LIVE GAME" && preview.canLaunch) void submit({ action: "launch", confirmation, previewToken: preview.token }); }}><label>Type START LIVE GAME to confirm<input value={confirmation} onChange={event => setConfirmation(event.target.value)} autoComplete="off" spellCheck={false} placeholder="START LIVE GAME"/></label><button className="f-button f-button-danger" disabled={busy || !preview.canLaunch || confirmation !== "START LIVE GAME"}>Clear test balances &amp; start live play</button></form></section>;
+}

@@ -1,0 +1,61 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+*.log
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# python test/cache noise (repo includes some python helpers/tests)
+.pytest_cache/
+__pycache__/
+
+# runtime/test artifacts
+/storage/
+/test-results/
+/playwright-report/
+tmp_*.json
+build*.log
+
+# local prisma sqlite files
+/prisma/*.db
+/prisma/*.db-journal
+
+!.env.example
+/artifacts/
+!/prisma/migrations/**/*.sql

@@ -1,0 +1,2227 @@
+.root {
+  --obs-bg-void: #050608;
+  --obs-bg-base: #0a0c10;
+  --obs-bg-surface: rgba(15, 18, 24, 0.92);
+  --obs-bg-raised: rgba(21, 27, 36, 0.9);
+  --obs-bg-overlay: rgba(28, 37, 51, 0.94);
+  --obs-bg-glass: rgba(15, 18, 24, 0.72);
+  --obs-teal-dim: #0d3d3a;
+  --obs-teal-mid: #0e7a72;
+  --obs-teal: #00d4c8;
+  --obs-teal-bright: #4dfff6;
+  --obs-teal-glow: rgba(0, 212, 200, 0.18);
+  --obs-gold: #c9a84c;
+  --obs-gold-glow: rgba(201, 168, 76, 0.16);
+  --obs-live: #00ff87;
+  --obs-paused: #f5a623;
+  --obs-stopped: #ff4b4b;
+  --obs-pending: #7b8cde;
+  --obs-text-primary: #f0f4f8;
+  --obs-text-secondary: #8a9bb0;
+  --obs-text-muted: #4a5568;
+  --obs-border-subtle: rgba(240, 244, 248, 0.06);
+  --obs-border-default: rgba(240, 244, 248, 0.1);
+  --obs-border-strong: rgba(0, 212, 200, 0.42);
+  --obs-shadow: 0 24px 72px rgba(5, 6, 8, 0.42);
+  min-height: 100vh;
+  color: var(--obs-text-primary);
+  background:
+    radial-gradient(circle at top left, rgba(0, 212, 200, 0.1), transparent 30%),
+    radial-gradient(circle at top right, rgba(201, 168, 76, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 24%),
+    var(--obs-bg-base);
+  font-family: var(--font-ibm-plex-mono, "IBM Plex Mono", "JetBrains Mono", monospace);
+}
+
+.root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(0, 212, 200, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 200, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(circle at center, black 42%, transparent 100%);
+  opacity: 0.5;
+}
+
+.shell {
+  position: relative;
+  z-index: 0;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: 100vh;
+  padding: 1.5rem;
+  background:
+    linear-gradient(180deg, rgba(15, 18, 24, 0.96), rgba(10, 12, 16, 0.98)),
+    var(--obs-bg-surface);
+  border-right: 1px solid var(--obs-border-subtle);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.03);
+}
+
+.brand {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.2rem;
+  color: inherit;
+  text-decoration: none;
+  background: linear-gradient(135deg, rgba(0, 212, 200, 0.12), rgba(15, 18, 24, 0.68) 58%);
+  border: 1px solid rgba(0, 212, 200, 0.18);
+  box-shadow: 0 0 0 1px rgba(0, 212, 200, 0.05), var(--obs-shadow);
+}
+
+.brandMark {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.brandIcon {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 0.45rem;
+  background-color: #060608;
+  background-image: var(--brand-logo-mark);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow: 0 0 28px rgba(0, 212, 200, 0.24);
+}
+
+.brandText {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.brandName {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.brandSubline,
+.sidebarLabel,
+.railLabel,
+.panelEyebrow,
+.metricLabel,
+.filterLabel,
+.tableMeta,
+.cardLabel,
+.metaLabel,
+.kicker,
+.inlineBadge,
+.quickActionLabel,
+.fieldLabel,
+.surfaceLabel,
+.rowMeta {
+  color: var(--obs-text-secondary);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.brandSubline {
+  color: var(--obs-text-muted);
+}
+
+.sidebarCluster {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.sidebarMeta {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem 1.05rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--obs-border-subtle);
+}
+
+.envPill,
+.alertPill,
+.statusBadge,
+.filterPill,
+.serviceState,
+.rowBadge,
+.toolbarLink,
+.metricPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 1.65rem;
+  padding: 0.22rem 0.65rem;
+  border: 1px solid transparent;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.envPill {
+  width: fit-content;
+  color: var(--obs-gold);
+  background: rgba(201, 168, 76, 0.12);
+  border-color: rgba(201, 168, 76, 0.24);
+}
+
+.sidebarBottom {
+  margin-top: auto;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.profileCard {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1rem 1.05rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--obs-border-subtle);
+}
+
+.profileName {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.profileEmail {
+  color: var(--obs-text-secondary);
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+.main {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr);
+  gap: 1.25rem;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--obs-border-subtle);
+  background: linear-gradient(180deg, rgba(10, 12, 16, 0.96), rgba(10, 12, 16, 0.84));
+  backdrop-filter: blur(22px) saturate(150%);
+}
+
+.topbarIntro {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.topbarMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.title {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  font-size: clamp(1.75rem, 2vw, 2.45rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.subtitle {
+  max-width: 56rem;
+  color: var(--obs-text-secondary);
+  line-height: 1.65;
+}
+
+.topbarControls {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+}
+
+.controlSearch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+}
+
+.quickLinks,
+.metricRail,
+.filterBar,
+.filterPills,
+.inlineActions,
+.summaryGrid,
+.serviceFoot,
+.dockActions,
+.auditMeta,
+.cardMeta,
+.cardActions,
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.toolbarLink,
+.metricPill {
+  color: var(--obs-text-primary);
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--obs-border-subtle);
+  transition: border-color 150ms ease, transform 150ms ease, background 150ms ease;
+}
+
+.toolbarLink:hover,
+.metricPill:hover,
+.filterPill:hover,
+.navItem:hover,
+.searchButton:hover,
+.buttonPrimary:hover,
+.buttonSecondary:hover,
+.buttonDanger:hover,
+.buttonGhost:hover,
+.rowActionButton:hover,
+.expandLink:hover,
+.toggleButton:hover,
+.quickLinkButton:hover,
+.anchorAction:hover {
+  transform: translateY(-1px);
+  border-color: var(--obs-border-strong);
+  background: rgba(0, 212, 200, 0.08);
+}
+
+.metricRail {
+  justify-content: flex-end;
+}
+
+.metricPill {
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 8.8rem;
+  padding: 0.8rem 0.9rem;
+}
+
+.metricValue {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  font-size: 1.3rem;
+  letter-spacing: -0.03em;
+}
+
+.content {
+  padding: 1.5rem;
+}
+
+.nav {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.navItem {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.9rem 1rem;
+  color: var(--obs-text-secondary);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  transition: transform 150ms ease, background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.navItemActive {
+  color: var(--obs-text-primary);
+  border-color: rgba(0, 212, 200, 0.18);
+  border-left-color: var(--obs-teal);
+  background: linear-gradient(90deg, rgba(0, 212, 200, 0.12), rgba(255, 255, 255, 0.02) 60%);
+  box-shadow: inset 0 0 0 1px rgba(0, 212, 200, 0.04);
+}
+
+.navLabel {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  font-size: 0.97rem;
+  font-weight: 600;
+  color: inherit;
+}
+
+.navHint {
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.page {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.pageHeader,
+.panel {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0) 20%),
+    var(--obs-bg-surface);
+  border: 1px solid var(--obs-border-default);
+  box-shadow: 0 0 0 1px rgba(0, 212, 200, 0.04), var(--obs-shadow);
+}
+
+.pageHeader::before,
+.panel::before,
+.serviceCard::before,
+.dockCard::before,
+.userTableWrap::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 5rem;
+  height: 2px;
+  background: linear-gradient(90deg, var(--obs-teal), transparent 72%);
+}
+
+.panelHeader,
+.pageHeaderInner {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.panelTitleBlock {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.pageTitle,
+.panelTitle,
+.sectionTitle,
+.tableTitle,
+.dockTitle,
+.serviceName,
+.killTitle,
+.metricTitle,
+.cardTitle,
+.detailTitle {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+
+.pageTitle {
+  font-size: clamp(1.55rem, 1.9vw, 2rem);
+}
+
+.panelTitle,
+.killTitle,
+.sectionTitle,
+.dockTitle {
+  font-size: 1.2rem;
+}
+
+.panelSubtle,
+.pageLead,
+.supportingText,
+.fieldHint,
+.rowSubtle,
+.note,
+.cardText {
+  margin: 0;
+  color: var(--obs-text-secondary);
+  line-height: 1.65;
+}
+
+.noticeRow {
+  display: grid;
+}
+
+.buttonPrimary,
+.buttonSecondary,
+.buttonDanger,
+.buttonGhost,
+.searchButton,
+.rowActionButton,
+.toggleButton,
+.quickLinkButton,
+.anchorAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.8rem;
+  padding: 0.72rem 1rem;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.buttonPrimary,
+.searchButton {
+  color: var(--obs-bg-void);
+  background: var(--obs-teal);
+  box-shadow: 0 0 20px rgba(0, 212, 200, 0.22);
+}
+
+.buttonSecondary,
+.quickLinkButton,
+.rowActionButton,
+.toggleButton,
+.anchorAction {
+  color: var(--obs-text-primary);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--obs-border-default);
+}
+
+.buttonDanger {
+  color: var(--obs-stopped);
+  background: rgba(255, 75, 75, 0.08);
+  border-color: rgba(255, 75, 75, 0.28);
+}
+
+.buttonGhost {
+  color: var(--obs-text-secondary);
+  background: transparent;
+  border-color: var(--obs-border-default);
+}
+
+.surfaceForm,
+.inlineForm,
+.searchForm,
+.filterForm {
+  display: contents;
+}
+
+.input,
+.select,
+.textarea,
+.confirmInput,
+.searchInput {
+  width: 100%;
+  min-height: 2.9rem;
+  padding: 0.78rem 0.95rem;
+  color: var(--obs-text-primary);
+  background: var(--obs-bg-raised);
+  border: 1px solid var(--obs-border-default);
+  outline: none;
+  font: inherit;
+  font-size: 0.86rem;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.textarea {
+  min-height: 5.2rem;
+  resize: vertical;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus,
+.confirmInput:focus,
+.searchInput:focus {
+  border-color: var(--obs-border-strong);
+  box-shadow: 0 0 0 3px rgba(0, 212, 200, 0.12);
+  background: var(--obs-bg-overlay);
+}
+
+.field,
+.fieldSpan,
+.metricCard,
+.serviceCard,
+.dockCard,
+.infoCard,
+.scanCard,
+.killAside,
+.summaryCard {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.formGrid,
+.detailGrid,
+.controlsGrid,
+.summaryGridGrid,
+.scanGrid {
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.field {
+  grid-column: span 4;
+}
+
+.fieldWide,
+.fieldSpan {
+  grid-column: span 12;
+}
+
+.killPanel {
+  border-color: rgba(255, 75, 75, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 75, 75, 0.1), rgba(255, 75, 75, 0.03) 42%, transparent),
+    var(--obs-bg-surface);
+}
+
+.killPanelActive {
+  border-color: rgba(255, 75, 75, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 75, 75, 0.14), 0 0 26px rgba(255, 75, 75, 0.14), var(--obs-shadow);
+}
+
+.killLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(20rem, 0.85fr);
+  gap: 1rem;
+}
+
+.killHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.killStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(255, 75, 75, 0.28);
+  color: var(--obs-stopped);
+  background: rgba(255, 75, 75, 0.1);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.72rem;
+}
+
+.killStatusSafe {
+  color: var(--obs-live);
+  border-color: rgba(0, 255, 135, 0.22);
+  background: rgba(0, 255, 135, 0.08);
+}
+
+.statusDot,
+.liveDot,
+.warningDot,
+.dangerDot,
+.pendingDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.14);
+}
+
+.killTimeline,
+.auditMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  color: var(--obs-text-secondary);
+  font-size: 0.8rem;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.metricCard,
+.summaryCard,
+.infoCard,
+.scanCard,
+.serviceCard,
+.dockCard,
+.killAside,
+.userTableWrap,
+.feedCard {
+  position: relative;
+  overflow: hidden;
+  padding: 1rem;
+  background: var(--obs-bg-raised);
+  border: 1px solid var(--obs-border-default);
+}
+
+.metricTitle {
+  font-size: 1.45rem;
+}
+
+.summaryGridGrid {
+  align-items: start;
+}
+
+.infoCard {
+  grid-column: span 6;
+}
+
+.scanCard {
+  grid-column: span 12;
+}
+
+.servicesGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.serviceCard {
+  padding: 1rem;
+  gap: 0.9rem;
+}
+
+.serviceHeader,
+.tableToolbar,
+.scanHeader,
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.serviceHeader {
+  align-items: center;
+}
+
+.serviceName {
+  font-size: 1.05rem;
+}
+
+.serviceMeta,
+.listMeta,
+.registryMeta,
+.tableHelp,
+.feedMeta,
+.scanMeta {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--obs-text-secondary);
+  font-size: 0.82rem;
+}
+
+.serviceStateActive,
+.badgeActive,
+.metricLive {
+  color: var(--obs-live);
+  background: rgba(0, 255, 135, 0.1);
+  border-color: rgba(0, 255, 135, 0.22);
+}
+
+.serviceStatePaused,
+.badgeLimited,
+.metricPaused {
+  color: var(--obs-paused);
+  background: rgba(245, 166, 35, 0.1);
+  border-color: rgba(245, 166, 35, 0.22);
+}
+
+.badgePending,
+.metricPending {
+  color: var(--obs-pending);
+  background: rgba(123, 140, 222, 0.1);
+  border-color: rgba(123, 140, 222, 0.22);
+}
+
+.badgeSuspended,
+.metricStopped,
+.serviceStateStopped,
+.filterPillDanger {
+  color: var(--obs-stopped);
+  background: rgba(255, 75, 75, 0.1);
+  border-color: rgba(255, 75, 75, 0.22);
+}
+
+.badgeNeutral,
+.metricNeutral,
+.serviceStateNeutral {
+  color: var(--obs-text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--obs-border-default);
+}
+
+.serviceModels {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.modelRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid var(--obs-border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.modelInfo {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.modelId {
+  font-size: 0.84rem;
+  color: var(--obs-text-primary);
+}
+
+.registryTableWrap,
+.userTableWrap {
+  overflow: auto;
+}
+
+.registryTable,
+.userTable {
+  width: 100%;
+  min-width: 58rem;
+  border-collapse: collapse;
+}
+
+.registryTable th,
+.userTable th {
+  padding: 0 0.75rem 0.75rem;
+  color: var(--obs-text-secondary);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: left;
+  border-bottom: 1px solid var(--obs-border-subtle);
+}
+
+.registryTable td,
+.userTable td {
+  padding: 0.9rem 0.75rem;
+  border-bottom: 1px solid var(--obs-border-subtle);
+  vertical-align: top;
+}
+
+.registryRow,
+.userRow {
+  transition: background 150ms ease, transform 150ms ease;
+}
+
+.registryRow:hover,
+.userRow:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rowPrimary,
+.identityCell,
+.userIdentity {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.rowPrimaryText,
+.userName {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.rowCode,
+.userCode,
+.hashValue {
+  font-size: 0.76rem;
+  color: var(--obs-text-secondary);
+  word-break: break-all;
+}
+
+.heartbeatCell {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.heartbeatBar {
+  position: relative;
+  width: 9.5rem;
+  max-width: 100%;
+  height: 0.42rem;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.heartbeatFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--obs-live);
+}
+
+.heartbeatHealthy {
+  background: linear-gradient(90deg, rgba(0, 255, 135, 0.3), var(--obs-live));
+}
+
+.heartbeatWarm {
+  background: linear-gradient(90deg, rgba(245, 166, 35, 0.3), var(--obs-paused));
+}
+
+.heartbeatCold {
+  background: linear-gradient(90deg, rgba(255, 75, 75, 0.3), var(--obs-stopped));
+}
+
+.tableActions,
+.quickActions {
+  align-items: center;
+}
+
+.rowActionForm {
+  display: inline-flex;
+}
+
+.rowActionButton,
+.anchorAction {
+  min-height: 2.2rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.anchorAction {
+  color: var(--obs-teal-bright);
+  border-color: rgba(0, 212, 200, 0.22);
+}
+
+.searchRail {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.filterBar {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filterPill {
+  color: var(--obs-text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--obs-border-default);
+  text-decoration: none;
+}
+
+.filterPillActive {
+  color: var(--obs-bg-void);
+  background: var(--obs-teal);
+  border-color: var(--obs-teal);
+  box-shadow: 0 0 18px rgba(0, 212, 200, 0.16);
+}
+
+.userToolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: end;
+}
+
+.searchWrap {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.summaryValue,
+.cardValue {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  font-size: 1.5rem;
+  letter-spacing: -0.04em;
+}
+
+.userRow .quickActions {
+  opacity: 0.25;
+  transition: opacity 150ms ease;
+}
+
+.userRow:hover .quickActions,
+.userRow:focus-within .quickActions {
+  opacity: 1;
+}
+
+.tableState {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.reviewDock {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.dockCard {
+  gap: 0.9rem;
+}
+
+.dockHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.dockIdentity {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.dataPoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dataPoint {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 8.4rem;
+  padding: 0.7rem 0.8rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--obs-border-subtle);
+}
+
+.dataPointValue {
+  color: var(--obs-text-primary);
+  font-size: 0.88rem;
+}
+
+.quickActionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.quickActionSection {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem;
+  border: 1px solid var(--obs-border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.quickActionButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.scanGrid {
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.78fr);
+}
+
+.feedList {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.feedItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--obs-border-subtle);
+}
+
+.feedItemTitle {
+  color: var(--obs-text-primary);
+  font-size: 0.86rem;
+}
+
+.feedItemMeta {
+  color: var(--obs-text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.emptyState {
+  padding: 1rem;
+  border: 1px dashed var(--obs-border-default);
+  color: var(--obs-text-secondary);
+  text-align: center;
+}
+
+.inlineNotice {
+  color: var(--obs-text-secondary);
+  font-size: 0.78rem;
+}
+
+.muted {
+  color: var(--obs-text-secondary);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.root :global(.adminx-notice) {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--obs-border-default);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.root :global(.adminx-notice-success) {
+  color: var(--obs-live);
+  border-color: rgba(0, 255, 135, 0.24);
+  background: rgba(0, 255, 135, 0.08);
+}
+
+.root :global(.adminx-notice-error) {
+  color: var(--obs-stopped);
+  border-color: rgba(255, 75, 75, 0.24);
+  background: rgba(255, 75, 75, 0.08);
+}
+
+.root :global(.adminx-page) {
+  display: grid;
+  gap: 1rem;
+}
+
+.root :global(.adminx-page h1),
+.root :global(.adminx-page h2),
+.root :global(.adminx-page h3) {
+  margin: 0;
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  letter-spacing: -0.04em;
+}
+
+.root :global(.adminx-page h1) {
+  max-width: 16ch;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 0.98;
+}
+
+.root :global(.adminx-page h2) {
+  font-size: clamp(1.75rem, 2.2vw, 2.45rem);
+  line-height: 1;
+}
+
+.root :global(.adminx-page h3) {
+  font-size: 1.16rem;
+}
+
+.root :global(.adminx-section-label),
+.root :global(.adminx-kpi-card > p:first-child),
+.root :global(.adminx-kpi-helper) {
+  margin: 0;
+  color: var(--obs-text-secondary);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.root :global(.adminx-kpi-helper) {
+  max-width: 34ch;
+  line-height: 1.55;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.root :global(.adminx-overview-hero) {
+  min-height: 13rem;
+  align-content: end;
+  background:
+    linear-gradient(135deg, rgba(0, 212, 200, 0.1), rgba(0, 212, 200, 0.02) 34%, rgba(123, 140, 222, 0.08) 100%),
+    var(--obs-bg-surface);
+}
+
+.root :global(.adminx-panel),
+.root :global(.adminx-kpi-card),
+.root :global(.adminx-subcard) {
+  position: relative;
+  overflow: hidden;
+  padding: 1.1rem;
+  background: var(--obs-bg-surface);
+  border: 1px solid var(--obs-border-default);
+  box-shadow: 0 0 0 1px rgba(0, 212, 200, 0.04), var(--obs-shadow);
+}
+
+.root :global(.adminx-panel)::before,
+.root :global(.adminx-kpi-card)::before,
+.root :global(.adminx-subcard)::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 4.4rem;
+  height: 2px;
+  background: linear-gradient(90deg, var(--obs-teal), transparent 72%);
+}
+
+.root :global(.adminx-head-row),
+.root :global(.adminx-plan-head) {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.root :global(.adminx-panel-grid),
+.root :global(.adminx-card-grid) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.root :global(.adminx-kpi-grid) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.root :global(.adminx-kpi-card) {
+  display: grid;
+  gap: 0.45rem;
+  align-content: space-between;
+  min-height: 10.5rem;
+}
+
+.root :global(.adminx-kpi-card h2) {
+  margin-top: 0.55rem;
+  color: var(--obs-text-primary);
+}
+
+.root :global(.adminx-chip-row),
+.root :global(.adminx-row-actions),
+.root :global(.inline-form-row) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.root :global(.adminx-chip) {
+  margin: 0;
+  padding: 0.28rem 0.72rem;
+  color: var(--obs-text-secondary);
+  border: 1px solid var(--obs-border-default);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.root :global(.adminx-feed) {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.root :global(.adminx-feed-item) {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--obs-border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.root :global(.adminx-feed-title) {
+  margin: 0;
+  color: var(--obs-text-primary);
+}
+
+.root :global(.adminx-feed-detail),
+.root :global(.adminx-muted) {
+  margin: 0;
+  color: var(--obs-text-secondary);
+  line-height: 1.65;
+}
+
+.root :global(.adminx-priority-panel) {
+  background:
+    linear-gradient(180deg, rgba(201, 168, 76, 0.06), rgba(255, 255, 255, 0) 34%),
+    var(--obs-bg-surface);
+}
+
+.root :global(.adminx-shortcuts) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.7rem;
+}
+
+.root :global(.adminx-shortcut) {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.72rem 0.85rem;
+  color: var(--obs-text-primary);
+  text-decoration: none;
+  border: 1px solid var(--obs-border-default);
+  background: rgba(255, 255, 255, 0.03);
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.root :global(.adminx-shortcut)::after {
+  content: ">";
+  color: var(--obs-teal-bright);
+}
+
+.root :global(.adminx-shortcut:hover) {
+  transform: translateY(-1px);
+  border-color: var(--obs-border-strong);
+  background: rgba(0, 212, 200, 0.08);
+}
+
+.root :global(.premium-btn) {
+  border-radius: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.root :global(.premium-btn-primary) {
+  color: var(--obs-bg-void);
+  border-color: var(--obs-teal);
+  background: var(--obs-teal);
+  box-shadow: 0 0 22px rgba(0, 212, 200, 0.18);
+}
+
+.root :global(.premium-btn-primary:hover) {
+  background: var(--obs-teal-bright);
+}
+
+.root :global(.premium-btn-secondary) {
+  color: var(--obs-text-primary);
+  border-color: var(--obs-border-default);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.root :global(.premium-btn-secondary:hover) {
+  border-color: var(--obs-border-strong);
+  background: rgba(0, 212, 200, 0.08);
+}
+
+.root :global(.adminx-filter-grid),
+.root :global(.adminx-form-grid),
+.root :global(.adminx-inline-form) {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.root :global(.adminx-filter-grid > *),
+.root :global(.adminx-form-grid > *),
+.root :global(.adminx-inline-form > *) {
+  grid-column: span 4;
+}
+
+.root :global(.adminx-sequence-card) {
+  grid-column: span 6;
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+
+.root :global(.adminx-sequence-subject) {
+  min-height: 3.2rem;
+  font-size: 0.9rem;
+}
+
+.root :global(.adminx-actions-row) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.root :global(.adminx-span-full) {
+  grid-column: span 12 !important;
+}
+
+.root :global(.adminx-check) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.root :global(.adminx-table-wrap) {
+  overflow: auto;
+}
+
+.root :global(.adminx-table) {
+  width: 100%;
+  min-width: 48rem;
+  border-collapse: collapse;
+}
+
+.root :global(.adminx-table th) {
+  padding: 0 0.75rem 0.75rem;
+  color: var(--obs-text-secondary);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-align: left;
+  border-bottom: 1px solid var(--obs-border-subtle);
+}
+
+.root :global(.adminx-table td) {
+  padding: 0.88rem 0.75rem;
+  border-bottom: 1px solid var(--obs-border-subtle);
+  vertical-align: top;
+}
+
+.root :global(.adminx-link-inline) {
+  color: var(--obs-teal-bright);
+  text-decoration: none;
+}
+
+.root :global(.adminx-danger-link) {
+  color: var(--obs-stopped);
+}
+
+.root :global(.adminx-details-stack) {
+  display: grid;
+  gap: 1rem;
+}
+
+.root :global(.adminx-details) {
+  padding: 1rem;
+  border: 1px solid var(--obs-border-default);
+  background: var(--obs-bg-raised);
+}
+
+.root :global(.adminx-sticky-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.root :global(input),
+.root :global(select),
+.root :global(textarea) {
+  width: 100%;
+  min-height: 2.9rem;
+  padding: 0.78rem 0.95rem;
+  color: var(--obs-text-primary);
+  background: var(--obs-bg-raised);
+  border: 1px solid var(--obs-border-default);
+  outline: none;
+  font: inherit;
+}
+
+.root :global(textarea) {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.root :global(input:focus),
+.root :global(select:focus),
+.root :global(textarea:focus) {
+  border-color: var(--obs-border-strong);
+  box-shadow: 0 0 0 3px rgba(0, 212, 200, 0.12);
+  background: var(--obs-bg-overlay);
+}
+
+.root :global(label) {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--obs-text-secondary);
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.root {
+  --obs-bg-void: #0f2238;
+  --obs-bg-base: #f2f5f9;
+  --obs-bg-surface: #ffffff;
+  --obs-bg-raised: #f8fbfe;
+  --obs-bg-overlay: #f5f8fc;
+  --obs-bg-glass: rgba(255, 255, 255, 0.92);
+  --obs-teal-dim: #dde7f2;
+  --obs-teal-mid: #25557f;
+  --obs-teal: #25557f;
+  --obs-teal-bright: #1f486e;
+  --obs-teal-glow: rgba(37, 85, 127, 0.08);
+  --obs-gold: #9b6a18;
+  --obs-gold-glow: rgba(155, 106, 24, 0.1);
+  --obs-live: #1f7a48;
+  --obs-paused: #9a6515;
+  --obs-stopped: #a43838;
+  --obs-pending: #275f82;
+  --obs-text-primary: #0f1e2e;
+  --obs-text-secondary: #1f3346;
+  --obs-text-muted: #334a60;
+  --obs-border-subtle: #cad8e6;
+  --obs-border-default: #b8cadb;
+  --obs-border-strong: #8ea9c0;
+  --obs-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+  color: var(--obs-text-primary);
+  background: linear-gradient(180deg, #f8fafc 0%, var(--obs-bg-base) 100%);
+  font-family: var(--font-body, "IBM Plex Sans", "Segoe UI", sans-serif);
+  line-height: 1.5;
+}
+.root::before {
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 88px 88px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), transparent 92%);
+  opacity: 0.16;
+}
+.sidebar {
+  background: rgba(248, 250, 252, 0.96);
+  border-right: 1px solid var(--obs-border-subtle);
+  box-shadow: inset -1px 0 0 rgba(148, 163, 184, 0.09);
+}
+.brand,
+.sidebarMeta,
+.profileCard,
+.pageHeader,
+.panel,
+.metricCard,
+.summaryCard,
+.infoCard,
+.scanCard,
+.serviceCard,
+.dockCard,
+.killAside,
+.userTableWrap,
+.feedCard,
+.root :global(.adminx-panel),
+.root :global(.adminx-kpi-card),
+.root :global(.adminx-subcard) {
+  background: var(--obs-bg-surface);
+  border: 1px solid var(--obs-border-default);
+  border-radius: 10px;
+  box-shadow: var(--obs-shadow);
+}
+.pageHeader::before,
+.panel::before,
+.serviceCard::before,
+.dockCard::before,
+.userTableWrap::before,
+.root :global(.adminx-panel)::before,
+.root :global(.adminx-kpi-card)::before,
+.root :global(.adminx-subcard)::before {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(37, 85, 127, 0.16), transparent 42%);
+}
+.brand {
+  gap: 0.9rem;
+  padding: 1.1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(250, 252, 255, 0.98));
+}
+.brandIcon {
+  border-radius: 0.5rem;
+  background-color: #e2e8f0;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.28);
+}
+.brandMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+.brandSubline {
+  color: var(--obs-text-secondary);
+}
+.envPill,
+.alertPill,
+.statusBadge,
+.filterPill,
+.serviceState,
+.rowBadge,
+.toolbarLink,
+.metricPill,
+.root :global(.adminx-chip),
+.root :global(.adminx-status) {
+  border-radius: 999px;
+}
+.envPill,
+.statusBadge,
+.filterPill,
+.serviceState,
+.rowBadge,
+.root :global(.adminx-chip),
+.root :global(.adminx-status) {
+  color: var(--obs-text-secondary);
+  background: rgba(15, 23, 42, 0.035);
+  border: 1px solid var(--obs-border-default);
+}
+.statusBadge {
+  color: #1f4b72;
+  background: rgba(31, 75, 114, 0.08);
+  border-color: rgba(31, 75, 114, 0.16);
+}
+.envPill {
+  color: #1f4b72;
+  background: rgba(31, 75, 114, 0.08);
+  border-color: rgba(31, 75, 114, 0.16);
+}
+.topbar {
+  border-bottom: 1px solid var(--obs-border-subtle);
+  background: rgba(242, 245, 249, 0.94);
+  backdrop-filter: blur(10px);
+}
+.title,
+.root :global(.adminx-page h1) {
+  color: var(--obs-text-primary);
+}
+.subtitle,
+.panelSubtle,
+.pageLead,
+.supportingText,
+.fieldHint,
+.rowSubtle,
+.note,
+.cardText,
+.root :global(.adminx-feed-detail),
+.root :global(.adminx-muted) {
+  color: var(--obs-text-secondary);
+}
+.metricPill,
+.toolbarLink,
+.filterPill,
+.navItem,
+.modelRow,
+.feedItem,
+.dataPoint,
+.quickActionSection,
+.root :global(.adminx-feed-item),
+.root :global(.adminx-shortcut),
+.root :global(.adminx-details),
+.root :global(.adminx-notice) {
+  background: var(--obs-bg-raised);
+  border-color: var(--obs-border-subtle);
+}
+.metricPill {
+  min-width: 9rem;
+}
+.toolbarLink,
+.metricPill,
+.filterPill,
+.navItem,
+.searchButton,
+.buttonPrimary,
+.buttonSecondary,
+.buttonDanger,
+.buttonGhost,
+.rowActionButton,
+.expandLink,
+.toggleButton,
+.quickLinkButton,
+.anchorAction,
+.root :global(.adminx-shortcut),
+.root :global(.premium-btn-primary),
+.root :global(.premium-btn-secondary) {
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.toolbarLink:hover,
+.metricPill:hover,
+.filterPill:hover,
+.navItem:hover,
+.searchButton:hover,
+.buttonPrimary:hover,
+.buttonSecondary:hover,
+.buttonDanger:hover,
+.buttonGhost:hover,
+.rowActionButton:hover,
+.expandLink:hover,
+.toggleButton:hover,
+.quickLinkButton:hover,
+.anchorAction:hover,
+.root :global(.adminx-shortcut:hover),
+.root :global(.premium-btn-primary:hover),
+.root :global(.premium-btn-secondary:hover) {
+  transform: translateY(0);
+  border-color: var(--obs-border-strong);
+  background: rgba(37, 85, 127, 0.08);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+.navItem {
+  color: var(--obs-text-secondary);
+  border-left: 0;
+  border: 1px solid transparent;
+}
+.navItemActive {
+  color: var(--obs-text-primary);
+  border-color: rgba(37, 85, 127, 0.2);
+  background: linear-gradient(90deg, rgba(37, 85, 127, 0.08), rgba(255, 255, 255, 0.86) 72%);
+  box-shadow: inset 3px 0 0 var(--obs-teal);
+}
+.navHint {
+  color: var(--obs-text-secondary);
+}
+.buttonPrimary,
+.searchButton,
+.root :global(.premium-btn-primary) {
+  color: #ffffff;
+  background: #25557f;
+  border-color: #25557f;
+  box-shadow: none;
+}
+.buttonSecondary,
+.quickLinkButton,
+.rowActionButton,
+.toggleButton,
+.anchorAction,
+.root :global(.premium-btn-secondary) {
+  color: var(--obs-text-primary);
+  background: #ffffff;
+  border-color: var(--obs-border-default);
+}
+.buttonGhost {
+  color: var(--obs-text-primary);
+  background: rgba(248, 250, 252, 0.92);
+  border-color: var(--obs-border-default);
+}
+.buttonDanger {
+  color: var(--obs-stopped);
+  background: rgba(185, 28, 28, 0.06);
+  border-color: rgba(185, 28, 28, 0.18);
+}
+.root :global(.premium-btn) {
+  border-radius: 8px;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.input,
+.select,
+.textarea,
+.confirmInput,
+.searchInput,
+.root :global(input),
+.root :global(select),
+.root :global(textarea) {
+  color: var(--obs-text-primary);
+  background: #ffffff;
+  border-color: var(--obs-border-default);
+  border-radius: 8px;
+}
+.input:focus,
+.select:focus,
+.textarea:focus,
+.confirmInput:focus,
+.searchInput:focus,
+.root :global(input:focus),
+.root :global(select:focus),
+.root :global(textarea:focus) {
+  border-color: rgba(37, 85, 127, 0.45);
+  box-shadow: 0 0 0 3px rgba(37, 85, 127, 0.12);
+  background: #ffffff;
+}
+.killPanel {
+  border-color: rgba(185, 28, 28, 0.18);
+  background: linear-gradient(180deg, rgba(185, 28, 28, 0.04), transparent 48%), var(--obs-bg-surface);
+}
+.killPanelActive {
+  border-color: rgba(185, 28, 28, 0.32);
+  box-shadow: 0 0 0 1px rgba(185, 28, 28, 0.06), var(--obs-shadow);
+}
+.killStatus,
+.root :global(.adminx-notice-error),
+.badgeSuspended,
+.metricStopped,
+.serviceStateStopped,
+.filterPillDanger {
+  color: var(--obs-stopped);
+  border-color: rgba(185, 28, 28, 0.18);
+  background: rgba(185, 28, 28, 0.08);
+}
+.killStatusSafe,
+.root :global(.adminx-notice-success),
+.serviceStateActive,
+.badgeActive,
+.metricLive {
+  color: var(--obs-live);
+  border-color: rgba(21, 128, 61, 0.18);
+  background: rgba(21, 128, 61, 0.08);
+}
+.serviceStatePaused,
+.badgeLimited,
+.metricPaused,
+.badgePending,
+.metricPending {
+  border-color: rgba(180, 83, 9, 0.18);
+  background: rgba(180, 83, 9, 0.08);
+}
+.serviceStatePaused,
+.badgeLimited,
+.metricPaused {
+  color: var(--obs-paused);
+}
+.badgePending,
+.metricPending {
+  color: #0f4c81;
+}
+.badgeNeutral,
+.metricNeutral,
+.serviceStateNeutral {
+  color: var(--obs-text-secondary);
+  background: rgba(148, 163, 184, 0.08);
+  border-color: var(--obs-border-default);
+}
+.registryRow:hover,
+.userRow:hover,
+.root :global(.adminx-table tbody tr:hover) {
+  background: rgba(15, 23, 42, 0.025);
+}
+.heartbeatBar,
+.root :global(.adminx-trend-bar) {
+  background: rgba(148, 163, 184, 0.18);
+}
+.heartbeatHealthy {
+  background: linear-gradient(90deg, rgba(21, 128, 61, 0.22), var(--obs-live));
+}
+.heartbeatWarm {
+  background: linear-gradient(90deg, rgba(180, 83, 9, 0.2), var(--obs-paused));
+}
+.heartbeatCold {
+  background: linear-gradient(90deg, rgba(185, 28, 28, 0.18), var(--obs-stopped));
+}
+.anchorAction,
+.root :global(.adminx-link-inline) {
+  color: #1f4b72;
+}
+.filterPillActive {
+  color: #ffffff;
+  background: #25557f;
+  border-color: #25557f;
+  box-shadow: none;
+}
+.root :global(.adminx-page) {
+  gap: 1.1rem;
+}
+.root :global(.adminx-page h1) {
+  max-width: 20ch;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1.02;
+}
+.root :global(.adminx-page h2) {
+  font-size: clamp(1.75rem, 2.4vw, 2.25rem);
+}
+.root :global(.adminx-page h3),
+.pageTitle,
+.panelTitle,
+.sectionTitle,
+.tableTitle,
+.dockTitle,
+.serviceName,
+.killTitle,
+.metricTitle,
+.cardTitle,
+.detailTitle {
+  color: var(--obs-text-primary);
+}
+.root :global(.adminx-overview-header) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(22rem, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.root :global(.adminx-overview-header-main),
+.root :global(.adminx-overview-header-side),
+.root :global(.adminx-overview-card-copy),
+.root :global(.adminx-overview-record-stack),
+.root :global(.adminx-overview-metrics-block),
+.root :global(.adminx-note-stack) {
+  display: grid;
+  gap: 0.9rem;
+}
+.root :global(.adminx-overview-intro) {
+  max-width: 64ch;
+}
+.root :global(.adminx-overview-header-side) {
+  justify-items: end;
+}
+.root :global(.adminx-status-row),
+.root :global(.adminx-overview-header-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+.root :global(.adminx-overview-header-actions) {
+  justify-content: flex-end;
+}
+.root :global(.adminx-status) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.9rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.root :global(.adminx-status-healthy),
+.root :global(.adminx-trend-bar-fill-healthy) {
+  color: var(--obs-live);
+  background: rgba(21, 128, 61, 0.08);
+  border-color: rgba(21, 128, 61, 0.16);
+}
+.root :global(.adminx-status-warning),
+.root :global(.adminx-trend-bar-fill-warning) {
+  color: var(--obs-paused);
+  background: rgba(180, 83, 9, 0.08);
+  border-color: rgba(180, 83, 9, 0.16);
+}
+.root :global(.adminx-status-critical),
+.root :global(.adminx-trend-bar-fill-critical) {
+  color: var(--obs-stopped);
+  background: rgba(185, 28, 28, 0.08);
+  border-color: rgba(185, 28, 28, 0.16);
+}
+.root :global(.adminx-status-intel),
+.root :global(.adminx-trend-bar-fill-intel) {
+  color: #1f4b72;
+  background: rgba(31, 75, 114, 0.08);
+  border-color: rgba(31, 75, 114, 0.16);
+}
+.root :global(.adminx-status-secondary),
+.root :global(.adminx-trend-bar-fill-secondary) {
+  color: var(--obs-text-secondary);
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+.root :global(.adminx-overview-action-grid),
+.root :global(.adminx-overview-trend-grid),
+.root :global(.adminx-overview-note-grid) {
+  display: grid;
+  gap: 1rem;
+}
+.root :global(.adminx-overview-action-grid) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.root :global(.adminx-overview-action-card),
+.root :global(.adminx-overview-record-panel),
+.root :global(.adminx-overview-trend-panel),
+.root :global(.adminx-overview-note-panel) {
+  display: grid;
+  gap: 1rem;
+}
+.root :global(.adminx-overview-card-head),
+.root :global(.adminx-note-row),
+.root :global(.adminx-trend-copy),
+.root :global(.adminx-overview-mini-table-head) {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+.root :global(.adminx-overview-card-detail) {
+  margin: 0;
+  color: var(--obs-text-secondary);
+  font-size: 0.9rem;
+}
+.root :global(.adminx-overview-kpi-card) {
+  min-height: 0;
+}
+.root :global(.adminx-overview-kpi-card h2) {
+  margin: 0;
+}
+.root :global(.adminx-overview-trend-grid) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.root :global(.adminx-trend-list),
+.root :global(.adminx-note-list) {
+  display: grid;
+  gap: 0.85rem;
+}
+.root :global(.adminx-trend-row) {
+  display: grid;
+  gap: 0.5rem;
+}
+.root :global(.adminx-trend-copy strong) {
+  font-family: var(--font-heading, "Neue Haas Grotesk Display Pro", "Segoe UI", sans-serif);
+  color: var(--obs-text-primary);
+}
+.root :global(.adminx-trend-bar) {
+  position: relative;
+  height: 0.7rem;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+.root :global(.adminx-trend-bar-fill) {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.root :global(.adminx-overview-record-grid) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(24rem, 1fr);
+  gap: 1rem;
+}
+.root :global(.adminx-table-title-cell),
+.root :global(.adminx-overview-mini-row) {
+  display: grid;
+  gap: 0.45rem;
+}
+.root :global(.adminx-table-wrap),
+.registryTableWrap,
+.userTableWrap {
+  border: 1px solid var(--obs-border-subtle);
+  border-radius: 8px;
+  background: #ffffff;
+}
+.root :global(.adminx-table th),
+.registryTable th,
+.userTable th {
+  color: var(--obs-text-secondary);
+  background: rgba(248, 250, 252, 0.9);
+}
+.root :global(.adminx-table td),
+.registryTable td,
+.userTable td {
+  color: var(--obs-text-primary);
+}
+.root :global(.adminx-overview-mini-table) {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--obs-border-subtle);
+  border-radius: 8px;
+  background: var(--obs-bg-raised);
+}
+.root :global(.adminx-overview-mini-table-head) {
+  color: var(--obs-text-secondary);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.root :global(.adminx-overview-mini-row) {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--obs-border-subtle);
+}
+.root :global(.adminx-overview-mini-row:first-of-type) {
+  padding-top: 0;
+  border-top: 0;
+}
+.root :global(.adminx-overview-note-grid) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.root :global(.adminx-note-row) {
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--obs-border-subtle);
+  border-radius: 8px;
+  background: var(--obs-bg-raised);
+}
+.root :global(.adminx-shortcut)::after {
+  color: #0f4c81;
+}
+@media (max-width: 1180px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: relative;
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--obs-border-subtle);
+  }
+
+  .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .metricRail {
+    justify-content: flex-start;
+  }
+
+  .metricsGrid,
+  .summaryGrid,
+  .servicesGrid,
+  .reviewDock,
+  .quickActionGrid,
+  .root :global(.adminx-panel-grid),
+  .root :global(.adminx-card-grid),
+  .root :global(.adminx-kpi-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .killLayout,
+  .scanGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .content,
+  .topbar,
+  .sidebar {
+    padding: 1rem;
+  }
+
+  .controlSearch,
+  .userToolbar,
+  .filterBar,
+  .pageHeaderInner,
+  .panelHeader,
+  .cardHeader,
+  .tableToolbar,
+  .serviceHeader,
+  .feedItem,
+  .dockHead {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .metricsGrid,
+  .summaryGrid,
+  .servicesGrid,
+  .reviewDock,
+  .quickActionGrid,
+  .root :global(.adminx-panel-grid),
+  .root :global(.adminx-card-grid),
+  .root :global(.adminx-kpi-grid) {
+    grid-template-columns: 1fr;
+  }
+
+  .field,
+  .root :global(.adminx-filter-grid > *),
+  .root :global(.adminx-form-grid > *),
+  .root :global(.adminx-inline-form > *) {
+    grid-column: span 12;
+  }
+
+  .metricPill,
+  .toolbarLink,
+  .root :global(.premium-btn),
+  .root :global(.adminx-shortcut) {
+    width: 100%;
+  }
+
+  .root :global(.adminx-head-row),
+  .root :global(.adminx-plan-head),
+  .root :global(.adminx-feed-item) {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .root :global(.adminx-overview-hero) {
+    min-height: auto;
+  }
+
+  .registryTable,
+  .userTable,
+  .root :global(.adminx-table) {
+    min-width: 0;
+  }
+
+  .registryTable thead,
+  .userTable thead,
+  .root :global(.adminx-table thead) {
+    display: none;
+  }
+
+  .registryTable tbody,
+  .registryTable tr,
+  .registryTable td,
+  .userTable tbody,
+  .userTable tr,
+  .userTable td,
+  .root :global(.adminx-table tbody),
+  .root :global(.adminx-table tr),
+  .root :global(.adminx-table td) {
+    display: block;
+    width: 100%;
+  }
+
+  .registryTable tr,
+  .userTable tr,
+  .root :global(.adminx-table tr) {
+    padding: 0.9rem 0;
+    border-bottom: 1px solid var(--obs-border-subtle);
+  }
+
+  .registryTable td,
+  .userTable td,
+  .root :global(.adminx-table td) {
+    padding: 0.45rem 0;
+    border: 0;
+  }
+
+  .registryTable td::before,
+  .userTable td::before,
+  .root :global(.adminx-table td)::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.2rem;
+    color: var(--obs-text-secondary);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+}
+
+@media (max-width: 1180px) {
+  .root :global(.adminx-overview-header),
+  .root :global(.adminx-overview-record-grid),
+  .root :global(.adminx-overview-trend-grid),
+  .root :global(.adminx-overview-note-grid),
+  .root :global(.adminx-overview-action-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 820px) {
+  .root :global(.adminx-overview-header),
+  .root :global(.adminx-overview-record-grid),
+  .root :global(.adminx-overview-trend-grid),
+  .root :global(.adminx-overview-note-grid),
+  .root :global(.adminx-overview-action-grid) {
+    grid-template-columns: 1fr;
+  }
+  .brandMetaRow,
+  .root :global(.adminx-status-row),
+  .root :global(.adminx-overview-header-actions),
+  .root :global(.adminx-overview-card-head),
+  .root :global(.adminx-note-row),
+  .root :global(.adminx-trend-copy),
+  .root :global(.adminx-overview-mini-table-head) {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .root :global(.adminx-overview-header-side) {
+    justify-items: stretch;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root,
+  .root::before,
+  .root::after,
+  .root *,
+  .root *::before,
+  .root *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
