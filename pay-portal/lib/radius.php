@@ -637,8 +637,10 @@ function nister_has_current_purchase(PDO $r, array $users, ?DateTimeImmutable $a
  * - Apply address list, rate limit, and set per-user plan attributes
  * - Annotate with Nister-Duration-Days and Nister-Plan-Name
  */
-function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purchaseAt): void {
-    $r = rdb_pdo();
+function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purchaseAt, ?PDO $transactionConnection = null): void {
+    // Restricted-credit purchases supply the existing PAY/RADIUS transaction connection.
+    // Ordinary cash purchases retain their established connection and stored-procedure path.
+    $r = $transactionConnection ?? rdb_pdo();
     radius_normalize_legacy_nopaid($r);
     $tz = new DateTimeZone(date_default_timezone_get());
     $now = $purchaseAt->setTimezone($tz);
@@ -693,15 +695,19 @@ function radius_apply_plan(string $msisdn, array $plan, DateTimeImmutable $purch
 
           $applied = false;
           $r->prepare("DELETE FROM radreply WHERE username=:u AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords') AND value='0'")->execute([':u'=>$u]);
-          try {
+          // Operator-installed procedures may contain COMMIT. Joined credit transactions
+          // use the existing fallback below so the whole redemption stays atomic.
+          if ($transactionConnection === null) {
+            try {
               $call = $r->prepare("CALL nister_apply_topup(?, ?, ?, ?)");
               // NOTE: stored procedure semantics can be additive; pass only NEW quota,
               // then explicitly enforce final combined quota below.
               $call->execute([$u, $newQuota, $durDays, $planCode]);
               $call->closeCursor();
               $applied = true;
-          } catch (Throwable $e) {
+            } catch (Throwable $e) {
               if (!nister_proc_missing($e)) throw $e;
+            }
           }
 
           if (!$applied) {

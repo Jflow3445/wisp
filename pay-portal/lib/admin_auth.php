@@ -81,6 +81,16 @@ function admin_do_login(string $u, string $p, array $env): bool {
     $_SESSION['admin_at']   = time();
     admin_csrf_token(true);
     admin_login_rate_limit_clear($u);
+    // Only this successful interactive password-login path refreshes game inactivity.
+    // Optional installation must never prevent access to the existing WISP console.
+    try {
+      require_once __DIR__.'/spin/service.php';
+      if (spin_is_manager($U, $env)) {
+        (new SpinService(db_pdo($env), $env))->interactiveLogin($U);
+      }
+    } catch (Throwable $e) {
+      error_log('[spin] interactive_login_record_failed');
+    }
     return true;
   }
   admin_login_rate_limit_hit($u);

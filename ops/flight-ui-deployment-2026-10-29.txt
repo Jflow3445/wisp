@@ -1,0 +1,52 @@
+Flight / WISP interface alignment - deployed 2026-10-29 UTC
+
+Customer game: https://pay.nister.org/spin.php
+Game management: https://pay.nister.org/admin/spin.php
+
+The customer game now uses the existing WISP user-topbar, global navigation,
+user-layout, account menu, brand mark, fonts, and premium.css theme. Flight is
+the selected account section. The mobile account menu reveals the selected
+Flight link without scrolling the page. Game cards and actions use the portal's
+paper, dark green, gold, borders, and radii. The existing brown loss / gold profit
+collection states remain intact. Game management uses the existing admin theme.
+
+Account links point directly to /portal.php#section. Production serves index.html
+at / and redirects to /portal.php; homepage fragment links could lose the intended
+Wallet / Plans / Rewards / Activity destination during that redirect.
+
+Four presentation files installed:
+  pay-portal/views/spin.php
+  pay-portal/views/spin-admin.php
+  pay-portal/assets/spin.js
+  pay-portal/assets/spin-portal.css (new, scoped shell integration)
+The existing premium.css is reused without modification. Customer spin.js v7
+and the new spin-portal.css v1 URLs provide fresh asset requests.
+
+Validation:
+- 42 desktop/mobile Playwright cases passed, including collection, exact wallet
+  settlement, consent, interruption recovery, automatic finish, permissions,
+  Ghost Mode, and captive discovery.
+- The added portal comparison checks computed shell styles against /portal.php,
+  selected Flight visibility, no horizontal page overflow, and real Wallet and
+  Rewards navigation at 1440px and 390px. Targeted checks passed after final links.
+- Existing WISP regression suite: all 236 checks passed.
+- PHP syntax checked locally and with production PHP; JS syntax and ESLint passed.
+- Visual review: artifacts/spin/flight-portal-desktop.png and
+  artifacts/spin/flight-portal-mobile.png, compared with WISP portal screenshots.
+- Live HTTP stylesheet and JS bytes match installed SHA-256 manifests.
+- Existing customer/admin login redirects verified. A live mobile browser opens
+  the normal WISP login from the game URL. No production customer wager submitted.
+- Feature endpoint reports visible=true / can_play=true. Apache, MariaDB and all
+  three game timers remain active; latest game service results report success.
+- Installed source hashes and protected WISP/game configuration hashes verified.
+
+No changes to wallet accounting, game probabilities, pool funding, authentication,
+payment behavior, captive files, router settings, or existing portal source.
+
+Root-only production source backups, manifests and rollback helper:
+  /root/nister-flight-ui-20261029T000156Z
+Restore the previous interface, preserving financial records and configuration:
+  sudo python3 /root/nister-flight-ui-20261029T000156Z/rollback-ui.py
+The helper checks for later source changes before restoring the prior templates
+and JS. The unused new stylesheet is retained. Original game deployment evidence
+and its broader rollback remain in /root/nister-flight-20261028T231732Z.

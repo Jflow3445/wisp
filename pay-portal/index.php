@@ -18,6 +18,14 @@ $topupNetwork = (string)$get('TOPUP_NETWORK','MTN MoMo');
 $minTopupCents = (int)$get('TOPUP_MIN_CENTS', 3000);
 if ($minTopupCents <= 0) $minTopupCents = 3000;
 $loggedIn = user_logged_in();
+$spinVisible = false;
+// Additive game discovery fails closed without affecting ordinary WISP billing.
+try {
+  require_once __DIR__.'/lib/spin/service.php';
+  $spinService = new SpinService($PDO, $ENV);
+  $spinVisible = $spinService->availability()['visible'];
+  if ($loggedIn) $spinService->consolidateCredits(normalize_msisdn(user_msisdn()));
+} catch (Throwable $e) { /* Optional module may not be migrated on this deployment. */ }
 $userMsisdn = $loggedIn ? user_msisdn_display() : '';
 $loginHref = '/login.php';
 $siteCode = location_session_get_code();
@@ -31,6 +39,7 @@ if ($siteCode !== null && $siteCode !== '') {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nister Wi-Fi | Manage Access</title>
+  <?php if ($spinVisible): ?><script src="/assets/spin-discovery.js?v=1" defer></script><?php endif; ?>
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -271,6 +280,7 @@ if ($siteCode !== null && $siteCode !== '') {
             <a class="btn" data-menu-link href="#wallet_section">Wallet</a>
             <a class="btn" data-menu-link href="#plans_section">Plans</a>
             <a class="btn" data-menu-link href="#rewards_section">Rewards</a>
+            <?php if ($spinVisible): ?><a class="btn" data-spin-discovery href="/spin.php">Flight</a><?php endif; ?>
             <a class="btn" data-menu-link href="#activity_section">Activity</a>
           </nav>
         </div>
@@ -489,6 +499,6 @@ if ($siteCode !== null && $siteCode !== '') {
     window.NISTER_MSISDN = <?= $loggedIn ? json_encode($userMsisdn) : '""' ?>;
     window.NISTER_MIN_TOPUP_CENTS = <?= (int)$minTopupCents ?>;
   </script>
-  <script src="assets/topup.js?v=21"></script>
+  <script src="assets/topup.js?v=22"></script>
 </body>
 </html>

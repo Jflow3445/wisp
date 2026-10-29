@@ -1,0 +1,94 @@
+NISTER Flight integration and production deployment — 28 October 2026 UTC
+
+Status: ACTIVE. Public availability reports visible=true and can_play=true.
+Game: https://pay.nister.org/spin.php
+Management: https://pay.nister.org/admin/spin.php
+
+Existing WISP integration
+- Uses the existing WISP customer login/session, account number and monetary wallet.
+- A direct game link returns to Flight after the existing portal login succeeds.
+- No game registration, separate password, extra MFA or new spendable game balance.
+- The administration directory lists existing WISP wallet accounts, including accounts
+  without game preferences. A separate game identity review is optional. Known
+  underage accounts remain blocked; first-use consent includes an 18+ declaration.
+- Existing game restrictions, logged one-time consent and immutable receipts remain.
+- Existing payment verification, manual-payment boundaries and normal purchases keep
+  their established paths. No customer wager or payment was submitted by verification.
+
+Authorization and starting settings
+- Administrator explicitly selected existing administrator presence as authorization.
+- Reused the existing authenticated payapp administrator session's original login time,
+  2026-10-28 21:24:05 UTC. Deployment and API reads did not renew that timestamp.
+- The existing 48-hour inactivity watchdog, explicit Ghost restoration, manager
+  allowlist, CSRF, reviewed reasons, idempotency and HMAC audits remain enforced.
+- Opening pool: GHS 100, explicitly authorized by administrator. Internal pool movement
+  ADJ-a6d8199ae474376ffdc30e82176e84c8; customer wallets were not credited from this budget.
+- Prefilled stake: GHS 5; customers retain control of their stake above the minimum.
+- Balanced engine 5, minimum stake GHS 1, minimum expected house edge 6.4250%,
+  12-second nominal duration and existing 2x / 10%-of-pool total-return ceilings.
+- Requested one-pesewa ceiling rebounds retained; no automatic 2x collection introduced.
+
+Deployment
+- 47 file hashes verified across the PHP module, targeted existing-page patches,
+  assets, migrations and systemd units. Production-only owner-platform additions
+  were preserved by patching the backed-up live sources.
+- Four additive migrations applied in the existing radius/PAY database.
+- Production mixed-collation compatibility fixed through binary comparisons of
+  cross-module identifiers. Existing wallet/purchase tables were not converted.
+  Test fixtures now exercise this actual collation boundary.
+- Settlement runs one second after the previous invocation completes. Its start-burst
+  allowance was explicitly set to 20 per 10 seconds after the default five-start
+  limit stopped healthy one-second invocations during deployment checks.
+- Settlement, watchdog and reconciliation timers are enabled, active and successful
+  under the existing www-data account. Reconciliation is healthy.
+- Router flash/hotspot/status.html and spin-notice.js were uploaded and independently
+  checked by exact contents, byte size and last-modified timestamp. The router's
+  actual original status file was backed up before replacement.
+  status.html: 39,573 bytes, last-modified 2026-10-28 23:26:32 UTC.
+  spin-notice.js: 4,583 bytes, last-modified 2026-10-28 23:26:26 UTC.
+- Updated the public router-sync source and the actual existing Next.js runtime
+  mirror. Only nister-org-web.service was restarted to expose the new static asset;
+  its existing application release and owner-platform code were retained.
+- Existing API hosts, captive login flow, remembered-device policy, Winbox/VPN,
+  RADIUS policy, provider credentials and NetFlow records were not changed.
+
+Verification
+- 190 legacy wallet/RADIUS/integration checks.
+- 768 Flight accounting/cap/concurrency/rollback/recovery checks.
+- 7,053 stopping-bound/peak/tampering/expiry/settlement-priority checks.
+- 2,781 house-edge/configuration/history checks.
+- 25,182 balanced-movement and completion-calibration checks.
+- 19 administrator-presence and existing-session checks.
+- Settlement CLI / duplicate-job verification.
+- All 40 desktop/mobile browser cases passed with mixed-collation WISP tables.
+- All 236 existing WISP regression groups passed.
+- Production PHP 8.1 syntax passed. PHP and JavaScript syntax/lint checks passed.
+- Read-only production browser verification used the existing administrator session:
+  ACTIVE state, account directory, minimum edge and funded GHS 5 preview succeeded.
+  No extra authentication field appeared. The diagnostic session-state copy was deleted.
+- Live anonymous Flight access uses the existing WISP login. Production captive
+  notice passed mobile layout, live feature availability, destination, dismissal
+  and one-time-display checks without creating a production customer.
+- Public portal / Wi-Fi / router-sync responses remain 200. API root remains 404.
+  Anonymous customer/admin game APIs reject access; /cron/flight_settle.php is not
+  web executable; /.env remains forbidden.
+- All installed-file hashes and protected existing configuration hashes match.
+  The only failed systemd service remaining is the pre-existing certbot.service.
+
+Evidence and recovery
+Root-only production evidence, source/configuration snapshots, wallet ledger snapshot,
+installed signing configuration and rollback helper:
+  /root/nister-flight-20261028T231732Z
+Rollback:
+  sudo python3 /root/nister-flight-20261028T231732Z/rollback.py
+It disables new stakes and restores discovery hooks while retaining the signing key,
+game records and settlement workers so accepted obligations can still complete.
+Do not restore the old wallet SQL snapshot over subsequent customer transactions.
+
+The new audit-signing key also has a private, access-restricted off-server backup:
+  C:\Users\DummYBoY\.codex\artifacts\nister-flight-deployment-20261028\audit-key-backup.json
+No signing key, authentication cookie or existing provider credential was committed
+or printed in the rollout report. Local destructive tests used 33080 / 8038 only.
+
+Screenshots: artifacts/spin/production-admin-overview.png,
+production-admin-rules.png and production-captive-mobile.png.

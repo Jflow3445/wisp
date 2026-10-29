@@ -22,6 +22,7 @@ DEFAULT_FILES=(
   hotspot/rlogin.html
   hotspot/signup.html
   hotspot/status.html
+  hotspot/spin-notice.js
   hotspot/error.html
   hotspot/css/error.html
   hotspot/css/style.css

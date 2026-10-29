@@ -104,6 +104,14 @@ try {
     ];
   } catch (Throwable $e) { /* keep defaults */ }
 
+  $spinVisible = false;
+  try {
+    require_once __DIR__.'/lib/spin/service.php';
+    $game = new SpinService($PDO, app_boot());
+    $spinVisible = $game->availability()['visible'];
+    if ($game->consolidateCredits($msisdn)>0) $bal = wallet_balance($msisdn);
+  } catch (Throwable $e) { /* Keep existing wallet and subscriptions available. */ }
+
   json_out([
     'ok'=>true,
     'msisdn'=>msisdn_display($msisdn), "msisdn_canonical"=>$msisdn,
@@ -119,6 +127,7 @@ try {
     'auto_renew'=>$autoRenew,
     'plans'=>$plans,
     'ledger'=>$ledger
+    ,'spin_visible'=>$spinVisible
   ]);
 } catch (Throwable $e) {
   error_log('[me.php] ' . $e->getMessage());

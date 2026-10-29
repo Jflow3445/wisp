@@ -1,0 +1,14 @@
+[Unit]
+Description=NISTER Spin financial and audit reconciliation
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=www-data
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+TimeoutStartSec=10min
+ExecStart=/usr/bin/php /srv/nister-wisp-repo/pay-portal/cron/spin_watchdog.php --reconcile

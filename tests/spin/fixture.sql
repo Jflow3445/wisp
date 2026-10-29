@@ -1,0 +1,13 @@
+CREATE TABLE accounts(msisdn VARCHAR(32) PRIMARY KEY,balance_cents INT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE ledger(id INT AUTO_INCREMENT PRIMARY KEY,msisdn VARCHAR(32) NOT NULL,type VARCHAR(32),amount_cents INT,ref VARCHAR(64) UNIQUE,notes TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE wallet_promo_grants(id INT AUTO_INCREMENT PRIMARY KEY,msisdn VARCHAR(32),remaining_cents INT,status VARCHAR(16),expires_at DATETIME) ENGINE=InnoDB;
+CREATE TABLE purchases(id BIGINT AUTO_INCREMENT PRIMARY KEY,msisdn VARCHAR(32),location_id INT,plan_code VARCHAR(64),price_cents INT,status VARCHAR(32),created_at DATETIME DEFAULT CURRENT_TIMESTAMP,activated_at DATETIME,expires_at DATETIME) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+CREATE TABLE radcheck(id INT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),attribute VARCHAR(64),op VARCHAR(2),value VARCHAR(253),UNIQUE KEY uq_radcheck(username,attribute)) ENGINE=InnoDB;
+CREATE TABLE radreply(id INT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),attribute VARCHAR(64),op VARCHAR(2),value VARCHAR(253)) ENGINE=InnoDB;
+CREATE TABLE radusergroup(id INT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),groupname VARCHAR(64),priority INT) ENGINE=InnoDB;
+CREATE TABLE radgroupreply(id INT AUTO_INCREMENT PRIMARY KEY,groupname VARCHAR(64),attribute VARCHAR(64),op VARCHAR(2),value VARCHAR(253)) ENGINE=InnoDB;
+CREATE TABLE radgroupcheck(id INT AUTO_INCREMENT PRIMARY KEY,groupname VARCHAR(64),attribute VARCHAR(64),op VARCHAR(2),value VARCHAR(253)) ENGINE=InnoDB;
+CREATE TABLE radacct(radacctid BIGINT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),acctsessionid VARCHAR(64),callingstationid VARCHAR(64),framedipaddress VARCHAR(64),acctstarttime DATETIME,acctstoptime DATETIME,acctupdatetime DATETIME,acctinputoctets BIGINT,acctoutputoctets BIGINT) ENGINE=InnoDB;
+CREATE TABLE app_settings(k VARCHAR(64) PRIMARY KEY,v TEXT,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB;
+CREATE TABLE account_access_revocations(msisdn VARCHAR(64) PRIMARY KEY,revision BIGINT NOT NULL DEFAULT 0,pending INT NOT NULL DEFAULT 0,reason VARCHAR(255),last_error TEXT,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,last_attempt_at DATETIME) ENGINE=InnoDB;
+INSERT INTO radgroupreply(groupname,attribute,op,value) VALUES ('PLAN_TEST','Nister-Price-Cents',':=','500'),('PLAN_TEST','Nister-Plan-Name',':=','Everyday 1 GB'),('PLAN_TEST','Nister-Quota-Bytes',':=','1073741824'),('PLAN_TEST','Nister-Duration-Days',':=','1'),('PLAN_TEST','Mikrotik-Rate-Limit',':=','5M/5M');

@@ -1,0 +1,16 @@
+[Unit]
+Description=NISTER held Flight stake settlement
+After=network-online.target mariadb.service
+# The one-second timer legitimately exceeds systemd's default five starts per ten seconds.
+StartLimitIntervalSec=10s
+StartLimitBurst=20
+
+[Service]
+Type=oneshot
+User=www-data
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+TimeoutStartSec=20s
+ExecStart=/usr/bin/php /srv/nister-wisp-repo/pay-portal/cron/flight_settle.php

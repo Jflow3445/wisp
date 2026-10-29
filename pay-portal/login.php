@@ -41,7 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (user_do_login($msisdn, $pass)) {
       nister_rate_limit_clear('portal_login_ip', $ipKey);
       nister_rate_limit_clear('portal_login_user', $comboKey);
-      header('Location: /portal.php');
+      $afterLogin=(string)($_SESSION['after_login_path']??'');unset($_SESSION['after_login_path']);
+      header('Location: '.($afterLogin==='/spin.php'?'/spin.php':'/portal.php'));
       exit;
     } else {
       $ipHit = nister_rate_limit_hit('portal_login_ip', $ipKey, 10, 600, 900);

@@ -1,0 +1,81 @@
+/* Base shell rules from the existing WISP portal. premium.css supplies the
+   shared theme and responsive navigation; flight styles stay inside the module. */
+body.spin-customer{--font-body:"Sora",sans-serif;--font-display:"Fraunces",serif;min-height:100vh;font-size:16px;line-height:normal}
+.spin-customer .page{margin:0 auto}
+.spin-customer .brand-text{display:flex;flex-direction:column;gap:2px}
+.spin-customer .brand-text .name{font-weight:700}
+.spin-customer .brand-text .tag{font-size:.85rem}
+.spin-customer .mark{border:1px solid rgba(15,118,110,.22)}
+.spin-customer .mark::before,.spin-customer .mark::after,.spin-customer .mark span{content:"";display:block;width:100%;border-radius:3px;background:#fffdfa}
+.spin-customer .mark::before{height:8px}
+.spin-customer .mark span{height:14px}
+.spin-customer .mark::after{height:20px}
+.spin-customer .btn,.spin-admin .btn{appearance:none;border:1px solid transparent;border-radius:12px;padding:12px 16px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;line-height:1.2;transition:transform .18s ease,box-shadow .18s ease,background .18s ease,border-color .18s ease}
+.spin-customer .btn{font-size:16px}
+.spin-customer .btn:disabled{cursor:not-allowed;opacity:.55;transform:none;box-shadow:none}
+.spin-customer .btn:hover{transform:translateY(-1px)}
+.spin-customer .btn.primary{color:#fff;box-shadow:0 16px 30px rgba(15,118,110,.24)}
+.spin-customer .pill{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;padding:5px 10px;border-radius:999px;font-weight:700}
+.spin-customer .game-main{padding:0 0 20px}
+.spin-customer .game-overline{margin:4px 0 20px}
+.spin-customer .game-intro{padding:24px;border:1px solid var(--premium-line);border-radius:24px;background:rgba(255,253,248,.94);box-shadow:0 22px 60px rgba(25,22,17,.12)}
+.spin-customer .game-intro h1{color:var(--ink);font-size:clamp(2rem,3.4vw,3rem);max-width:none;line-height:1.12;letter-spacing:-.8px}
+.spin-customer .game-intro p{font-size:14px;line-height:1.65}
+.spin-customer .balance-strip{background:linear-gradient(180deg,#fffdf8,#fff8ee);border-color:var(--premium-line);border-radius:18px;padding:18px;min-width:210px}
+.spin-customer .balance-strip strong{font-size:26px}
+.spin-customer .flight-layout{padding:20px 0 24px;gap:18px;grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr)}
+.spin-customer .flight-stage{border-radius:24px;border-color:rgba(255,255,255,.14);background:radial-gradient(ellipse at 80% 35%,#245044,transparent 72%),linear-gradient(135deg,var(--premium-night),var(--premium-night-2) 66%,#2b241a);box-shadow:0 22px 60px rgba(10,16,14,.2)}
+.spin-customer .stake-panel,.spin-customer .history-section{border:1px solid var(--premium-line);border-radius:24px;background:rgba(255,253,248,.94);box-shadow:0 22px 60px rgba(25,22,17,.12);padding:24px}
+.spin-customer .stake-panel h2{font-weight:600;font-size:28px}
+.spin-customer .stake-panel>p,.spin-customer .stake-panel label{font-size:13px}
+.spin-customer .money-input{border-color:#dccab5;border-radius:14px}
+.spin-customer .money-input input{background:transparent;border:0;border-radius:0}
+.spin-customer .stake-shortcuts button{border-radius:12px;background:#fffaf2}
+.spin-customer .primary-btn,.spin-customer .secondary-btn{border-radius:14px}
+.spin-customer .primary-btn.btn{justify-content:center;border-color:transparent;font-size:14px}
+.spin-customer .history-section .table-wrap{border-color:var(--premium-line);border-radius:18px}
+.spin-customer .history-section th{background:linear-gradient(135deg,var(--premium-night),var(--premium-night-2));color:rgba(255,253,248,.74)}
+.spin-customer .history-section td{font-size:12px;padding:15px}
+.spin-customer .game-dialog{border-radius:24px;background:linear-gradient(180deg,#fffdf8,#fff8ee);box-shadow:0 36px 110px rgba(10,16,14,.34)}
+.spin-customer .game-dialog::backdrop{background:rgba(10,16,14,.56);backdrop-filter:blur(10px)}
+.spin-customer .game-footer{font-size:12px}
+.spin-customer .result-panel{border-radius:24px}
+/* Game management uses the existing administrator theme as well. */
+.spin-admin{min-height:100vh}
+.spin-admin .wrap{margin:0 auto}
+.spin-admin .topbar{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px;border:1px solid var(--premium-line-dark)}
+.spin-admin .topbar .brand{font-family:var(--font-display);margin:0;color:#fff;letter-spacing:0}
+.spin-admin .topbar .muted{font-size:14px}
+.spin-admin .actions{display:flex;gap:10px;flex-wrap:wrap}
+.spin-admin .admin-main{padding:16px 0 30px;max-width:none}
+.spin-admin .admin-heading h1{font-family:var(--font-display)}
+.spin-admin .admin-card,.spin-admin .admin-metric{border-color:var(--premium-line);border-radius:24px;background:rgba(255,253,248,.94);box-shadow:0 22px 60px rgba(25,22,17,.12)}
+.spin-admin .admin-tabs button{border-radius:14px;font-size:13px;font-weight:600}
+.spin-admin .admin-tabs button[aria-current=page]{background:linear-gradient(135deg,rgba(15,118,110,.12),rgba(200,135,47,.12));border-color:rgba(15,118,110,.25);color:var(--premium-teal)}
+.spin-admin .admin-main th{background:linear-gradient(135deg,var(--premium-night),var(--premium-night-2));color:rgba(255,253,248,.74)}
+.spin-admin .admin-main td.wrap{max-width:380px;padding:14px 15px}
+.spin-admin .skip:not(:focus){width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+@media(max-width:1100px){
+  .spin-customer .game-intro{align-items:flex-start;flex-direction:column}
+  .spin-customer .balance-strip{width:100%;grid-template-columns:1fr auto;gap:3px 15px}
+  .spin-customer .balance-label,.spin-customer .balance-strip strong,.spin-customer .balance-strip #held-balance{grid-column:1}
+  .spin-customer .balance-strip a{grid-column:2;grid-row:1/4;align-self:center}
+  .spin-customer .flight-layout{grid-template-columns:minmax(0,1.2fr) minmax(250px,1fr)}
+}
+@media(max-width:720px){
+  .spin-customer .flight-layout{display:flex;flex-direction:column;gap:18px}
+  .spin-customer .flight-stage{width:100%}
+}
+@media(max-width:640px){
+  .spin-customer .game-intro,.spin-customer .stake-panel,.spin-customer .history-section{padding:20px;border-radius:20px}
+  .spin-customer .game-intro h1{font-size:36px}
+  .spin-customer .game-intro p{font-size:13px}
+  .spin-customer .balance-strip{margin-top:0;min-width:0}
+  .spin-customer .balance-strip strong{font-size:24px}
+  .spin-customer .flight-stage{border-radius:20px}
+  .spin-customer .section-heading{flex-wrap:wrap}
+  .spin-customer .section-heading>a{max-width:none;text-align:left;font-size:11px}
+  .spin-admin .topbar{align-items:stretch}
+  .spin-admin .admin-card{border-radius:20px}
+}
+@media(prefers-reduced-motion:reduce){.spin-customer .btn{transition:none}.spin-customer .game-dialog::backdrop{backdrop-filter:none}}

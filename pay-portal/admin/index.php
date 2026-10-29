@@ -243,6 +243,9 @@ $ADMIN_CSRF = admin_csrf_token();
         <div class="menu" id="menu">
           <button class="btn" data-section="overview" type="button" onclick="setSection('overview')">Overview</button>
           <button class="btn" data-section="billing" type="button" onclick="setSection('billing')">Billing</button>
+          <?php require_once __DIR__.'/../lib/spin/security.php'; if (spin_is_manager((string)($_SESSION['admin_user'] ?? ''), $ENV)): ?>
+          <a class="btn" href="/admin/spin.php">Game management</a>
+          <?php endif; ?>
           <button class="btn" data-section="plans" type="button" onclick="setSection('plans')">Plans</button>
           <a class="btn" href="/admin/sms.php">SMS gateways</a>
           <a class="btn" href="/admin/register.php">Register user</a>

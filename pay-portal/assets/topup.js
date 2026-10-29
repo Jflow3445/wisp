@@ -374,6 +374,7 @@
     renderActive(j.active);
     renderPlans(msisdn, j.plans||[]);
     renderLedger(j.ledger||[]);
+    if (!j.spin_visible) document.querySelectorAll('[data-spin-discovery]').forEach(function(link) { link.remove(); });
     renderReferral(j.referral||{});
     renderAutoRenew(j);
   }

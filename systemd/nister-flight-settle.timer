@@ -1,0 +1,11 @@
+[Unit]
+Description=Settle completed Flight rounds every second
+
+[Timer]
+OnBootSec=5s
+OnUnitInactiveSec=1s
+AccuracySec=100ms
+Persistent=true
+
+[Install]
+WantedBy=timers.target

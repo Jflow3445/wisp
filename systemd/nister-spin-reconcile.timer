@@ -1,0 +1,11 @@
+[Unit]
+Description=Reconcile NISTER Spin obligations every 15 minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=15min
+AccuracySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
