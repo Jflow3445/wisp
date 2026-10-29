@@ -1,0 +1,89 @@
+Withdrawal bug audit and corrections - 2026-10-29
+
+Reproduced issues and resulting behavior
+
+- A valid request followed by a failed balance read could be reported as failed,
+  and background refresh errors could replace its confirmation. Confirmed receipts
+  now stay visible, stale amounts are labelled as updating, and a new request stays
+  disabled until current balances are available. Lost responses also recover from
+  the server's existing receipt before attempting another POST.
+- Damaged recovery JSON prevented initialization. Blocked sessionStorage prevented
+  submission. Invalid recovery records are now discarded without a POST; unavailable
+  storage uses the same exact request key in memory. Reload retrieves accepted
+  requests through the existing authenticated history. No replacement key is used
+  for an uncertain retry.
+- A definite paused/unavailable-setting rejection was kept as an uncertain request
+  and could be submitted again on reload. Such rejected requests are now cleared;
+  resuming intake cannot silently submit an earlier refused withdrawal.
+- Older responses could overwrite newer wallet/queue results or the selected
+  filter. Response generations now discard superseded reads. Ordinary WISP wallet
+  refreshes also refresh an open withdrawal card after purchases or deposits.
+- Admin refreshes replaced unsaved minimum edits, including edits made while a save
+  was in progress. Drafts are retained until explicitly saved or replaced by the user.
+- An admin decision could commit, then appear unsuccessful after its queue read
+  failed. The recorded status/reference is now confirmed separately from refreshing
+  the queue. Stale action buttons remain disabled until a fresh queue is loaded.
+- Array/object fields produced PHP conversion warnings. Text fields and pagination
+  now receive strict validation and clean JSON errors before financial mutations.
+- Separate wallet, held-amount and history queries could describe different commits.
+  Customer and admin snapshots now use one repeatable-read transaction. This setting
+  applies only to that read transaction; existing wallet transactions retain their
+  established isolation and lock behavior.
+- A deleted account's settled withdrawal names/history were visible to a subsequent
+  registration using the same phone. Account purge now appends an account_purged
+  marker to each retained withdrawal receipt in the purge transaction. Customer
+  history and nonce replay exclude those archived records; administrators keep the
+  original payout/refund receipts. Failed purges roll back the markers too.
+- Retrying a completed admin receipt required a live wallet and failed after account
+  deletion. Already-final receipt retries now return their recorded result without
+  another wallet mutation.
+- Account purge could delete an active Flight wallet or erase the ledger required
+  to reconcile completed game receipts. The existing account lock now serializes
+  purge with new holds/stakes, and accounts with Flight or legacy spin receipts
+  cannot be purged. Restriction/password administration remains available. Accounts
+  without game records retain the normal deletion flow, subject to pending payouts.
+
+Scope
+Existing WISP authentication, registered-phone payout binding, GHS 100 initial
+minimum, working-hours/48-hour notice, approval/manual-send/payment-reference flow,
+one active withdrawal per account, exact decline refunds and collapsed-by-default
+card are retained. Game odds and pool accounting are unchanged. There is no schema
+migration or new financial service. Existing audit tables record purge markers.
+
+Validation
+The isolated MariaDB integration suite covers typed fields, account reuse, final
+receipt replay after deletion, failed-purge rollback, concurrent snapshot consistency,
+and preservation of active/settled Flight reconciliation, alongside the existing
+withdrawal validation/hold/refund/retry checks. Browser fault cases cover corrupted
+or unavailable storage, lost responses, read failures after successful writes,
+out-of-order responses, native wallet purchases, unsaved drafts and malformed APIs.
+Production checks use read-only metadata and the existing admin session; no customer
+withdrawal, approval, transfer, refund or balance correction is used for verification.
+
+Completed validation
+- 79 withdrawal integration checks, including multi-process hold/refund snapshot
+  stress and account deletion/registration boundaries.
+- 30 desktop/mobile withdrawal browser scenarios, checked in the full suite and
+  focused reruns after correcting the injected background-refresh failure.
+- 190 existing legacy service checks, 768 Flight checks, 19 admin-session checks.
+- All 236 existing WISP regression checks; PHP and JavaScript syntax and ESLint.
+- Production PHP syntax and live queue reads pass. Existing admin-session browser
+  verification confirms unsaved drafts survive refresh and malformed queries return
+  clean JSON. It submits no POST. The configured minimum is read and preserved.
+- New customer/admin/top-up script bytes match the live HTTP responses. Anonymous
+  APIs still require the existing account session. Flight remains visible/playable;
+  Apache, MariaDB and all existing game timers remain healthy.
+
+Deployment / recovery
+Eight existing source files were replaced using atomic file writes and original modes.
+Existing authentication, Paystack, ordinary wallet/RADIUS functions, game engine,
+signing configuration, Owner Platform console and collapsed-card markup/styles were
+verified unchanged. The pre-deployment audit found zero withdrawal requests and no
+orphaned withdrawal accounts, so no historical payout or wallet repair was required.
+
+Root-only source/financial snapshots, installed hashes and verification evidence:
+  /root/nister-withdrawals-audit-20261029T022100Z
+The SQL snapshot is evidence/recovery material; do not restore it over later customer
+transactions. Keep the account-purge guards and archive handling when troubleshooting
+the interface. Existing intake pause via WITHDRAWALS_ENABLED=0 remains available and
+does not disable accepted-request history, admin payout recording or exact refunds.

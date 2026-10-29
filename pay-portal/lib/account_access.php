@@ -168,15 +168,30 @@ function account_access_purge(PDO $portal, PDO $radius, string $raw): array {
   $deleted = ['radius'=>[], 'portal'=>[]];
   try {
     foreach ($connections as $connection) $connection->beginTransaction();
+    if (account_access_table_exists($portal, 'accounts')) {
+      $lock=$portal->prepare("SELECT msisdn FROM accounts WHERE msisdn IN ($userPh)".($portal->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));
+      $lock->execute($users);$lock->fetchAll();
+    }
+    // Game receipts depend on the ordinary wallet ledger for reconciliation.
+    // Deleting it would orphan accepted funds or invalidate completed receipts.
+    foreach (['flight_rounds','spin_spins'] as $gameTable) {
+      if (!account_access_table_exists($portal, $gameTable)) continue;
+      $gameRecord=$portal->prepare("SELECT 1 FROM $gameTable WHERE msisdn IN ($userPh) LIMIT 1".($portal->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));
+      $gameRecord->execute($users);
+      if ($gameRecord->fetchColumn()) throw new RuntimeException('game_financial_history_prevents_purge');
+    }
     if (account_access_table_exists($portal, 'wallet_withdrawals')) {
-      // Serialize with withdrawal holds so deletion cannot orphan an accepted payout.
-      if (account_access_table_exists($portal, 'accounts')) {
-        $lock = $portal->prepare("SELECT msisdn FROM accounts WHERE msisdn IN ($userPh)" . ($portal->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql' ? ' FOR UPDATE' : ''));
-        $lock->execute($users); $lock->fetchAll();
-      }
+      // The account lock serializes with withdrawal holds and new game stakes.
       $pending = $portal->prepare("SELECT 1 FROM wallet_withdrawals WHERE msisdn IN ($userPh) AND status IN ('pending','approved') LIMIT 1");
       $pending->execute($users);
       if ($pending->fetchColumn()) throw new RuntimeException('withdrawal_pending_complete_before_purge');
+      // Retain the administrative receipt but hide it from a later registration
+      // using this phone number. The marker rolls back with any failed purge.
+      $archive = $portal->prepare("INSERT INTO wallet_withdrawal_events(withdrawal_id,event,actor,details_json,created_at)
+        SELECT w.id,'account_purged','account_purge',?,CURRENT_TIMESTAMP FROM wallet_withdrawals w
+        WHERE w.msisdn IN ($userPh) AND NOT EXISTS
+          (SELECT 1 FROM wallet_withdrawal_events e WHERE e.withdrawal_id=w.id AND e.event='account_purged')");
+      $archive->execute(array_merge(['{"reason":"account_deleted"}'],$users));
     }
     account_access_record($radius, $raw, 'purge');
     $sets = [

@@ -6,6 +6,12 @@ final class WithdrawalError extends RuntimeException {
   public function __construct(public string $errorCode, string $message, public int $httpStatus=422) { parent::__construct($message); }
 }
 
+function withdrawal_text(array $input,string $key,string $default=''): string {
+  $value=array_key_exists($key,$input)?$input[$key]:$default;
+  if (!is_string($value)) throw new WithdrawalError('invalid_field','Supply valid text for '.$key.'.');
+  return $value;
+}
+
 function withdrawal_amount(mixed $amount): int {
   if (!is_string($amount) || !preg_match('/^(\d{1,8})(?:\.(\d{1,2}))?$/D', trim($amount), $m)) {
     throw new WithdrawalError('invalid_amount','Enter an amount with up to two decimal places.');
@@ -32,6 +38,12 @@ final class WalletWithdrawals {
         throw $e;
       }
     }
+  }
+  private function read(callable $fn): mixed {
+    if ($this->db->inTransaction()) throw new LogicException('withdrawal_requires_own_transaction');
+    // Keep wallet, held amount, history and queue totals on one committed snapshot.
+    $this->db->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    return $this->tx($fn);
   }
   private function account(string $user): string {
     if (!preg_match('/^233\d{9}$/D',$user)) throw new WithdrawalError('invalid_account','Use the phone number registered to your account.');
@@ -67,25 +79,29 @@ final class WalletWithdrawals {
     unset($r['request_hash'],$r['active_user']);$r['amount_cents']=(int)$r['amount_cents'];$r['account_number']='0'.substr($r['msisdn'],3);return $r;
   }
   public function snapshot(string $user): array {
-    $user=$this->account($user);$wallet=$this->wallet($user);
-    $wallet['held_cents']=(int)$this->exec("SELECT COALESCE(SUM(amount_cents),0) FROM wallet_withdrawals WHERE msisdn=? AND status IN ('pending','approved')",[$user])->fetchColumn();
-    return ['enabled'=>$this->enabled(),'minimum_cents'=>$this->minimum(),'note'=>self::NOTE,'account_number'=>'0'.substr($user,3),'wallet'=>$wallet,
-      'withdrawals'=>array_map([$this,'view'],$this->exec('SELECT * FROM wallet_withdrawals WHERE msisdn=? ORDER BY created_at DESC,id DESC LIMIT 30',[$user])->fetchAll(PDO::FETCH_ASSOC))];
+    $user=$this->account($user);
+    return $this->read(function()use($user){
+      $wallet=$this->wallet($user);
+      $wallet['held_cents']=(int)$this->exec("SELECT COALESCE(SUM(amount_cents),0) FROM wallet_withdrawals WHERE msisdn=? AND status IN ('pending','approved')",[$user])->fetchColumn();
+      return ['enabled'=>$this->enabled(),'minimum_cents'=>$this->minimum(),'note'=>self::NOTE,'account_number'=>'0'.substr($user,3),'wallet'=>$wallet,
+        'withdrawals'=>array_map([$this,'view'],$this->exec("SELECT w.* FROM wallet_withdrawals w WHERE w.msisdn=? AND NOT EXISTS (SELECT 1 FROM wallet_withdrawal_events e WHERE e.withdrawal_id=w.id AND e.event='account_purged') ORDER BY w.created_at DESC,w.id DESC LIMIT 30",[$user])->fetchAll(PDO::FETCH_ASSOC))];
+    });
   }
   public function request(string $user,array $in): array {
-    $user=$this->account($user);$phone=trim((string)($in['account_number']??''));
+    $user=$this->account($user);$phone=trim(withdrawal_text($in,'account_number'));
     if (!preg_match('/^(?:0\d{9}|\+?233\d{9})$/D',$phone) || normalize_msisdn($phone)!==$user) throw new WithdrawalError('account_mismatch','Withdrawals must go to your registered phone number.');
     if (!is_string($in['name']??null)) throw new WithdrawalError('invalid_name','Enter the MoMo account holder’s full name.');
     $name=trim($in['name']);
     if (strlen($name)>480 || preg_match('/[\p{C}]/u',$name)!==0 || preg_match('/^.{2,120}$/usD',$name)!==1 || !preg_match('/\p{L}/u',$name)) throw new WithdrawalError('invalid_name','Enter the MoMo account holder’s full name (2–120 characters).');
-    $network=(string)($in['network']??'');if (!isset(self::NETWORKS[$network])) throw new WithdrawalError('invalid_network','Choose your MoMo network.');
-    $amount=withdrawal_amount($in['amount']??null);$key=(string)($in['request_key']??'');
+    $network=withdrawal_text($in,'network');if (!isset(self::NETWORKS[$network])) throw new WithdrawalError('invalid_network','Choose your MoMo network.');
+    $amount=withdrawal_amount($in['amount']??null);$key=withdrawal_text($in,'request_key');
     if (!preg_match('/^[A-Za-z0-9_-]{16,64}$/D',$key)) throw new WithdrawalError('invalid_request','Reload the page and try again.');
     $hash=hash('sha256',json_encode([$user,$name,$network,$amount],JSON_THROW_ON_ERROR));$id='WDR-'.bin2hex(random_bytes(16));
     return $this->tx(function()use($user,$name,$network,$amount,$key,$hash,$id){
       $wallet=$this->wallet($user,true);
       $old=$this->one('SELECT * FROM wallet_withdrawals WHERE msisdn=? AND request_key=? FOR UPDATE',[$user,$key]);
       if ($old) {
+        if ($this->one("SELECT 1 FROM wallet_withdrawal_events WHERE withdrawal_id=? AND event='account_purged'",[$old['id']])) throw new WithdrawalError('request_conflict','This request belongs to a previous account. Create a new withdrawal request.',409);
         if (!hash_equals($old['request_hash'],$hash)) throw new WithdrawalError('request_conflict','This request was already used for different details.',409);
         return $this->view($old);
       }
@@ -111,11 +127,15 @@ final class WalletWithdrawals {
     });
   }
   public function decide(string $actor,array $in): array {
-    $id=(string)($in['id']??'');if (!preg_match('/^WDR-[a-f0-9]{32}$/D',$id)) throw new WithdrawalError('invalid_request','Select a withdrawal request.');
-    $action=(string)($in['action']??'');if (!in_array($action,['approve','decline','paid'],true)) throw new WithdrawalError('invalid_action','Choose a valid action.');
-    $initial=$this->row($id);$reason=trim((string)($in['reason']??''));$reference=strtoupper(trim((string)($in['payout_ref']??'')));
+    $id=withdrawal_text($in,'id');if (!preg_match('/^WDR-[a-f0-9]{32}$/D',$id)) throw new WithdrawalError('invalid_request','Select a withdrawal request.');
+    $action=withdrawal_text($in,'action');if (!in_array($action,['approve','decline','paid'],true)) throw new WithdrawalError('invalid_action','Choose a valid action.');
+    $initial=$this->row($id);$reason=trim(withdrawal_text($in,'reason'));$reference=strtoupper(trim(withdrawal_text($in,'payout_ref')));
     if ($action==='decline' && (preg_match('/^.{3,500}$/usD',$reason)!==1 || preg_match('/[\p{C}]/u',$reason)!==0)) throw new WithdrawalError('reason_required','Enter a decline reason (3–500 characters).');
     if ($action==='paid' && !preg_match('/^[A-Z0-9][A-Z0-9._:\/-]{2,79}$/D',$reference)) throw new WithdrawalError('reference_required','Enter the completed MoMo transaction reference (3–80 characters).');
+    // Final receipts remain retryable even after the customer's account was deleted.
+    if (($action==='approve' && in_array($initial['status'],['approved','paid'],true))
+      || ($action==='decline' && $initial['status']==='declined')
+      || ($action==='paid' && $initial['status']==='paid' && hash_equals((string)$initial['payout_ref'],$reference))) return $this->view($initial);
     try {return $this->tx(function()use($actor,$id,$initial,$action,$reason,$reference){
       $wallet=$this->wallet($initial['msisdn'],true);
       $row=$this->one('SELECT * FROM wallet_withdrawals WHERE id=? FOR UPDATE',[$id]);$state=$row['status'];$amount=(int)$row['amount_cents'];
@@ -154,8 +174,10 @@ final class WalletWithdrawals {
       else {$where[]='id=?';$args[]=$search;}
     }
     $filter=$where?' WHERE '.implode(' AND ',$where):'';
-    $rows=$this->exec('SELECT * FROM wallet_withdrawals'.$filter.' ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET '.($page*50),$args)->fetchAll(PDO::FETCH_ASSOC);
-    return ['minimum_cents'=>$this->minimum(),'rows'=>array_map([$this,'view'],$rows),'page'=>$page,'total'=>(int)$this->exec('SELECT COUNT(*) FROM wallet_withdrawals'.$filter,$args)->fetchColumn(),
-      'held_cents'=>(int)$this->exec("SELECT COALESCE(SUM(amount_cents),0) FROM wallet_withdrawals WHERE status IN ('pending','approved')")->fetchColumn()];
+    return $this->read(function()use($filter,$args,$page){
+      $rows=$this->exec('SELECT * FROM wallet_withdrawals'.$filter.' ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET '.($page*50),$args)->fetchAll(PDO::FETCH_ASSOC);
+      return ['minimum_cents'=>$this->minimum(),'rows'=>array_map([$this,'view'],$rows),'page'=>$page,'total'=>(int)$this->exec('SELECT COUNT(*) FROM wallet_withdrawals'.$filter,$args)->fetchColumn(),
+        'held_cents'=>(int)$this->exec("SELECT COALESCE(SUM(amount_cents),0) FROM wallet_withdrawals WHERE status IN ('pending','approved')")->fetchColumn()];
+    });
   }
 }

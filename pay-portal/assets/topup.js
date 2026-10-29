@@ -377,6 +377,7 @@
     if (!j.spin_visible) document.querySelectorAll('[data-spin-discovery]').forEach(function(link) { link.remove(); });
     renderReferral(j.referral||{});
     renderAutoRenew(j);
+    window.dispatchEvent(new Event('nister:wallet-refreshed'));
   }
 
   async function callRefreshUser(){
