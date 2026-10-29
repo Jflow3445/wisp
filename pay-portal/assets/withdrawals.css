@@ -1,4 +1,12 @@
 .withdrawal-card{grid-column:1/-1;min-width:0}
+.withdrawal-toggle{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px;cursor:pointer;list-style:none}
+.withdrawal-toggle::-webkit-details-marker{display:none}
+.withdrawal-card .withdrawal-toggle h3{margin:0}
+.withdrawal-toggle:focus-visible{outline:3px solid #0f766e;outline-offset:5px;border-radius:8px}
+.withdrawal-toggle-meta{display:flex;align-items:center;gap:18px;flex-shrink:0}
+.withdrawal-chevron{display:block;width:10px;height:10px;border-right:2px solid #0f766e;border-bottom:2px solid #0f766e;transform:rotate(45deg);margin:0 4px 5px 0}
+.withdrawal-card[open] .withdrawal-chevron{transform:rotate(225deg);margin-top:6px;margin-bottom:0}
+.withdrawal-content{padding-top:16px}
 .withdrawal-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:20px 0}
 .withdrawal-summary>div{display:grid;gap:6px;border:1px solid var(--premium-line,#e5d7c5);border-radius:16px;padding:16px;background:#fffaf2}
 .withdrawal-summary span{font-size:.8rem;color:#64706b}.withdrawal-summary strong{font-size:1.3rem;color:#1b211f}

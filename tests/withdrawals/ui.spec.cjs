@@ -1,10 +1,16 @@
 const {test,expect}=require('../../nister-org/node_modules/@playwright/test');
 const {execFileSync}=require('node:child_process');const path=require('node:path');const fs=require('node:fs');
 const php=process.env.SPIN_TEST_PHP||'php';
+async function openWithdrawals(page){
+  await expect(page.locator('#withdrawal-form')).toBeHidden();
+  await page.locator('#wallet-withdrawals > summary').click();
+  await expect(page.locator('#withdrawal-form')).toBeVisible();
+}
 async function login(page,phone='0201234567'){
   await page.goto('/login.php');await page.locator('[name=msisdn]').fill(phone);await page.locator('[name=password]').fill('test-customer-password');
   await Promise.all([page.waitForURL(/portal\.php/),page.getByRole('button',{name:'Open my portal',exact:true}).click()]);
   await page.goto('/portal.php#wallet_section');await expect(page.locator('#withdrawal-minimum')).toHaveText('GHS 100.00');
+  await openWithdrawals(page);
 }
 async function request(page,amount='100.00'){
   await page.locator('#withdrawal-form [name=name]').fill('Test MoMo Holder');await page.locator('#withdrawal-form [name=network]').selectOption('MTN');await page.locator('#withdrawal-form [name=amount]').fill(amount);await page.locator('#withdrawal-submit').click();
@@ -32,15 +38,16 @@ test('request holds wallet funds, admin approves and records manual MoMo payment
   await page.locator('#withdrawal-status').selectOption('approved');await page.locator('#withdrawal-filters button').click();await page.locator('#withdrawal-queue').getByRole('button',{name:'Mark paid',exact:true}).click();await page.locator('#withdrawal-payout-ref').fill('MOMO-LOCAL-0001');await page.locator('#withdrawal-apply').click();await expect(page.locator('#withdrawal-decision')).toBeHidden();
   await page.locator('#withdrawal-status').selectOption('paid');await page.locator('#withdrawal-filters button').click();await expect(page.locator('#withdrawal-queue')).toContainText('MOMO-LOCAL-0001');
   await page.screenshot({path:path.resolve(__dirname,'../../artifacts/withdrawals/admin-'+info.project.name+'.png'),fullPage:true});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
-  await page.goto('/portal.php#wallet_section');await expect(page.locator('#withdrawal-history .withdrawal-status')).toHaveText('Paid');await expect(page.locator('#withdrawal-held')).toHaveText('GHS 0.00');await expect(page.locator('#balance .stat, #balance_stat').first()).toHaveText('GHS 900.00');expect(errors).toEqual([]);
+  await page.goto('/portal.php#wallet_section');await openWithdrawals(page);await expect(page.locator('#withdrawal-history .withdrawal-status')).toHaveText('Paid');await expect(page.locator('#withdrawal-held')).toHaveText('GHS 0.00');await expect(page.locator('#balance .stat, #balance_stat').first()).toHaveText('GHS 900.00');expect(errors).toEqual([]);
 });
 test('admin decline restores the exact held amount once and shows the reason',async({page})=>{
   await login(page);await request(page);await admin(page);await page.locator('#withdrawal-queue').getByRole('button',{name:'Decline',exact:true}).click();await page.locator('#withdrawal-decline-reason').fill('Please confirm your MoMo account name');await page.locator('#withdrawal-apply').click();await expect(page.locator('#withdrawal-decision')).toBeHidden();
-  await page.goto('/portal.php#wallet_section');await expect(page.locator('#withdrawal-history')).toContainText('Declined · refunded');await expect(page.locator('#withdrawal-history')).toContainText('Please confirm your MoMo account name');await expect(page.locator('#withdrawal-available')).toHaveText('GHS 1000.00');await expect(page.locator('#balance .stat, #balance_stat').first()).toHaveText('GHS 1000.00');
+  await page.goto('/portal.php#wallet_section');await openWithdrawals(page);await expect(page.locator('#withdrawal-history')).toContainText('Declined · refunded');await expect(page.locator('#withdrawal-history')).toContainText('Please confirm your MoMo account name');await expect(page.locator('#withdrawal-available')).toHaveText('GHS 1000.00');await expect(page.locator('#balance .stat, #balance_stat').first()).toHaveText('GHS 1000.00');
 });
 test('admin controls the minimum and customer validation uses the saved value',async({page})=>{
   await admin(page);await page.locator('#withdrawal-admin-minimum').fill('150.00');await page.locator('#withdrawal-config button').click();await expect(page.locator('#withdrawal-admin-message')).toContainText('Minimum withdrawal saved');
   await page.goto('/login.php');await page.locator('[name=msisdn]').fill('0201234567');await page.locator('[name=password]').fill('test-customer-password');await page.getByRole('button',{name:'Open my portal',exact:true}).click();await page.goto('/portal.php#wallet_section');await expect(page.locator('#withdrawal-minimum')).toHaveText('GHS 150.00');
+  await openWithdrawals(page);
   await page.locator('#withdrawal-form [name=name]').fill('Test Customer');await page.locator('#withdrawal-form [name=network]').selectOption('TELECEL');await page.locator('#withdrawal-form [name=amount]').fill('100.00');await page.locator('#withdrawal-submit').click();await expect(page.locator('#withdrawal-message')).toContainText('minimum withdrawal is GHS 150.00');await expect(page.locator('#withdrawal-available')).toHaveText('GHS 1000.00');await request(page,'200.00');
 });
 test('withdrawal APIs enforce existing login, CSRF, own number, amount, and account privacy',async({page})=>{
@@ -56,6 +63,6 @@ test('withdrawal APIs enforce existing login, CSRF, own number, amount, and acco
 test('a lost response and refresh recover one request without another debit',async({page})=>{
   await login(page);let interrupted=false;
   await page.route('**/withdrawal-api.php',async route=>{if(!interrupted&&route.request().method()==='POST'){interrupted=true;const response=await route.fetch();expect(response.status()).toBe(200);await route.abort('connectionreset');}else await route.continue();});
-  await page.locator('#withdrawal-form [name=name]').fill('Recovery Test');await page.locator('#withdrawal-form [name=network]').selectOption('AT');await page.locator('#withdrawal-form [name=amount]').fill('100.00');await page.locator('#withdrawal-submit').click();await expect(page.locator('#withdrawal-submit')).toHaveText('Retry this request');await page.reload();await expect(page.locator('#withdrawal-history')).toContainText('Awaiting approval');await expect(page.locator('#withdrawal-submit')).toBeDisabled();
+  await page.locator('#withdrawal-form [name=name]').fill('Recovery Test');await page.locator('#withdrawal-form [name=network]').selectOption('AT');await page.locator('#withdrawal-form [name=amount]').fill('100.00');await page.locator('#withdrawal-submit').click();await expect(page.locator('#withdrawal-submit')).toHaveText('Retry this request');await page.reload();await openWithdrawals(page);await expect(page.locator('#withdrawal-history')).toContainText('Awaiting approval');await expect(page.locator('#withdrawal-submit')).toBeDisabled();
   const snapshot=(await(await page.request.get('/withdrawal-api.php')).json()).snapshot;expect(snapshot.withdrawals).toHaveLength(1);expect(snapshot.wallet.balance_cents).toBe(90000);expect(snapshot.wallet.held_cents).toBe(10000);
 });

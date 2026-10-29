@@ -1,6 +1,8 @@
 Manual MoMo wallet withdrawals
 
 Customer entry: existing Wallet panel at /portal.php#wallet_section.
+The Withdraw to MoMo card starts collapsed. Click its heading to expand the form
+and request history; click again to collapse it. Keyboard activation is supported.
 Administration: /admin/withdrawals.php, linked from the existing WISP console.
 Initial minimum: GHS 100.00, configured by the administrator. Admin can change
 the minimum on the withdrawals page. Existing accepted requests retain their amount.
@@ -87,3 +89,7 @@ To pause new withdrawal holds while preserving all accepted obligations and hist
   sudo php /root/nister-withdrawals-20261029T002929Z/disable-new-requests.php
 Keep the module and its administrative payout/refund functions installed until all
 accepted requests are resolved. Do not restore wallet-before.sql over later transactions.
+
+Collapsed-card UI follow-up: native click/keyboard disclosure, closed on every page
+load. Ten withdrawal browser cases and 236 WISP regressions passed. Source backups
+and hashes: /root/nister-withdrawals-collapse-20261029T004445Z.

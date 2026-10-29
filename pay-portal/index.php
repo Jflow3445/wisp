@@ -244,7 +244,7 @@ if ($siteCode !== null && $siteCode !== '') {
     }
   </style>
   <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
-  <?php if ($loggedIn): ?><link rel="stylesheet" href="/assets/withdrawals.css?v=1"><script src="/assets/withdrawals.js?v=2" defer></script><?php endif; ?>
+  <?php if ($loggedIn): ?><link rel="stylesheet" href="/assets/withdrawals.css?v=2"><script src="/assets/withdrawals.js?v=2" defer></script><?php endif; ?>
 </head>
 <body class="pay-portal">
   <div class="page user-page">
