@@ -110,7 +110,7 @@ function decorateResponse(response: NextResponse, request: NextRequest, nonce: s
   for (const [key, value] of Object.entries(securityHeaders(nonce))) {
     response.headers.set(key, value);
   }
-  const ref = request.nextUrl.searchParams.get("ref");
+  const ref = request.nextUrl.searchParams.get("ref") || request.nextUrl.pathname.match(/^\/invite\/([A-Za-z0-9]{4,24})\/?$/)?.[1];
   if (request.method === "GET" && ref && /^[A-Za-z0-9]{4,24}$/.test(ref)) response.cookies.set("nister_ref", ref.toUpperCase(), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
   // Keep both headers so legacy components and Next's internal nonce wiring both work.
   response.headers.set("x-nonce", nonce);
@@ -160,6 +160,14 @@ export function proxy(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.protocol = "https";
     return decorateResponse(NextResponse.redirect(redirectUrl, 307), request, nonce);
+  }
+
+  const referral = request.nextUrl.searchParams.get("ref");
+  if (request.method === "GET" && pathname === "/" && referral && /^[A-Za-z0-9]{4,24}$/.test(referral)) {
+    const invite = request.nextUrl.clone();
+    invite.pathname = `/invite/${referral.toUpperCase()}`;
+    invite.search = "";
+    return decorateResponse(NextResponse.redirect(invite, 307), request, nonce);
   }
 
   if (request.method.toUpperCase() === "GET" && pathname === LEGACY_SERVICE_COMPARISON_PATH) {

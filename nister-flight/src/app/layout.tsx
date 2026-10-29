@@ -10,7 +10,12 @@ export const metadata: Metadata = {
   title: { default: "Nister Flight — Catch your moment", template: "%s | Nister Flight" },
   metadataBase: new URL("https://nisterai.com"),
   description: "Commander! Are you ready to earn?",
-  openGraph: { type: "website", url: "https://nisterai.com", siteName: "Nister Flight", title: "Nister Flight", description: "Commander! Are you ready to earn?", images: [{ url: "/flight-share.png", width: 1200, height: 630, alt: "Nister Flight ? Catch your moment" }] },
+  icons: {
+    icon: [{ url: "/flight-icon.svg?v=20261029", type: "image/svg+xml", sizes: "any" }, { url: "/flight-icon-32.png?v=20261029", type: "image/png", sizes: "32x32" }],
+    shortcut: "/favicon.ico?v=20261029-flight",
+    apple: "/flight-apple-icon.png?v=20261029",
+  },
+  openGraph: { type: "website", url: "https://nisterai.com", siteName: "Nister Flight", title: "Nister Flight", description: "Commander! Are you ready to earn?", images: [{ url: "/flight-share.png", width: 1200, height: 630, alt: "Nister Flight - Catch your moment" }] },
   twitter: { card: "summary_large_image", title: "Nister Flight", description: "Commander! Are you ready to earn?", images: ["/flight-share.png"] },
   robots: { index: false, follow: false },
 };

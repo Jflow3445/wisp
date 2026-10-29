@@ -4,7 +4,7 @@ import { Icon } from "./icons";
 import { money, Notice, useWallet } from "./client";
 export function Referrals() {
   const { data, error } = useWallet(), [message, setMessage] = useState("");
-  const link = data?.referral.code ? `https://nisterai.com/?ref=${encodeURIComponent(data.referral.code)}` : "";
+  const link = data?.referral.code ? `https://nisterai.com/invite/${encodeURIComponent(data.referral.code)}` : "";
   const rate = (data?.referral.bps ?? 0) / 100;
   const share = async () => {
     try {
