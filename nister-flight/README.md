@@ -1,6 +1,6 @@
 # Nister Flight
 
-The crypto-only Flight application for `nisterai.com`, added to the WISP `commerce` branch. The existing Wi-Fi portal remains a separate service. This application retains the current Nister MySQL database, user IDs, email addresses, password hashes, session cookie, session secret, email verification, password reset and configured social sign-in. New flights use checkpoint-and-landing missions with server-authoritative aircraft physics. Accepted engine-5/6 flights retain their original settlement rules.
+The crypto-only Flight application for `nisterai.com`, added to the WISP `commerce` branch. The existing Wi-Fi portal remains a separate service. This application retains the current Nister MySQL database, user IDs, email addresses, password hashes, session cookie, session secret, email verification, password reset and configured social sign-in. New rounds are independent random draws with a short flight reveal. Accepted engine-5/6/7 flights retain their original settlement rules.
 
 ## Member and administrator surfaces
 
@@ -27,23 +27,15 @@ The homepage shows only profitable completed flights from the live season in the
 
 Future flight steps and random seeds stay on the server until settlement. Each flight publishes a commitment and reveals its seed, rules and path after settlement. `flight-math.test.ts` compares the port against 250 executions of the original PHP engine. PHP is needed for that comparison test, but is not needed to run the new website.
 
-## Objective flight missions (engine 7)
+## Simple flight draws (engine 8)
 
-Paid missions have a ten-second preflight countdown and at most sixty seconds of flight at two simulated seconds per real second. Pass three altitude checkpoints and touch down safely within the marked runway to receive the fixed, displayed solo prize. Crashes, missed checkpoints, off-runway landings, overruns, deadline expiry and explicit abandonment have distinct outcomes. Airborne failures are never labelled as successful landings. There is no random monetary multiplier or mid-flight collection on new missions.
+The member flow is stake, start, eight-second flight reveal, confirmed result. A winning draw pays the fixed displayed prize of twice the stake, including the returned stake; a losing draw returns zero. The 3% play fee is charged once on top of the stake. The animation presents the result and provides no controls, checkpoints, cashouts or matchmaking. A free preview never writes financial records.
 
-Throttle and elevator drive lift, drag, thrust, gravity, air-relative wind, pitch inertia, stalls and ground contact. Conditions may vary between mission offers. Weather and component faults act on this simulation; an engine failure removes thrust but still permits a successful glide landing. Accepted conditions are fixed. New-offer difficulty uses available prize capital, never a player's identity or a predetermined win/loss. Specific weather forecasts and operating budgets are omitted from player offers. Free practice uses the same objectives and equations without financial writes.
+An expiring owned offer commits a 256-bit secret, canonical private configuration hash and stake before the client's request UUID is generated. HMAC-SHA256 combines that secret and UUID; rejection sampling generates an unbiased integer for the frozen draw threshold. No identity, controls, clock, weather or current reserve enters result generation. The private operating rate sets the mathematical return for new offers and the protected revenue allocation. Existing accepted configuration is immutable through admin changes and pauses.
 
-The server timestamps bounded, sequenced controls on 20ms ticks. Identical retries are idempotent; conflicting or skipped sequences fail. Elevator returns to neutral after one second without a heartbeat. Clients cannot submit timestamps, aircraft positions, mission outcomes or cash amounts. Local prediction only smooths rendering between authoritative receipts.
+Prize liability is reserved before entry, protected revenue remains separate within the house balance, and fees/referral obligations stay separately reconciled. New entries stop before an unfunded prize can be promised. Wallet writes and settlement remain serialized and idempotent. Refresh and uncertain-response retries recover the same accepted request, with deadline recovery retried automatically. The runtime database cannot alter schemas or rewrite wallet/audit history.
 
-A second eligible entry at the same stake, season and frozen rules during the first five seconds of preflight forms a real two-pilot contest. Both pilots receive the same start time, course and seeded hazards. A safe landing qualifies; checkpoint accuracy, touchdown softness and aircraft integrity determine the score. The higher qualifying score wins the posted contest prize. An exact qualifying tie refunds both stakes, with play fees retained. If neither qualifies, neither receives a prize. A finished pilot waits for the other pilot; settlement atomically pays both receipts without exposing the shared seed early. Solo and paired prizes and automatic pairing are disclosed before entry.
-
-Before staking, an owner-only expiring offer publishes a SHA-256 commitment to a secret, canonical rules, stake, cap, aircraft and mission constants. The request UUID supplies the player's nonce after that commitment. Paired missions combine both precommitted secrets and both nonces in canonical commitment order. Completed private receipts reveal these contributions, rules, control logs, final states and anonymous opponent replay evidence for deterministic verification. Future seeds remain private until both pilots have finished. Version-4 consent is required for new entries; recovery of accepted earlier requests does not require a fresh offer.
-
-## Private treasury accounting
-
-The configured operator rate allocates a portion of each new stake to protected revenue within the house balance. This is a classification, not additional capital or an extra customer charge. Prize capital is `houseBalanceCents - protectedHouseCents`; reserved liabilities are a subset of that capital. SQL constraints prevent protected funds being spent or counted twice. Solo entries reserve twice the stake conservatively. Matched entries share a total reservation of twice one stake, covering the contest prize or both draw refunds; allocation reverses on a draw. Three-percent play fees remain in the separate insurance balance and fund eligible referral rewards.
-
-Skilled solo pilots can reduce the finite allocated prize capital. Protected revenue is unavailable to prizes, reserve withdrawals cannot remove committed/protected funds, and new solo entries stop before unfunded prizes can be promised. These controls do not claim that a finite solo prize pool can fund unlimited successful play. Admin-only screens show retained income, available prize capital and fees; member DTOs and mission proofs omit allocation rates and reserve figures.
+Member receipts retain the accepted entry reference, result, seed and configuration commitment while omitting internal operating parameters. These are entry records, not a claim that the private probability configuration is publicly reproducible. Administrators retain the full committed parameters for audit. Engine-5/6/7 recovery and controls remain available for already accepted flights only, loaded separately from the simple member experience. Version-5 consent is required for new draw entries.
 
 ## Local development
 
@@ -55,7 +47,7 @@ npm run db:generate
 npm run dev
 ```
 
-Apply the additive Flight migrations only after a private database backup and schema review. Migration 001 adds the original six tables; 002 adds fee/referral/season fields and rewards; 003 adds money constraints; 004 adds versioned physics state and input logs; 005 adds mission offers, paired contests, shared reservations and protected-revenue constraints. They preserve registration records. Production migrations run through the root deployment helper; the runtime database account cannot alter schemas. The owner-allocation script is explicit, prelaunch-only and idempotent; it never runs at application startup. Do not run test schema or fixture resets against production.
+Apply the additive Flight migrations only after a private database backup and schema review. Migration 001 adds the original six tables; 002 adds fee/referral/season fields and rewards; 003 adds money constraints; 004 adds versioned physics state and input logs; 005 adds mission offers, paired contests, shared reservations and protected-revenue constraints; 006 permits the draw engine without aircraft state. They preserve registration records. Production migrations run through the root deployment helper; the runtime database account cannot alter schemas. The owner-allocation script is explicit, prelaunch-only and idempotent; it never runs at application startup. Do not run test schema or fixture resets against production.
 
 Required production configuration includes the retained database/session values, public app origin, existing SMTP encryption keys/settings, existing TRON merchant/node configuration and `CONTROL_PLANE_INTERNAL_TOKEN`. `TRON_PAYOUT_ADDRESS` can specify a separate treasury payout wallet; otherwise the configured merchant wallet is used. Secrets never belong in Git.
 
@@ -72,8 +64,7 @@ Financial integration checks run only when `DATABASE_URL` names **`nister_flight
 ```powershell
 node --env-file=.env.test scripts/flight-test-schema.cjs
 node --env-file=.env.test --import tsx scripts/flight-integration.ts
-node --env-file=.env.test --import tsx scripts/flight-mission-integration.ts
-npm run test:risk
+node --env-file=.env.test --import tsx scripts/flight-draw-integration.ts
 ```
 
 `scripts/flight-browser.mjs` checks desktop/mobile rendering and, with `FLIGHT_BROWSER_AUTH=1`, fixture member/admin views, real password login, member denial at the admin API and cross-origin rejection. Screenshots stay under ignored `artifacts/browser`.

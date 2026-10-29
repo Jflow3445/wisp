@@ -1,10 +1,11 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { flightSnapshot, offerMission } from "@/lib/flight-service";
+import type { flightSnapshot, offerDraw } from "@/lib/flight-service";
 import { canObserveRound } from "@/lib/flight-observation";
 export type Snapshot = Awaited<ReturnType<typeof flightSnapshot>>;
 export type Round = Snapshot["rounds"][number];
-export type MissionOffer = Awaited<ReturnType<typeof offerMission>>;
+export type DrawOffer = Awaited<ReturnType<typeof offerDraw>>;
+export type MissionOffer = { id: string; commitment: string; stakeCents: number; totalCents: number; feeCents: number; rulesVersion: string; expiresAt: string; available: boolean; course: import("@/lib/flight-mission").FlightCourse; prizes: import("@/lib/flight-mission-economy").MissionPrizes };
 export const money = (cents: number) => (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const date = (value: string | Date) => new Date(value).toLocaleString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 

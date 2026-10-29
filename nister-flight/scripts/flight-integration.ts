@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/prisma";
-import { acceptFlightRules, atomic, collectFlight, controls, decideWithdrawal, flightSnapshot, pilotFlight, recoverFlight, requestWithdrawal, settleExpiredFlights, startFlight as rawStartFlight, offerMission, FLIGHT_TERMS } from "../src/lib/flight-service";
+import { acceptFlightRules, atomic, collectFlight, controls, decideWithdrawal, flightSnapshot, pilotFlight, recoverFlight, requestWithdrawal, settleExpiredFlights, startFlight as rawStartFlight, offerDraw, FLIGHT_TERMS } from "../src/lib/flight-service";
 import { initialPilot, pilotCommitment, pilotValue, replayPilot, type PilotLog, type PilotState } from "../src/lib/flight-pilot";
 import { commitment, DEFAULT_RULES, offerId } from "../src/lib/flight-math";
 import { Prisma } from "@prisma/client";
@@ -21,7 +21,7 @@ let checks = 0;
 const check = (condition: unknown, label: string) => { assert.ok(condition, label); checks++; console.log(`PASS ${label}`); };
 const startFlight = async (userId: string, stake: number, key: string, version = FLIGHT_TERMS) => {
   if (version !== FLIGHT_TERMS) return rawStartFlight(userId, stake, key, version);
-  const offer = await offerMission(userId, stake);
+  const offer = await offerDraw(userId, stake);
   return rawStartFlight(userId, stake, key, version, offer.id, offer.commitment);
 };
 const balance = async (userId: string) => (await prisma.userTradingProfile.findUniqueOrThrow({ where: { userId } })).availableFundsUsdCents!;
@@ -61,14 +61,14 @@ async function main() {
   if (round.status === "FLYING") {
     check(!("proof" in round) && !("seed" in round), "live flight response hides seed and future path");
     await assert.rejects(() => collectFlight(bob.id, round.id, round.offerId!), /Flight not found/);
-    await assert.rejects(() => collectFlight(alice.id, round.id, "00000000000000000000000000000000"), /Pass the checkpoints/);
+    await assert.rejects(() => collectFlight(alice.id, round.id, "00000000000000000000000000000000"), /draw is still running/);
     check(true, "foreign and stale offers cannot settle a live flight");
   }
   await prisma.flightRound.update({ where: { id: round.id }, data: { startedAt: new Date(Date.now() - 66000), endsAt: new Date(Date.now() - 1000) } });
   await settleExpiredFlights();
   await Promise.all(Array.from({ length: 5 }, () => flightSnapshot(alice.id)));
   const settled = await prisma.flightRound.findUniqueOrThrow({ where: { id: round.id } });
-  check(settled.status !== "FLYING" && settled.activeUserId === null, "an abandoned flight lands and releases its reservation");
+  check(settled.status !== "FLYING" && settled.activeUserId === null, "an expired draw settles and releases its reservation");
   check(await balance(alice.id) === 80000 - 515 + settled.payoutCents!, "flight return is credited exactly once after repeated recovery");
   check((await controls()).reservedCents === 0, "house reserve returns to zero after settlement");
   const snapshot = await flightSnapshot(alice.id);
@@ -185,7 +185,7 @@ async function main() {
   if (legacy.status === "FLYING") {
     const legacyPath = { path: [95, 120], offsets: [0, 1500] }, legacySeed = "isolated-legacy-fixture";
     await prisma.flightRound.update({ where: { id: legacy.id }, data: { engineVersion: 5, seed: legacySeed, commitment: commitment(legacySeed, DEFAULT_RULES, 100, 200), pathJson: legacyPath, rulesJson: DEFAULT_RULES, startedAt: new Date(), endsAt: new Date(Date.now() + 12000), pilotStateJson: Prisma.DbNull, pilotInputsJson: Prisma.DbNull } });
-    await assert.rejects(() => pilotFlight(alice.id, legacy.id, 1, 400, 0), /next flight/);
+    await assert.rejects(() => pilotFlight(alice.id, legacy.id, 1, 400, 0), /no piloting controls/);
     const receipt = await collectFlight(alice.id, legacy.id, offerId(legacySeed, 0));
     check(receipt.engine === 5 && receipt.payoutCents === 95 && !receipt.pilot, "existing engine-5 flights retain their original payout rules during deployment");
   } else check(true, "an immediate legacy fixture outcome settles without an active reservation");

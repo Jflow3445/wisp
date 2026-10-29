@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       case "recover": result = await recoverFlight(user.id, input.id); break;
       case "abort": result = await abortMission(user.id, input.id); break;
       case "consent":
-        if (input.rulesVersion !== FLIGHT_TERMS) throw new HttpError(409, "Reload this page to review the updated piloting rules before accepting them.");
+        if (input.rulesVersion !== FLIGHT_TERMS) throw new HttpError(409, "Reload this page to review the updated game rules before accepting them.");
         await acceptFlightRules(user.id); result = { accepted: true }; break;
       case "withdraw":
         await assertWithdrawalDestination(input.address);

@@ -41,7 +41,7 @@ if (process.env.FLIGHT_BROWSER_AUTH === "1") {
       if (!(await page.locator(".f-deck-balance").first().innerText()).includes("USD")) throw new Error("Member balance is not denominated in USD");
       checks.push("member balances and stakes are denominated in USD");
       if (await page.getByRole("button", { name: /accept the rules/ }).count()) await page.getByRole("button", { name: /accept the rules/ }).click();
-      await page.getByRole("button", { name: "Take flight", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Start flight", exact: true }).waitFor();
       await shot("/dashboard/wallet", "wallet-desktop");
       await page.setViewportSize({ width: 390, height: 844 });
       await shot("/dashboard", "member-mobile");

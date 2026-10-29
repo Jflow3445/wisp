@@ -9,8 +9,8 @@ const prisma = new PrismaClient({ errorFormat: "minimal" });
   const constraints = await prisma.$queryRaw`SELECT CONSTRAINT_NAME AS name, CHECK_CLAUSE AS clause FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE()`;
   const existing = new Set(constraints.map(c => c.name));
   const pilot = constraints.find(c => c.name === "FlightRound_pilot_engine_check");
-  if (pilot && !pilot.clause.includes("7")) { await prisma.$executeRawUnsafe("ALTER TABLE FlightRound DROP CONSTRAINT FlightRound_pilot_engine_check"); existing.delete(pilot.name); }
-  const sql = ["202610290003_flight_integrity", "202610290005_flight_missions"].map(name => fs.readFileSync(`prisma/migrations/${name}/migration.sql`, "utf8")).join(";\n");
+  if (pilot && !pilot.clause.includes("8")) { await prisma.$executeRawUnsafe("ALTER TABLE FlightRound DROP CONSTRAINT FlightRound_pilot_engine_check"); existing.delete(pilot.name); }
+  const sql = ["202610290003_flight_integrity", "202610290006_simple_draw", "202610290005_flight_missions"].map(name => fs.readFileSync(`prisma/migrations/${name}/migration.sql`, "utf8")).join(";\n");
   for (const statement of sql.split(";")) {
     if (!/\bCHECK\s*\(/i.test(statement)) continue;
     const name = statement.match(/ADD CONSTRAINT `([^`]+)`/);
