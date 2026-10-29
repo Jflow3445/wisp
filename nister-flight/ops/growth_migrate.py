@@ -16,7 +16,7 @@ def migrate_growth(release, database, sql):
     os.chmod(archive / "database.sql", 0o600)
     (archive / "manifest.json").write_text(json.dumps({"release": str(release), "accounts": int(sql("SELECT COUNT(*) FROM User")), "created": int(time.time())}))
     os.chmod(archive / "manifest.json", 0o600)
-    for name in ["202610290002_flight_growth_and_insurance", "202610290003_flight_integrity"]:
+    for name in ["202610290002_flight_growth_and_insurance", "202610290003_flight_integrity", "202610290004_pilot_physics"]:
         if sql("SELECT COUNT(*) FROM _prisma_migrations WHERE migration_name='" + name + "' AND finished_at IS NOT NULL") == "1":
             continue
         path = release / "prisma/migrations" / name / "migration.sql"

@@ -7,8 +7,8 @@ export type Round = Snapshot["rounds"][number];
 export const money = (cents: number) => (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const date = (value: string | Date) => new Date(value).toLocaleString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
-export async function api<T = unknown>(path: string, payload?: unknown): Promise<T> {
-  const response = await fetch(path, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(20000), ...(payload ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) } : {}) });
+export async function api<T = unknown>(path: string, payload?: unknown, timeoutMs = payload ? 20000 : 5000): Promise<T> {
+  const response = await fetch(path, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(timeoutMs), ...(payload ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) } : {}) });
   const value = await response.json();
   if (!response.ok) throw Object.assign(new Error(value.message || value.error || "Request unavailable. Try again."), { status: response.status });
   return value;

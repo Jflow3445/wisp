@@ -16,3 +16,10 @@ test("live offers and later flights advance without moving backwards", () => {
   assert.ok(canObserveRound(flying, { ...flying, serverNow: "2026-10-29T12:00:03Z" }));
   assert.ok(canObserveRound(flying, { ...flying, id: "later", startedAt: "2026-10-29T13:00:00Z" }));
 });
+
+test("overlapping physics snapshots cannot regress ticks or acknowledged controls", () => {
+  const current = { ...flying, pilot: { tick: 100, lastSeq: 5 } };
+  assert.equal(canObserveRound(current, { ...flying, pilot: { tick: 99, lastSeq: 5 } }), false);
+  assert.equal(canObserveRound(current, { ...flying, pilot: { tick: 101, lastSeq: 4 } }), false);
+  assert.equal(canObserveRound(current, { ...flying, pilot: { tick: 101, lastSeq: 5 } }), true);
+});

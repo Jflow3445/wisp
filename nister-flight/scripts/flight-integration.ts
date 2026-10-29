@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/prisma";
-import { acceptFlightRules, atomic, collectFlight, controls, decideWithdrawal, flightSnapshot, requestWithdrawal, settleExpiredFlights, startFlight } from "../src/lib/flight-service";
+import { acceptFlightRules, atomic, collectFlight, controls, decideWithdrawal, flightSnapshot, pilotFlight, recoverFlight, requestWithdrawal, settleExpiredFlights, startFlight } from "../src/lib/flight-service";
+import { initialPilot, pilotCommitment, pilotValue, replayPilot, type PilotLog, type PilotState } from "../src/lib/flight-pilot";
+import { commitment, DEFAULT_RULES, offerId } from "../src/lib/flight-math";
+import { Prisma } from "@prisma/client";
 import { creditUserAvailableFunds } from "../src/lib/wallet-funds";
 import { verifyUserPassword } from "../src/lib/credential-auth";
 import { MAX_BALANCE } from "../src/lib/flight-math";
@@ -42,11 +45,14 @@ async function main() {
   await prisma.flightPlayer.create({ data: { userId: alice.id, verifiedAt: new Date(), verifiedBy: admin.id } });
   await assert.rejects(() => startFlight(alice.id, 500, randomUUID()), /Accept the Flight rules/);
   await acceptFlightRules(alice.id);
+  await assert.rejects(() => startFlight(alice.id, 500, randomUUID(), "legacy"), /Reload this page/);
+  check(await balance(alice.id) === 80000, "an old browser cannot start new payout rules without refreshing its consent screen");
   const key = randomUUID();
   const rounds = await Promise.all(Array.from({ length: 6 }, () => startFlight(alice.id, 500, key)));
   check(new Set(rounds.map(r => r.id)).size === 1, "concurrent launch retries produce one flight");
   check(await prisma.flightWalletEntry.count({ where: { userId: alice.id, kind: "FLIGHT_STAKE" } }) === 1, "a launch is debited exactly once");
   const round = rounds[0];
+  check((await startFlight(alice.id, 500, key, "legacy")).id === round.id, "accepted request keys remain recoverable from an earlier browser version");
   if (round.status === "FLYING") {
     check(!("proof" in round) && !("seed" in round), "live flight response hides seed and future path");
     await assert.rejects(() => collectFlight(bob.id, round.id, round.offerId!), /Flight not found/);
@@ -140,6 +146,44 @@ async function main() {
   const adminHold = await requestWithdrawal(admin.id, 1000, address, randomUUID());
   await decideWithdrawal(admin.id, adminHold.id, "REJECT", "Administrator email exemption test");
   check(true, "administrators can use withdrawals without email verification");
+  // Deterministic physics fixtures are confined to this isolated database.
+  let piloted = await startFlight(alice.id, 500, randomUUID());
+  for (let n = 0; piloted.status !== "FLYING" && n < 10; n++) piloted = await startFlight(alice.id, 500, randomUUID());
+  assert.equal(piloted.status, "FLYING");
+  const pilotPath = { path: Array(8).fill(500), offsets: Array.from({ length: 8 }, (_, n) => n * 3000) }, pilotSeed = "isolated-pilot-fixture", pilotRules = { ...DEFAULT_RULES, stepMs: 3000 };
+  let start = new Date(Date.now() - 400);
+  await prisma.flightRound.update({ where: { id: piloted.id }, data: { seed: pilotSeed, commitment: pilotCommitment(pilotSeed, pilotRules, 500, 1000), pathJson: pilotPath, rulesJson: pilotRules, startedAt: start, endsAt: new Date(start.getTime() + 24000), pilotStateJson: initialPilot() as unknown as Prisma.InputJsonValue } });
+  await assert.rejects(() => pilotFlight(bob.id, piloted.id, 1, 600, 350), /not found/);
+  await assert.rejects(() => pilotFlight(alice.id, piloted.id, 1, 1001, 350), /valid flight controls/);
+  await assert.rejects(() => pilotFlight(alice.id, piloted.id, 2, 600, 350), /synchronize/);
+  const inputReceipts = await Promise.all(Array.from({ length: 4 }, () => pilotFlight(alice.id, piloted.id, 1, 600, 350)));
+  check(inputReceipts.every(r => r.pilot?.lastSeq === 1) && ((await prisma.flightRound.findUniqueOrThrow({ where: { id: piloted.id } })).pilotInputsJson as unknown as PilotLog).length === 1, "concurrent pilot retries append one server-timestamped input");
+  await assert.rejects(() => pilotFlight(alice.id, piloted.id, 1, 500, 0), /synchronize/);
+  check(true, "foreign pilots, invalid controls and conflicting sequences are rejected");
+  start = new Date(Date.now() - 5000);
+  await prisma.flightRound.update({ where: { id: piloted.id }, data: { startedAt: start, endsAt: new Date(start.getTime() + 24000) } });
+  const controlled = await pilotFlight(alice.id, piloted.id, 2, 400, -350);
+  check(controlled.pilot!.y !== initialPilot().aircraft.y && controlled.currentCents < 500 && controlled.currentCents > 0, "authoritative aerodynamics change both altitude and the payable cash amount");
+  const priorBalance = await balance(alice.id), priorMoney = await totalMoney();
+  const collected = await Promise.all(Array.from({ length: 5 }, () => collectFlight(alice.id, piloted.id, controlled.offerId!)));
+  check(collected.every(r => r.status === "COLLECTED" && r.payoutCents === collected[0].payoutCents) && await balance(alice.id) === priorBalance + collected[0].payoutCents!, "collection across changing physics settles once at the authoritative current return");
+  const proof = collected[0].proof!;
+  assert.ok("finalState" in proof);
+  const final = proof.finalState as PilotState;
+  const replay = replayPilot(proof.seed, 24000, pilotPath, proof.inputs as PilotLog, final.tick * 20);
+  assert.deepEqual(replay, final);
+  check(pilotValue(replay, pilotPath) === collected[0].payoutCents, "published input log reproduces the settled physics state and exact cash payout");
+  await recoverFlight(alice.id, piloted.id);
+  check(await totalMoney() === priorMoney && await prisma.flightWalletEntry.count({ where: { reference: `flight:${piloted.id}:return` } }) === 1, "physics collection and recovery conserve capital and never duplicate returns");
+  // An old in-flight engine-5 round keeps its old settlement and offer rules.
+  const legacy = await startFlight(alice.id, 100, randomUUID());
+  if (legacy.status === "FLYING") {
+    const legacyPath = { path: [95, 120], offsets: [0, 1500] }, legacySeed = "isolated-legacy-fixture";
+    await prisma.flightRound.update({ where: { id: legacy.id }, data: { engineVersion: 5, seed: legacySeed, commitment: commitment(legacySeed, DEFAULT_RULES, 100, 200), pathJson: legacyPath, rulesJson: DEFAULT_RULES, startedAt: new Date(), endsAt: new Date(Date.now() + 12000), pilotStateJson: Prisma.DbNull, pilotInputsJson: Prisma.DbNull } });
+    await assert.rejects(() => pilotFlight(alice.id, legacy.id, 1, 400, 0), /next flight/);
+    const receipt = await collectFlight(alice.id, legacy.id, offerId(legacySeed, 0));
+    check(receipt.engine === 5 && receipt.payoutCents === 95 && !receipt.pilot, "existing engine-5 flights retain their original payout rules during deployment");
+  } else check(true, "an immediate legacy fixture outcome settles without an active reservation");
   // Explicit isolated fixtures exercise the public feed filters. No production wins are fabricated.
   await prisma.flightRound.update({ where: { id: referred.id }, data: { payoutCents: 700, settledAt: new Date() } });
   await prisma.flightRound.update({ where: { id: notDeposited.id }, data: { payoutCents: 700, settledAt: new Date(Date.now() - 31 * 60000) } });

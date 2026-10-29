@@ -1,7 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { applyRateLimit, enforceJsonContentType, enforceTrustedOrigin, readRequestBodyTextWithLimit } from "@/lib/request-security";
 
-export async function authorize(request: Request, admin = false) {
+export async function authorize(request: Request, admin = false, pilot = false) {
   const user = await getCurrentUser();
   if (!user || (admin && user.role !== "ADMIN")) throw new HttpError(admin ? 403 : 401, "Please sign in with the required account.");
   if (["SUSPENDED", "CLOSED"].includes(user.tradingProfile?.accountState ?? "")) throw new HttpError(403, "Your account is restricted. Contact support.");
@@ -11,7 +11,7 @@ export async function authorize(request: Request, admin = false) {
     const type = enforceJsonContentType(request);
     if (!type.ok) throw new HttpError(type.status, type.message);
   }
-  const rate = await applyRateLimit({ key: `flight:${admin ? "admin" : "user"}:${request.method}:${user.id}`, maxAttempts: request.method === "GET" ? 240 : 45, windowMs: 60000, failOpen: false });
+  const rate = await applyRateLimit({ key: `flight:${admin ? "admin" : "user"}:${pilot ? "pilot" : "actions"}:${request.method}:${user.id}`, maxAttempts: pilot ? 420 : request.method === "GET" ? 240 : 45, windowMs: 60000, failOpen: false });
   if (!rate.allowed) throw new HttpError(429, "Too many requests. Please wait a moment.");
   return user;
 }

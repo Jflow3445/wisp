@@ -49,21 +49,31 @@ def carry_type_cache(candidate):
    target.parent.mkdir(parents=True,exist_ok=True)
    shutil.copy2(cached,target)
 
-# Reuse unchanged, generated dependencies without touching the active build.
-if not (release/'node_modules').exists() and (live/'package-lock.json').is_file() and (live/'prisma/schema.prisma').is_file():
- if hashlib.sha256((live/'package-lock.json').read_bytes()).hexdigest()=={dependency_digest!r} and (live/'prisma/schema.prisma').read_bytes()==(release/'prisma/schema.prisma').read_bytes():
-  shutil.copytree((live/'node_modules').resolve(),release/'node_modules',copy_function=os.link,symlinks=True)
-  if (live/'flight-dependencies.json').is_file():shutil.copy2(live/'flight-dependencies.json',release/'flight-dependencies.json')
-  carry_type_cache(live)
-# Reuse a completed build's identical dependency tree in subsequent candidates.
+def carry_dependencies(candidate):
+ # Prisma generation may rewrite generated files. Give those private inodes;
+ # unchanged package files can share storage without sharing mutable output.
+ changed_schema=(candidate/'prisma/schema.prisma').read_bytes()!=(release/'prisma/schema.prisma').read_bytes()
+ def copy_dependency(src,dst):
+  parts=Path(src).parts
+  if changed_schema and ('.prisma' in parts or ('@prisma' in parts and 'client' in parts)):
+   return shutil.copy2(src,dst)
+  return os.link(src,dst)
+ shutil.copytree((candidate/'node_modules').resolve(),release/'node_modules',copy_function=copy_dependency,symlinks=True)
+ if not changed_schema and (candidate/'flight-dependencies.json').is_file():shutil.copy2(candidate/'flight-dependencies.json',release/'flight-dependencies.json')
+ carry_type_cache(candidate)
+
+# Prefer the most recent validated schema and TypeScript cache.
 if not (release/'node_modules').exists():
  for candidate in sorted(Path('/home/nisterai.com/releases').glob('20261029-flight-*'),key=lambda p:p.stat().st_mtime,reverse=True):
   marker=candidate/'flight-dependencies.json'
   if marker.is_file() and json.loads(marker.read_text())=={{'lock':{dependency_digest!r},'schema':{schema_digest!r}}} and (candidate/'node_modules/.bin/next').exists():
-   shutil.copytree((candidate/'node_modules').resolve(),release/'node_modules',copy_function=os.link,symlinks=True)
-   shutil.copy2(marker,release/'flight-dependencies.json')
-   carry_type_cache(candidate)
+   carry_dependencies(candidate)
    break
+# Fall back to the active release, detaching generated Prisma files as needed.
+# Reuse unchanged, generated dependencies without touching the active build.
+if not (release/'node_modules').exists() and (live/'package-lock.json').is_file() and (live/'prisma/schema.prisma').is_file():
+ if hashlib.sha256((live/'package-lock.json').read_bytes()).hexdigest()=={dependency_digest!r}:
+  carry_dependencies(live)
 shutil.copy2(live/'.env',release/'.env')
 with (release/'.env').open('a') as stream:stream.write('\\nAPP_BASE_URL="https://nisterai.com"\\nNEXT_SERVER_ACTIONS_BODY_SIZE_LIMIT="64kb"\\nTERMS_VERSION="flight-terms-2026-10-29"\\nPRIVACY_VERSION="flight-privacy-2026-10-29"\\nRISK_VERSION="flight-risk-2026-10-29"\\nLEGAL_LAST_UPDATED="October 29, 2026"\\n')
 os.chmod(release/'.env',0o600)
@@ -75,7 +85,7 @@ if testenv.exists():
  os.chmod(release/'.env.test',0o600)
 print(json.dumps({{'staged_release':str(release),'source_sha256':{digest!r}}}),flush=True)
 """
-    stdin, stdout, stderr = client.exec_command("sudo -n python3 -", timeout=180)
+    stdin, stdout, stderr = client.exec_command("sudo -n python3 -", timeout=1800)
     stdin.write(script)
     stdin.channel.shutdown_write()
     print(stdout.read().decode(), end="")

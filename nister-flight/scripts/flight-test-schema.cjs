@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 (async () => {
   const constraints = await prisma.$queryRaw`SELECT CONSTRAINT_NAME AS name FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE()`;
   const existing = new Set(constraints.map(c => c.name));
-  const sql = fs.readFileSync("prisma/migrations/202610290003_flight_integrity/migration.sql", "utf8");
+  const sql = ["202610290003_flight_integrity", "202610290004_pilot_physics"].map(name => fs.readFileSync(`prisma/migrations/${name}/migration.sql`, "utf8")).join(";\n");
   for (const statement of sql.split(";")) {
     const name = statement.match(/ADD CONSTRAINT `([^`]+)`/);
     if (name && !existing.has(name[1])) await prisma.$executeRawUnsafe(statement);

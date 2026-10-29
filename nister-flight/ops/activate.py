@@ -74,6 +74,8 @@ if (release / "public").is_dir():
     shutil.copytree(release / "public", standalone / "public", dirs_exist_ok=True)
 shutil.copy2(release / ".env", standalone / ".env")
 os.chmod(standalone / ".env", 0o600)
+for cache in [release / ".next/cache", standalone / ".next/cache"]:
+    cache.mkdir(parents=True, exist_ok=True)
 service_user = subprocess.check_output(["systemctl", "show", "nisterai-web", "-p", "User", "--value"], text=True).strip()
 owner = pwd.getpwnam(service_user)
 for directory, directories, files in os.walk(release):
@@ -126,6 +128,7 @@ finally:
 
 old_release = source["previous_release"]
 new_units = ["nisterai-flight-settle", "nisterai-crypto-watch"]
+previous_timers = {name: subprocess.run(["systemctl", "is-active", "--quiet", name + ".timer"]).returncode == 0 for name in new_units}
 changed = False
 previous_cursor = None
 try:
@@ -202,12 +205,16 @@ except Exception:
         if previous_cursor is not None:
             sql("UPDATE PaymentWatcherCursor SET lastScannedBlock=" + str(previous_cursor) + ",updatedAt=UTC_TIMESTAMP(3) WHERE watchKey='usdt_trc20_default'")
         for name in new_units:
-            subprocess.run(["systemctl", "disable", "--now", name + ".timer"], check=False, capture_output=True)
+            if not previous_timers[name]:
+                subprocess.run(["systemctl", "disable", "--now", name + ".timer"], check=False, capture_output=True)
         temporary = app.with_name("app.flight-rollback")
         if temporary.is_symlink():
             temporary.unlink()
         os.symlink(old_release, temporary)
         os.replace(temporary, app)
         subprocess.run(["systemctl", "restart", "nisterai-web"], check=True)
+        for name in new_units:
+            if previous_timers[name]:
+                subprocess.run(["systemctl", "enable", "--now", name + ".timer"], check=True)
         print("Activation failed; original release restored. Additive tables retained.", flush=True)
     raise

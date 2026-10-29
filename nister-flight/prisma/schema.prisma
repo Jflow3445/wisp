@@ -1618,6 +1618,9 @@ model FlightPlayer {
 }
 
 model FlightRound {
+  engineVersion Int @default(5)
+  pilotStateJson Json?
+  pilotInputsJson Json?
   season        Int      @default(1)
   feeCents      Int      @default(0)
   referralUserId String?

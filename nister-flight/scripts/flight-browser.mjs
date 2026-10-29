@@ -38,9 +38,10 @@ if (process.env.FLIGHT_BROWSER_AUTH === "1") {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await shot(role === "ADMIN" ? "/admin" : "/dashboard", `${role.toLowerCase()}-desktop`);
     if (role === "MEMBER") {
-      if (!(await page.locator(".f-stat").first().innerText()).includes("USD")) throw new Error("Member balance is not denominated in USD");
+      if (!(await page.locator(".f-deck-balance").first().innerText()).includes("USD")) throw new Error("Member balance is not denominated in USD");
       checks.push("member balances and stakes are denominated in USD");
-      await page.waitForSelector(".f-launch", { timeout: 45000 });
+      if (await page.getByRole("button", { name: /accept the rules/ }).count()) await page.getByRole("button", { name: /accept the rules/ }).click();
+      await page.getByRole("button", { name: "Take flight", exact: true }).waitFor();
       await shot("/dashboard/wallet", "wallet-desktop");
       await page.setViewportSize({ width: 390, height: 844 });
       await shot("/dashboard", "member-mobile");

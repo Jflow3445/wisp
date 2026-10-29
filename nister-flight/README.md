@@ -27,6 +27,16 @@ The homepage shows only profitable completed flights from the live season in the
 
 Future flight steps and random seeds stay on the server until settlement. Each flight publishes a commitment and reveals its seed, rules and path after settlement. `flight-math.test.ts` compares the port against 250 executions of the original PHP engine. PHP is needed for that comparison test, but is not needed to run the new website.
 
+## Piloted flight (engine 6)
+
+New flights last up to 24 seconds. Throttle and elevator inputs affect a fixed-step light-aircraft simulation: lift perpendicular to relative airflow, drag opposing it, thrust along pitch, gravity, altitude-dependent density, wind, angular inertia, stall and ground contact. SI units are used throughout; six simulated seconds pass per real second. This is an accelerated game model, not a certified aircraft simulator. Free practice uses the same force equations and never writes wallet entries.
+
+The server timestamps inputs on 20ms ticks, integrates in 20ms simulated substeps, and records bounded integer controls in sequence. Repeated sequences with identical payloads are idempotent; conflicting or skipped sequences fail. Elevator returns to neutral after one second without a heartbeat. Clients cannot supply timestamps, positions, condition, random paths or cash amounts. Short client prediction only smooths rendering between receipts.
+
+The original engine-5 random path remains the funded ceiling. The payable return is `floor(baseReturnCents * conditionBps / 10000)`, where condition is bounded to 0–10000 and depends on speed, angle of attack, load, descent and damage. Crashes or a zero base return pay zero. Thus piloting changes cash payouts without exceeding the reserved liability or increasing the base game's expected return. New collection tokens authorize the owned round; settlement uses the authoritative return at arrival. Consent version 3 explains these rules before another paid start. Already accepted engine-5 flights retain their original offers and settlement.
+
+Engine-6 commitments cover `{engine, seed, rules, stake, cap, aircraft}` in that order. Completed private receipts also reveal the base path, control log and final state for deterministic `replayPilot` verification. Wind randomness uses a separate HMAC domain. No future seed or input history is exposed during live flight.
+
 ## Local development
 
 Use Node 22 and the existing MySQL schema. Copy `.env.example` to an ignored `.env.local`, retain the real `DATABASE_URL` and `SESSION_SECRET` when operating an existing account database, then:
@@ -37,7 +47,7 @@ npm run db:generate
 npm run dev
 ```
 
-Apply the additive Flight migrations only after a private database backup and schema review. Migration 001 adds the original six tables; 002 adds fee/referral/season fields and rewards; 003 adds money constraints supported by the production MariaDB version. They preserve registration records. Production migrations run through the root deployment helper; the runtime database account cannot alter schemas. The owner-allocation script is explicit, prelaunch-only and idempotent; it never runs at application startup. Do not run test schema or fixture resets against production.
+Apply the additive Flight migrations only after a private database backup and schema review. Migration 001 adds the original six tables; 002 adds fee/referral/season fields and rewards; 003 adds money constraints; 004 adds versioned physics state and input logs with an integrity constraint. They preserve registration records. Production migrations run through the root deployment helper; the runtime database account cannot alter schemas. The owner-allocation script is explicit, prelaunch-only and idempotent; it never runs at application startup. Do not run test schema or fixture resets against production.
 
 Required production configuration includes the retained database/session values, public app origin, existing SMTP encryption keys/settings, existing TRON merchant/node configuration and `CONTROL_PLANE_INTERNAL_TOKEN`. `TRON_PAYOUT_ADDRESS` can specify a separate treasury payout wallet; otherwise the configured merchant wallet is used. Secrets never belong in Git.
 
@@ -70,4 +80,4 @@ The new service uses the existing `nisterai-web` systemd unit and origin port. T
 
 Flight settlement and crypto scanning use separately named `nisterai-*` timers. Existing WISP `nister-flight-settle`, spin, account, router, payment and forensic-log services must remain untouched.
 
-Rollback changes only the `app` symlink back to the saved release, restarts `nisterai-web`, and stops the new `nisterai-*` timers. Do not restore an old database over newer financial activity. The additive Flight tables can remain during rollback.
+Rollback changes only the `app` symlink back to the saved release, restarts `nisterai-web`, and restores the previous timer state. Do not restore an old database over newer financial activity. The additive Flight tables can remain during rollback.
