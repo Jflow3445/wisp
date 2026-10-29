@@ -1,3 +1,6 @@
+import { tronAddressHex as deriveTronHexFromBase58 } from "./flight-tron-address";
+import { knownReceivingAddresses, selectReceivingWallet, invoiceWalletImage } from "./flight-receiving-wallets";
+import { enqueueWalletEmail } from "./flight-email";
 import { createTronRpcClient } from "@/lib/flight-tron-rpc";
 import crypto from "node:crypto";
 import {
@@ -25,8 +28,6 @@ const USDT_DECIMALS = 6;
 const USDT_MICROS_PER_TOKEN = BigInt(1_000_000);
 const MICROS_PER_CENT = BigInt(10_000);
 const WATCHER_KEY = "usdt_trc20_default";
-const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const BASE58_INDEX = new Map(BASE58_ALPHABET.split("").map((char, idx) => [char, idx]));
 
 type JsonRecord = Record<string, unknown>;
 type DbClient = Prisma.TransactionClient | typeof prisma;
@@ -103,6 +104,7 @@ type ParsedTransferEvent = {
 };
 
 type CreateInvoiceInput = {
+  receivingWalletId?: string;
   baseAmountUsdt: string;
   declaredSenderAddress?: string;
   userId?: string;
@@ -112,6 +114,8 @@ type CreateInvoiceInput = {
 };
 
 type CreateInvoiceResult = {
+  receivingWalletId: string | null;
+  qrImageUrl: string | null;
   reference: string;
   status: PaymentOrderStatus;
   amountUsdt: string;
@@ -345,63 +349,6 @@ function normalizeHexAddress(raw: string): string | null {
     return value;
   }
   return null;
-}
-
-function decodeBase58(valueRaw: string): Uint8Array | null {
-  const value = String(valueRaw || "").trim();
-  if (!value) {
-    return null;
-  }
-
-  let numeric = BigInt(0);
-  for (const char of value) {
-    const idx = BASE58_INDEX.get(char);
-    if (typeof idx !== "number") {
-      return null;
-    }
-    numeric = numeric * BigInt(58) + BigInt(idx);
-  }
-
-  const bytes: number[] = [];
-  while (numeric > BigInt(0)) {
-    bytes.push(Number(numeric % BigInt(256)));
-    numeric /= BigInt(256);
-  }
-  bytes.reverse();
-
-  let leadingZeros = 0;
-  while (leadingZeros < value.length && value.charAt(leadingZeros) === "1") {
-    leadingZeros += 1;
-  }
-
-  return Uint8Array.from([
-    ...new Array(leadingZeros).fill(0),
-    ...bytes,
-  ]);
-}
-
-function deriveTronHexFromBase58(raw: string): string | null {
-  const decoded = decodeBase58(raw);
-  if (!decoded || decoded.length !== 25) {
-    return null;
-  }
-
-  const payload = decoded.slice(0, 21);
-  const checksum = decoded.slice(21);
-  const first = crypto.createHash("sha256").update(Buffer.from(payload)).digest();
-  const second = crypto.createHash("sha256").update(first).digest();
-  const expectedChecksum = second.subarray(0, 4);
-
-  for (let idx = 0; idx < 4; idx += 1) {
-    if (checksum[idx] !== expectedChecksum[idx]) {
-      return null;
-    }
-  }
-  if (payload[0] !== 0x41) {
-    return null;
-  }
-
-  return Buffer.from(payload).toString("hex").toLowerCase();
 }
 
 function decodeTopicAddress(topicRaw: string): string | null {
@@ -1198,6 +1145,10 @@ async function finalizeTransferCredit(input: {
         graceExpiresAt: true,
         manualReviewReason: true,
         metadataJson: true,
+        merchantReceiveAddress: true,
+        invoiceAmountMicros: true,
+        declaredSenderAddress: true,
+        reference: true,
       },
     });
     if (!order) {
@@ -1216,6 +1167,8 @@ async function finalizeTransferCredit(input: {
     if (!isTransferWithinOrderWindow(order, input.event.blockTimestamp)) {
       throw new Error("Order not creditable outside invoice window");
     }
+    const invoiceReceiver = deriveTronHexFromBase58(order.merchantReceiveAddress) || normalizeHexAddress(order.merchantReceiveAddress);
+    if (!input.event.success || !invoiceReceiver || input.event.toAddressHex !== invoiceReceiver || input.event.tokenContractHex !== deriveTronHexFromBase58(USDT_TRC20_CONTRACT) || input.event.amountMicros !== order.invoiceAmountMicros || input.event.fromAddressHex === invoiceReceiver || (order.declaredSenderAddress && order.declaredSenderAddress !== input.event.fromAddressHex)) throw new Error("The confirmed transfer does not match this invoice's token, wallet, amount and sender.");
 
     const metadata = parseOrderMetadata(order.metadataJson as Prisma.JsonValue | null);
     let postEffects: {
@@ -1247,6 +1200,7 @@ async function finalizeTransferCredit(input: {
           creditUsdCents: creditCents,
           reference: `deposit:${input.event.txHash}:${input.event.parsedEventIndex}`,
         });
+        if (metadata.source === "flight_topup") await enqueueWalletEmail(tx, { userId: order.userId, reference: `deposit:${order.id}`, subject: "Your Nister Flight deposit is confirmed", body: `Your deposit is confirmed and $${(creditCents / 100).toFixed(2)} USD has been added to your wallet.\n\nNetwork: USDT / TRC20\nInvoice reference: ${order.reference}\nTransaction: ${input.event.txHash}` });
       }
     }
 
@@ -1352,7 +1306,10 @@ async function verifySingleOrderTransfer(input: {
   if (input.submittedSenderAddress && !normalizedSubmittedSender) {
     throw new Error("Invalid declared sender address");
   }
-  const receiver = deriveTronHexFromBase58(order.merchantReceiveAddress) || config.merchantAddressHex;
+  const receiver = deriveTronHexFromBase58(order.merchantReceiveAddress) || normalizeHexAddress(order.merchantReceiveAddress);
+  if (!receiver) throw new Error("This invoice needs a receiving address review. Contact support.");
+  const platformAddresses = new Set((await knownReceivingAddresses()).map(address => deriveTronHexFromBase58(address) || normalizeHexAddress(address)));
+  if (normalizedSubmittedSender && platformAddresses.has(normalizedSubmittedSender)) throw new Error(SENDER_WALLET_WARNING);
   if (normalizedSubmittedSender && (normalizedSubmittedSender === receiver || normalizedSubmittedSender === config.merchantAddressHex)) throw new Error(SENDER_WALLET_WARNING);
   // Correct old invoices where the receiving wallet was mistakenly entered as sender.
   const correctingReceiver = order.declaredSenderAddress === receiver || order.declaredSenderAddress === config.merchantAddressHex;
@@ -1442,7 +1399,7 @@ async function verifySingleOrderTransfer(input: {
   const toMerchant = events.filter(
     (event) =>
       event.tokenContractHex === config.usdtContractHex &&
-      event.toAddressHex === config.merchantAddressHex &&
+      event.toAddressHex === receiver &&
       event.success,
   );
   if (!toMerchant.length) {
@@ -1495,7 +1452,7 @@ async function verifySingleOrderTransfer(input: {
   }
 
   const expectedSender = correctingReceiver ? normalizedSubmittedSender : order.declaredSenderAddress || normalizedSubmittedSender;
-  if (!expectedSender || matched.fromAddressHex === receiver || matched.fromAddressHex === config.merchantAddressHex) throw new Error(SENDER_WALLET_WARNING);
+  if (!expectedSender || platformAddresses.has(matched.fromAddressHex)) throw new Error(SENDER_WALLET_WARNING);
   if (expectedSender && matched.fromAddressHex !== expectedSender) {
     await toManualReview(order.id, "declared_sender_mismatch", {
       tx_hash: txHash,
@@ -1554,6 +1511,7 @@ async function attemptAutoMatchForEvent(input: {
     select: {
       id: true,
       declaredSenderAddress: true,
+      merchantReceiveAddress: true,
     },
     take: 50,
   });
@@ -1564,7 +1522,8 @@ async function attemptAutoMatchForEvent(input: {
     };
   }
 
-  const senderFiltered = pendingCandidates.filter((order) => {
+  const destinationCandidates = pendingCandidates.filter(order => (deriveTronHexFromBase58(order.merchantReceiveAddress) || normalizeHexAddress(order.merchantReceiveAddress)) === input.event.toAddressHex);
+  const senderFiltered = destinationCandidates.filter((order) => {
     if (!order.declaredSenderAddress) {
       return true;
     }
@@ -1594,7 +1553,7 @@ async function attemptAutoMatchForEvent(input: {
   }
 
   let manualCount = 0;
-  const targets = senderFiltered.length > 1 ? senderFiltered : pendingCandidates;
+  const targets = senderFiltered.length > 1 ? senderFiltered : destinationCandidates;
   for (const order of targets) {
     await toManualReview(order.id, "duplicate_amount_ambiguity", {
       tx_hash: input.event.txHash,
@@ -1612,6 +1571,7 @@ async function attemptAutoMatchForEvent(input: {
 
 export async function createPaymentInvoice(input: CreateInvoiceInput): Promise<CreateInvoiceResult> {
   const config = await getTronConfig();
+  const receivingWallet = await selectReceivingWallet(prisma, input.receivingWalletId);
   if (input.declaredSenderAddress) await assertFundingSender(input.declaredSenderAddress);
   const baseAmountMicros = parseUsdtToMicros(input.baseAmountUsdt);
   const metadata = parseOrderMetadata((input.metadata ?? null) as Prisma.JsonValue | null);
@@ -1643,11 +1603,13 @@ export async function createPaymentInvoice(input: CreateInvoiceInput): Promise<C
         baseAmountMicros: candidate.baseAmountMicros,
         metadata: parseOrderMetadata(candidate.metadataJson),
       });
-      return candidateFingerprint === incomingFingerprint;
+      return candidateFingerprint === incomingFingerprint && candidate.merchantReceiveAddress === receivingWallet.address;
     }) || null;
   if (existing && input.allowReuse !== false) {
     return {
       reference: existing.reference,
+      receivingWalletId: existing.receivingWalletId,
+      qrImageUrl: await invoiceWalletImage(existing.receivingWalletId),
       status: existing.status,
       amountUsdt: microsToUsdt(existing.invoiceAmountMicros),
       amountMicros: existing.invoiceAmountMicros.toString(),
@@ -1677,6 +1639,8 @@ export async function createPaymentInvoice(input: CreateInvoiceInput): Promise<C
     try {
       const reference = (input.reference || uniqueReference()).trim();
       const created = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM FlightControl WHERE id=1 FOR UPDATE`;
+        const wallet = await selectReceivingWallet(tx, input.receivingWalletId);
         const order = await tx.paymentOrder.create({
           data: {
             userId: input.userId || null,
@@ -1685,7 +1649,8 @@ export async function createPaymentInvoice(input: CreateInvoiceInput): Promise<C
             invoiceAmountMicros,
             currency: "USDT",
             network: "TRC20",
-            merchantReceiveAddress: config.merchantAddressRaw,
+            merchantReceiveAddress: wallet.address,
+            receivingWalletId: wallet.id === "legacy" ? null : wallet.id,
             declaredSenderAddress: declaredSenderAddress || null,
             status: PaymentOrderStatus.PENDING,
             createdAt: now,
@@ -1708,6 +1673,8 @@ export async function createPaymentInvoice(input: CreateInvoiceInput): Promise<C
 
       return {
         reference: created.reference,
+        receivingWalletId: created.receivingWalletId,
+        qrImageUrl: await invoiceWalletImage(created.receivingWalletId),
         status: created.status,
         amountUsdt: microsToUsdt(created.invoiceAmountMicros),
         amountMicros: created.invoiceAmountMicros.toString(),
@@ -1773,6 +1740,8 @@ export async function getPaymentStatusByReference(reference: string, userId?: st
   return {
     reference: order.reference,
     status: effectiveStatus,
+    receivingWalletId: order.receivingWalletId,
+    qrImageUrl: await invoiceWalletImage(order.receivingWalletId),
     amountUsdt: microsToUsdt(order.invoiceAmountMicros),
     amountMicros: order.invoiceAmountMicros.toString(),
     receiveAddress: order.merchantReceiveAddress,
@@ -1790,6 +1759,7 @@ export async function getPaymentStatusByReference(reference: string, userId?: st
 
 export async function scanSolidifiedPayments(input: ScanWatcherInput = {}): Promise<ScanWatcherResult> {
   const config = await getTronConfig();
+  const receivingAddresses = new Set((await knownReceivingAddresses()).map(address => deriveTronHexFromBase58(address) || normalizeHexAddress(address)).filter(Boolean));
   const maxBlocks = Math.max(1, Math.min(500, Math.trunc(input.maxBlocks || config.watcherMaxBlocks)));
   const latestSolidBlock = await getSolidifiedHeadBlock(config.solidityNodeUrl, config.apiKey);
   const cursor = await prisma.paymentWatcherCursor.upsert({
@@ -1833,8 +1803,8 @@ export async function scanSolidifiedPayments(input: ScanWatcherInput = {}): Prom
       for (const event of events) {
         if (
           event.tokenContractHex !== config.usdtContractHex ||
-          event.toAddressHex !== config.merchantAddressHex ||
-          event.fromAddressHex === config.merchantAddressHex ||
+          !receivingAddresses.has(event.toAddressHex) ||
+          receivingAddresses.has(event.fromAddressHex) ||
           !event.success
         ) {
           continue;
@@ -1895,12 +1865,12 @@ export function isTronAddress(address: string): boolean {
 export async function verifyOutgoingUsdtTransfer(txHash: string, recipient: string, amountCents: number, requestedAt: Date) {
   const config = await getTronConfig();
   const destination = deriveTronHexFromBase58(recipient);
-  const treasury = deriveTronHexFromBase58(process.env.TRON_PAYOUT_ADDRESS?.trim() || config.merchantAddressRaw);
-  if (!isValidTxHash(txHash) || !destination || !treasury || destination === treasury) throw new Error("Invalid payout transaction or destination.");
+  const treasuries = new Set([process.env.TRON_PAYOUT_ADDRESS || "", ...await knownReceivingAddresses()].map(address => deriveTronHexFromBase58(address)).filter(Boolean));
+  if (!isValidTxHash(txHash) || !destination || !treasuries.size || treasuries.has(destination)) throw new Error("Invalid payout transaction or destination.");
   const receipt = await getSolidifiedTxInfo(config.solidityNodeUrl, txHash, config.apiKey);
   if (!receipt || receipt.id?.toLowerCase() !== txHash.toLowerCase()) throw new Error("The transaction is not yet confirmed on the solidified chain. Retry the same hash later.");
   const events = parseTransferEventsFromTxInfo({ txHash, txInfo: receipt });
-  const match = events.find(event => event.success && event.tokenContractHex === config.usdtContractHex && event.fromAddressHex === treasury && event.toAddressHex === destination && event.amountMicros === BigInt(amountCents) * BigInt(10000) && event.blockTimestamp >= requestedAt);
+  const match = events.find(event => event.success && event.tokenContractHex === config.usdtContractHex && treasuries.has(event.fromAddressHex) && event.toAddressHex === destination && event.amountMicros === BigInt(amountCents) * BigInt(10000) && event.blockTimestamp >= requestedAt);
   if (!match) throw new Error("The confirmed transfer must match this withdrawal's USDT token, treasury, recipient, full amount and request time.");
   return { txHash: txHash.toLowerCase(), blockNumber: match.blockNumber.toString() };
 }
@@ -1919,18 +1889,17 @@ export function isReceivingWalletAsSender(sender: string, receiver: string) {
 }
 
 export async function depositReceiveAddress() {
-  const settings = await prisma.platformSetting.findUnique({ where: { id: 1 }, select: { tronMerchantReceiveAddress: true } });
-  return (settings?.tronMerchantReceiveAddress || process.env.TRON_MERCHANT_RECEIVE_ADDRESS || "").trim();
+  return (await selectReceivingWallet(prisma)).address;
 }
 
 export async function assertFundingSender(sender: string, invoiceReceiver?: string) {
   if (!isTronAddress(sender)) throw new Error("Enter a valid sending TRON wallet address.");
-  const receiver = await depositReceiveAddress();
-  if (isReceivingWalletAsSender(sender, receiver) || (invoiceReceiver && isReceivingWalletAsSender(sender, invoiceReceiver))) throw new Error(SENDER_WALLET_WARNING);
+  const receivers = [...await knownReceivingAddresses(), invoiceReceiver || ""];
+  if (receivers.some(receiver => isReceivingWalletAsSender(sender, receiver))) throw new Error(SENDER_WALLET_WARNING);
 }
 
 export async function assertWithdrawalDestination(address: string) {
   if (!isTronAddress(address)) throw new Error("Enter a valid TRON wallet address for USDT on TRC20.");
-  const receiver = await depositReceiveAddress();
-  if (isReceivingWalletAsSender(address, receiver) || isReceivingWalletAsSender(address, process.env.TRON_PAYOUT_ADDRESS || "")) throw new Error("Choose your own withdrawal wallet. This address belongs to the platform.");
+  const receivers = [...await knownReceivingAddresses(), process.env.TRON_PAYOUT_ADDRESS || ""];
+  if (receivers.some(receiver => isReceivingWalletAsSender(address, receiver))) throw new Error("Choose your own withdrawal wallet. This address belongs to the platform.");
 }

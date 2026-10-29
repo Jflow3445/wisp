@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { appendAuthNextParam, safeAuthNextPath } from "@/lib/auth-redirects";
 import { isOrgParentHost } from "@/lib/request-host";
 import { getTrustedPublicHosts } from "@/lib/public-url";
+import { flightPublicShareUrl, flightShareHtml } from "@/lib/flight-brand";
 
 const VISITOR_COOKIE_NAME = "nister_vid";
 const SESSION_COOKIE_NAME = "nister_sid";
@@ -163,6 +164,13 @@ export function proxy(request: NextRequest) {
   }
 
   const referral = request.nextUrl.searchParams.get("ref");
+  const agent = request.headers.get("user-agent") || "";
+  const previewBot = /^WhatsApp(?:\/|\s|$)/i.test(agent) || /facebookexternalhit|Facebot|meta-externalfetcher|Twitterbot|TelegramBot|LinkedInBot|Slackbot|Discordbot|SkypeUriPreview/i.test(agent);
+  if (["GET", "HEAD"].includes(request.method) && previewBot && (pathname === "/" || /^\/invite\/[A-Za-z0-9]{4,24}$/.test(pathname))) {
+    const path = pathname === "/" && referral && /^[A-Za-z0-9]{4,24}$/.test(referral) ? `/invite/${referral.toUpperCase()}` : pathname;
+    const html = flightShareHtml(flightPublicShareUrl(path, request.nextUrl.searchParams.get("share")));
+    return new NextResponse(request.method === "HEAD" ? null : html, { headers: { ...securityHeaders(nonce), "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300", "Vary": "User-Agent" } });
+  }
   if (request.method === "GET" && pathname === "/" && referral && /^[A-Za-z0-9]{4,24}$/.test(referral)) {
     const invite = request.nextUrl.clone();
     invite.pathname = `/invite/${referral.toUpperCase()}`;

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
-import { buildPasswordResetEmail } from "@/lib/email-template";
+import { enqueueFlightEmail, deliverFlightEmail } from "@/lib/flight-email";
+import { buildFlightEmail } from "@/lib/flight-email-template";
 import { getPublicAppBaseUrl } from "@/lib/public-url";
 
 const hasDatabaseConfig = Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim().length > 0);
@@ -52,15 +52,10 @@ export async function sendPasswordResetEmail(input: {
 
   const token = await issuePasswordResetToken(input.userId);
   const resetUrl = `${appBaseUrl()}/reset-password?token=${encodeURIComponent(token)}`;
-  const message = buildPasswordResetEmail({
-    name: input.name,
-    resetUrl,
-  });
-
-  return sendEmail({
-    to: input.email,
-    ...message,
-  });
+  const reference = `reset:${hashToken(input.userId)}:${hashToken(token)}`;
+  await prisma.flightEmail.updateMany({ where: { userId: input.userId, reference: { startsWith: `reset:${hashToken(input.userId)}:` }, status: "PENDING" }, data: { status: "CANCELLED" } });
+  await enqueueFlightEmail(prisma, { userId: input.userId, toEmail: input.email, reference, expiresAt: new Date(Date.now() + 3600000), content: buildFlightEmail({ subject: "Reset your Nister Flight password", name: input.name, body: "Use this secure link to choose a new password for your Nister Flight account. The link expires in one hour.\n\nIf you did not request a password reset, ignore this email. Your password will stay unchanged.", path: resetUrl, actionLabel: "Reset my password" }) });
+  return deliverFlightEmail(reference);
 }
 
 export async function consumePasswordResetToken(rawToken: string) {

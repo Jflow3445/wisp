@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clearTronConfigCache, isTronAddress, verifiedPaymentCreditCents, verifyOutgoingUsdtTransfer } from "../tron-payments";
+import { prisma } from "../prisma";
 
 const merchant = "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8";
 const recipient = "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7";
@@ -22,7 +23,9 @@ test("verified deposit credit never exceeds the chain amount", () => {
   assert.equal(verifiedPaymentCreditCents(BigInt(1259999)), 125);
 });
 
-test("payout finality checks receipt, token, treasury, destination, amount and request time", async () => {
+test("payout finality checks receipt, token, treasury, destination, amount and request time", async context => {
+  const mocks = [{ target: prisma.flightReceivingWallet, key: "findMany", fn: async () => [] }, { target: prisma, key: "$queryRaw", fn: async () => [] }, { target: prisma.platformSetting, key: "findUnique", fn: async () => null }, { target: prisma, key: "$queryRawUnsafe", fn: async () => [] }];
+  for (const item of mocks) { const target = item.target as unknown as Record<string, unknown>, original = target[item.key]; target[item.key] = item.fn; context.after(() => { target[item.key] = original; }); }
   process.env.TRON_SOLIDITY_NODE_URL = "https://tron-test.invalid";
   process.env.TRON_FULL_NODE_URL = "https://tron-test.invalid";
   process.env.TRON_MERCHANT_RECEIVE_ADDRESS = merchant;

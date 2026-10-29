@@ -1,3 +1,4 @@
+import { tronAddressHex } from "../src/lib/flight-tron-address";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
@@ -109,7 +110,7 @@ async function main() {
   await prisma.flightPlayer.update({ where: { userId: alice.id }, data: { blocked: false } });
   const beforeChain = await balance(alice.id), confirmedAt = new Date();
   const invoice = await prisma.paymentOrder.create({ data: { userId: alice.id, reference: "TEST-CHAIN-INVOICE", baseAmountMicros: BigInt(2500000), invoiceAmountMicros: BigInt(2500000), merchantReceiveAddress: address, expiresAt: new Date(Date.now() + 60000), graceExpiresAt: new Date(Date.now() + 120000), createdAt: new Date(confirmedAt.getTime() - 1000), metadataJson: { source: "flight_topup", amountUsdCents: 99999999 } } });
-  const event = { txHash: "a".repeat(64), parsedEventIndex: 0, tokenContractHex: "41" + "1".repeat(40), fromAddressHex: "41" + "2".repeat(40), toAddressHex: "41" + "3".repeat(40), amountMicros: BigInt(2500000), blockNumber: BigInt(123), blockTimestamp: confirmedAt, success: true, rawPayload: {} };
+  const event = { txHash: "a".repeat(64), parsedEventIndex: 0, tokenContractHex: tronAddressHex("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")!, fromAddressHex: "41" + "2".repeat(40), toAddressHex: tronAddressHex(address)!, amountMicros: BigInt(2500000), blockNumber: BigInt(123), blockTimestamp: confirmedAt, success: true, rawPayload: {} };
   await Promise.all(Array.from({ length: 5 }, () => chain.finalizeTransferCredit({ event, orderId: invoice.id })));
   check(await balance(alice.id) === beforeChain + 250, "simultaneous chain callbacks credit a paid invoice once and ignore inflated quote metadata");
   await assert.rejects(() => chain.finalizeTransferCredit({ event: { ...event, txHash: "b".repeat(64) }, orderId: invoice.id }), /already been credited/);

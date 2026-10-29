@@ -16,7 +16,7 @@ def migrate_growth(release, database, sql):
     os.chmod(archive / "database.sql", 0o600)
     (archive / "manifest.json").write_text(json.dumps({"release": str(release), "accounts": int(sql("SELECT COUNT(*) FROM User")), "created": int(time.time())}))
     os.chmod(archive / "manifest.json", 0o600)
-    for name in ["202610290002_flight_growth_and_insurance", "202610290003_flight_integrity", "202610290004_pilot_physics", "202610290005_flight_missions", "202610290006_simple_draw", "202610290007_pool_and_referral_levels"]:
+    for name in ["202610290002_flight_growth_and_insurance", "202610290003_flight_integrity", "202610290004_pilot_physics", "202610290005_flight_missions", "202610290006_simple_draw", "202610290007_pool_and_referral_levels", "202610290008_receiving_wallets", "202610290009_transactional_email"]:
         if sql("SELECT COUNT(*) FROM _prisma_migrations WHERE migration_name='" + name + "' AND finished_at IS NOT NULL") == "1":
             continue
         path = release / "prisma/migrations" / name / "migration.sql"
@@ -31,7 +31,10 @@ def migrate_growth(release, database, sql):
         principal = "'nister_ai_user'@'" + host + "'"
         sql("GRANT SELECT,INSERT,UPDATE ON nister_ai.FlightMatch TO " + principal)
         sql("GRANT SELECT,INSERT,UPDATE,DELETE ON nister_ai.FlightOffer TO " + principal)
+        sql("GRANT SELECT,INSERT,UPDATE ON nister_ai.FlightReceivingWallet TO " + principal)
+        sql("GRANT SELECT,INSERT,UPDATE ON nister_ai.FlightEmail TO " + principal)
     private = json.loads(Path("/home/nisterai.com/flight-owner-allocation.json").read_text())
     allocation_env = dict(os.environ, FLIGHT_OWNER_TEST_USER_ID=private["test_user_id"])
+    subprocess.run(["node", "--env-file=.env", "--import", "tsx", "scripts/flight-wallet-bootstrap.ts"], cwd=release, check=True)
     subprocess.run(["node", "--env-file=.env", "--import", "tsx", "scripts/flight-owner-allocation.ts"], cwd=release, env=allocation_env, check=True)
     print(json.dumps({"private_backup": str(archive), "growth_migrations": "applied"}), flush=True)

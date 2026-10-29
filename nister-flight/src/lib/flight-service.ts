@@ -1,4 +1,6 @@
 import { DRAW_ENGINE, LEGACY_DRAW_ENGINE, poolDrawResult, drawPrice, drawResult, drawCommitment, drawConfigurationHash, type DrawRules } from "./flight-draw";
+import { listReceivingWallets } from "./flight-receiving-wallets";
+import { enqueueWalletEmail } from "./flight-email";
 import { advanceMission, MISSION, MISSION_ENGINE, missionObjective, missionScore, type MissionState } from "./flight-mission";
 import { canonicalJson, missionEngineFault, missionWind, type MissionRules } from "./flight-mission-server";
 import { contestOutcome } from "./flight-mission-economy";
@@ -310,7 +312,7 @@ export async function flightSnapshot(userId: string) {
       await settle(tx, fresh, await now(tx), false);
     });
   }
-  const receiveAddress = await depositReceiveAddress();
+  const [receiveAddress, receivingWallets] = await Promise.all([depositReceiveAddress(), listReceivingWallets()]);
   return prisma.$transaction(async tx => {
     const time = await now(tx);
     const control = await tx.flightControl.findUniqueOrThrow({ where: { id: 1 } });
@@ -328,7 +330,7 @@ export async function flightSnapshot(userId: string) {
     const allowed = (user.role === "ADMIN" || (!!user.emailVerifiedAt && !!user.flightPlayer?.verifiedAt)) && !user.flightPlayer?.blocked && !["SUSPENDED", "CLOSED"].includes(user.tradingProfile?.accountState ?? "");
     const testingAccess = !!control.liveLaunchedAt || user.role === "ADMIN" || !!user.flightPlayer?.isTestAccount;
     return { currency: "USD" as const, settlementCurrency: "USDT" as const, network: "TRC20" as const, usdPerUsdt: "1.00", user: { name: user.name, email: user.email, role: user.role }, availableCents: user.tradingProfile?.availableFundsUsdCents ?? 0, heldCents: held._sum.amountCents ?? 0,
-      depositReceiveAddress: receiveAddress, eligible: allowed && testingAccess, termsVersion: FLIGHT_TERMS, termsAccepted: user.flightPlayer?.termsVersion === FLIGHT_TERMS, isTestAccount: !!user.flightPlayer?.isTestAccount && !control.liveLaunchedAt,
+      depositReceiveAddress: receiveAddress, receivingWallets, eligible: allowed && testingAccess, termsVersion: FLIGHT_TERMS, termsAccepted: user.flightPlayer?.termsVersion === FLIGHT_TERMS, isTestAccount: !!user.flightPlayer?.isTestAccount && !control.liveLaunchedAt,
       referral: { enabled: control.referralsEnabled, ratesBps: referralRates(control), bps: control.referralBps, code: user.referralCode, earnedCents: rewards._sum.amountCents ?? 0, pendingCents: pending._sum.amountCents ?? 0 }, totalRounds,
       control: { enabled: control.enabled, depositsEnabled: control.depositsEnabled, withdrawalsEnabled: control.withdrawalsEnabled, minStakeCents: control.minStakeCents, maxStakeCents: control.maxStakeCents, minWithdrawalCents: control.minWithdrawalCents, feeBps: 300, isLive: !!control.liveLaunchedAt },
       rounds: rounds.map(r => view(r, time)), withdrawals, entries, deposits: deposits.map(d => ({ ...d, invoiceAmountMicros: d.invoiceAmountMicros.toString() })), serverNow: time.toISOString() };
@@ -360,6 +362,7 @@ export async function requestWithdrawal(userId: string, amountCents: number, add
     await debit(tx, userId, amountCents);
     const withdrawal = await tx.flightWithdrawal.create({ data: { userId, amountCents, address, requestKey } });
     await entry(tx, userId, -amountCents, "WITHDRAWAL_HOLD", `withdrawal:${withdrawal.id}:hold`);
+    await enqueueWalletEmail(tx, { userId, reference: `withdrawal:${withdrawal.id}:PENDING`, subject: "Your withdrawal request is received", body: `Your request for $${(amountCents / 100).toFixed(2)} USD (${(amountCents / 100).toFixed(2)} USDT on TRC20) is awaiting review. The amount is reserved in your wallet.\n\nReference: ${withdrawal.id}\nDestination: ${address}` });
     return withdrawal;
   });
 }
@@ -381,6 +384,8 @@ export async function decideWithdrawal(actorId: string, id: string, action: "APP
       await entry(tx, withdrawal.userId, withdrawal.amountCents, "WITHDRAWAL_REFUND", `withdrawal:${id}:refund`);
     }
     const updated = await tx.flightWithdrawal.update({ where: { id }, data: { status, reviewedBy: actorId, reviewNote: note, ...(txHash ? { txHash } : {}) } });
+    const eventText = { APPROVED: "Your withdrawal is approved and is awaiting its confirmed transfer. Your funds remain reserved.", REJECTED: "Your withdrawal request was declined. The reserved amount has been returned to your available wallet balance.", PAID: "Your withdrawal payment has been confirmed on the solidified chain." }[status]!;
+    await enqueueWalletEmail(tx, { userId: withdrawal.userId, reference: `withdrawal:${id}:${status}`, subject: `Nister Flight withdrawal ${status.toLowerCase()}`, body: `${eventText}\n\nAmount: $${(withdrawal.amountCents / 100).toFixed(2)} USD\nNetwork: USDT / TRC20\nReference: ${id}\nDestination: ${withdrawal.address}${txHash ? `\nTransaction: ${txHash}` : ""}` });
     await tx.flightAudit.create({ data: { actorId, action: `WITHDRAWAL_${action}`, subjectId: id, details: { note, txHash: txHash ?? null, amountCents: withdrawal.amountCents, address: withdrawal.address } } });
     return updated;
   });

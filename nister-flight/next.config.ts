@@ -7,6 +7,7 @@ const serverActionsBodySizeLimit =
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  htmlLimitedBots: /.*/,
   async redirects() {
     return [
       { source: "/dashboard/billing", destination: "/dashboard/wallet", permanent: false },
@@ -20,7 +21,7 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: serverActionsBodySizeLimit as `${number}${"kb" | "mb" | "gb"}`,
     },
-    proxyClientMaxBodySize: serverActionsBodySizeLimit as `${number}${"kb" | "mb" | "gb"}`,
+    proxyClientMaxBodySize: "640kb",
   },
 };
 

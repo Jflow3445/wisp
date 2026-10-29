@@ -6,7 +6,7 @@ The crypto-only Flight application for `nisterai.com`, added to the WISP `commer
 
 - `/dashboard`: live Flight, server offers, held stakes and recoverable receipts.
 - `/dashboard/wallet`: USDT-TRC20 invoices, local QR codes, chain verification and crypto withdrawal requests. No MoMo, Paystack, phone-number payout or fiat conversion exists in this app.
-- `/dashboard/referrals`: private invite link, native/WhatsApp sharing, earned and pending referral totals.
+- `/dashboard/referrals`: a connected, interactive three-level referral tree, private node aliases, branch rewards, zoom and pagination, plus native/WhatsApp invitations.
 - `/dashboard/activity`: wallet ledger and commitment/seed verification receipts.
 - `/dashboard/settings` and `/dashboard/help`: account status and game rules.
 - `/admin`: operational overview and withdrawal queue.
@@ -14,6 +14,16 @@ The crypto-only Flight application for `nisterai.com`, added to the WISP `commer
 - `/admin/payments`: deposit invoices and payout history. Approve a request, send the full amount from the treasury wallet, then submit the outgoing transaction hash. The server verifies the successful solidified USDT transfer, treasury sender, destination, amount and request time before marking paid. No wallet private key is stored by the website.
 - `/admin/settings`: independently pause flights, deposits or new withdrawals; set limits and private retained-revenue allocations; record treasury reserve allocations; configure the three referral percentages (combined maximum 3% of stake); preview and confirm the one-time public launch.
 - `/admin/audit`: durable operator changes and withdrawal decisions.
+
+## Receiving wallets and transactional email
+
+Admin payment and game-control pages manage up to 12 active USDT/TRC20 receiving wallets, their default destination, labels and optional QR images. Image uploads are bounded, decoded and re-encoded as PNG; their single QR code must match the wallet address and may not encode a fixed amount. The application can generate QR codes automatically. Wallet addresses are versioned: changing an address retires the original row rather than changing pending invoices. Each new invoice records its chosen wallet, and direct verification and the retained chain watcher match that invoice's exact address, token, amount, sender and time window. Retired wallets stay available for settling older invoices, and platform addresses cannot masquerade as member senders or withdrawal destinations. No private keys are collected or stored.
+
+Admin game controls expose SMTP host, port, login, encrypted password, sender and TLS mode, with connection checks, a test sent only to the signed-in administrator, and delivery status. Blank passwords retain the existing credential. Port 465 normally uses implicit TLS; port 587 uses required STARTTLS. Signup always leaves normal email/password accounts unverified until their expiring confirmation link is used; administrators retain their verification exemption. Password resets, account confirmations, referral notifications, confirmed deposits and withdrawal request/approval/decline/payment messages use a durable email queue. Financial emails are inserted in the same transaction as their wallet event. A separate worker claims and retries messages; SMTP failure does not reverse payments. The provider can accept a message that later bounces, and retries after a crash can occasionally redeliver an email. Security messages expire rather than sending unusable links indefinitely.
+
+Migrations 008 and 009 add receiving-wallet history, invoice bindings and the email queue. Deployment imports the existing merchant address as the initial default and preserves existing SMTP settings and encryption keys. Test databases suppress actual SMTP/network delivery unless explicitly opted in. Financial operations tests inject a delivery stub instead of contacting real recipients.
+
+Public sharing crawlers receive a small HTML response with title, description and image tags in its head, without waiting for application rendering or database queries. Account pages retain their authentication and privacy rules. Invitations use their own canonical URLs and a share-version parameter to avoid previously cached empty previews. The refreshed public share image uses a new file path; existing WhatsApp cache entries can persist until that service fetches the page again.
 
 New installations start paused with no reserve. The owner authorized a one-time $100 internal reserve allocation and a separate $100 non-withdrawable test credit to the designated test account. These are recorded as bookkeeping entries, not blockchain transfers. Before public launch only administrators and designated test accounts can play. The initial launch in Admin > Game controls requires typing START LIVE GAME, previews cleared balances, and blocks active flights, pending withdrawals and funded customer balances. It retains accounts and all financial history, clears test wallets/fee counters, and restores the opening house reserve. Once live, this reset cannot run again. Administrators are exempt from member email and eligibility verification; member verification remains required. A game block prevents new flights while preserving withdrawals; suspension of the entire account restricts account operations.
 
@@ -68,6 +78,7 @@ node --env-file=.env.test scripts/flight-test-schema.cjs
 node --env-file=.env.test --import tsx scripts/flight-integration.ts
 node --env-file=.env.test --import tsx scripts/flight-draw-integration.ts
 node --env-file=.env.test --import tsx scripts/flight-mlm-integration.ts
+node --env-file=.env.test --import tsx scripts/flight-operations-integration.ts
 npm run test:risk
 ```
 

@@ -1,5 +1,5 @@
 import { NotificationType } from "@prisma/client";
-import { sendEmail } from "@/lib/email";
+import { enqueueFlightEmail, deliverFlightEmail } from "@/lib/flight-email";
 import { buildNotificationEmail, type PremiumEmailCategory, type PremiumEmailMessage } from "@/lib/email-template";
 import { prisma } from "@/lib/prisma";
 import { getPublicAppBaseUrl } from "@/lib/public-url";
@@ -93,7 +93,7 @@ export async function notifyUser(userId: string, payload: NotifyPayload) {
   const message = fitToColumn(payload.message, 191);
   const href = payload.href ? fitToColumn(payload.href, 191) : null;
 
-  await prisma.notification.create({
+  const notification = await prisma.notification.create({
     data: {
       userId,
       title,
@@ -135,10 +135,9 @@ export async function notifyUser(userId: string, payload: NotifyPayload) {
         textOverride: payload.email.text,
       });
 
-    await sendEmail({
-      to: user.email,
-      ...rendered,
-    });
+    const reference = `notification:${notification.id}`;
+    await enqueueFlightEmail(prisma, { userId, toEmail: user.email, reference, content: rendered });
+    await deliverFlightEmail(reference);
   } catch {
     // Do not block successful state changes when email transport fails.
   }

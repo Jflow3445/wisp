@@ -1,3 +1,4 @@
+import { tronAddressHex } from "../src/lib/flight-tron-address";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { prisma } from "../src/lib/prisma";
@@ -24,7 +25,7 @@ async function main(){
  const beforeDeposit=await Promise.all(ancestors.map(balance)),at=new Date(),wallet="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8";
  const invoice=await prisma.paymentOrder.create({data:{userId:player,reference:"MLM-DEPOSIT-ONLY",baseAmountMicros:BigInt(100000000),invoiceAmountMicros:BigInt(100000000),merchantReceiveAddress:wallet,createdAt:new Date(at.getTime()-1000),expiresAt:new Date(Date.now()+60000),graceExpiresAt:new Date(Date.now()+120000),metadataJson:{source:"flight_topup"}}});
  const beforeRewards=await prisma.flightReferralReward.count();
- await chain.finalizeTransferCredit({event:{txHash:"e".repeat(64),parsedEventIndex:0,tokenContractHex:"41"+"1".repeat(40),fromAddressHex:"41"+"2".repeat(40),toAddressHex:"41"+"3".repeat(40),amountMicros:BigInt(100000000),blockNumber:BigInt(456),blockTimestamp:at,success:true,rawPayload:{}},orderId:invoice.id});
+ await chain.finalizeTransferCredit({event:{txHash:"e".repeat(64),parsedEventIndex:0,tokenContractHex:tronAddressHex("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")!,fromAddressHex:"41"+"2".repeat(40),toAddressHex:tronAddressHex(wallet)!,amountMicros:BigInt(100000000),blockNumber:BigInt(456),blockTimestamp:at,success:true,rawPayload:{}},orderId:invoice.id});
  check(JSON.stringify(await Promise.all(ancestors.map(balance)))===JSON.stringify(beforeDeposit)&&await prisma.flightReferralReward.count()===beforeRewards,"a confirmed $100 top-up creates no referral commission at any level");
  for(const winning of [true,false]){
    const total=await capital(),balances=await Promise.all(ancestors.map(balance)),round=await entry(player,10000,winning);

@@ -15,7 +15,7 @@ const prisma = new PrismaClient({ errorFormat: "minimal" });
   if (pilot && !pilot.clause.includes("9")) { await prisma.$executeRawUnsafe("ALTER TABLE FlightRound DROP CONSTRAINT FlightRound_pilot_engine_check"); existing.delete(pilot.name); }
   const draw = constraints.find(c => c.name === "FlightRound_draw_check");
   if (draw && !draw.clause.includes("9")) { await prisma.$executeRawUnsafe("ALTER TABLE FlightRound DROP CONSTRAINT FlightRound_draw_check"); existing.delete(draw.name); }
-  const sql = ["202610290007_pool_and_referral_levels", "202610290003_flight_integrity", "202610290006_simple_draw", "202610290005_flight_missions"].map(name => fs.readFileSync(`prisma/migrations/${name}/migration.sql`, "utf8")).join(";\n");
+  const sql = ["202610290008_receiving_wallets", "202610290009_transactional_email", "202610290007_pool_and_referral_levels", "202610290003_flight_integrity", "202610290006_simple_draw", "202610290005_flight_missions"].map(name => fs.readFileSync(`prisma/migrations/${name}/migration.sql`, "utf8")).join(";\n");
   for (const statement of sql.split(";")) {
     if (!/\bCHECK\s*\(/i.test(statement)) continue;
     const name = statement.match(/ADD CONSTRAINT `([^`]+)`/);

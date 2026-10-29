@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
-import { buildVerificationEmail } from "@/lib/email-template";
+import { enqueueFlightEmail, deliverFlightEmail, enqueueWalletEmail } from "@/lib/flight-email";
+import { buildFlightEmail } from "@/lib/flight-email-template";
 import { getPublicAppBaseUrl } from "@/lib/public-url";
+import { applyRateLimit } from "@/lib/request-security";
 
 const hasDatabaseConfig = Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim().length > 0);
 
@@ -42,25 +43,19 @@ export async function sendVerificationEmail(input: {
   if (!hasDatabaseConfig) {
     return false;
   }
+  const rate = await applyRateLimit({ key: `flight:verify-email:${hashToken(input.email.toLowerCase())}`, maxAttempts: 3, windowMs: 900000, failOpen: false });
+  if (!rate.allowed) return false;
 
-  await prisma.emailVerificationToken.deleteMany({
-    where: {
-      userId: input.userId,
-      consumedAt: null,
-    },
-  });
-
-  const token = await issueEmailVerificationToken(input.userId);
+  const token = createRawToken(), tokenHash = hashToken(token), expiresAt = new Date(Date.now() + 86400000);
   const verifyUrl = `${appBaseUrl()}/verify-email/confirm?token=${encodeURIComponent(token)}`;
-  const message = buildVerificationEmail({
-    name: input.name,
-    verifyUrl,
+  const reference = `verify:${hashToken(input.userId)}:${tokenHash}`;
+  await prisma.$transaction(async tx => {
+    await tx.flightEmail.updateMany({ where: { userId: input.userId, reference: { startsWith: `verify:${hashToken(input.userId)}:` }, status: "PENDING" }, data: { status: "CANCELLED" } });
+    await tx.emailVerificationToken.deleteMany({ where: { userId: input.userId, expiresAt: { lt: new Date() } } });
+    await tx.emailVerificationToken.create({ data: { userId: input.userId, tokenHash, expiresAt } });
+    await enqueueFlightEmail(tx, { userId: input.userId, toEmail: input.email, reference, expiresAt, content: buildFlightEmail({ subject: "Confirm your Nister Flight email", name: input.name, body: "Confirm your email address to finish creating your Nister Flight account.\n\nThis secure link expires in 24 hours. If you did not create this account, you can ignore this email.", path: verifyUrl, actionLabel: "Confirm my email" }) });
   });
-
-  return sendEmail({
-    to: input.email,
-    ...message,
-  });
+  return deliverFlightEmail(reference);
 }
 
 export async function verifyEmailToken(rawToken: string) {
@@ -95,16 +90,16 @@ export async function verifyEmailToken(rawToken: string) {
 
   const now = new Date();
 
-  await prisma.$transaction([
-    prisma.emailVerificationToken.update({
-      where: { id: record.id },
-      data: { consumedAt: now },
-    }),
-    prisma.user.update({
-      where: { id: record.userId },
-      data: { emailVerifiedAt: now },
-    }),
-  ]);
+  const accepted = await prisma.$transaction(async tx => {
+    const claim = await tx.emailVerificationToken.updateMany({ where: { id: record.id, consumedAt: null, expiresAt: { gt: now } }, data: { consumedAt: now } });
+    if (!claim.count) return false;
+    await tx.user.update({ where: { id: record.userId }, data: { emailVerifiedAt: now } });
+    await tx.emailVerificationToken.updateMany({ where: { userId: record.userId, consumedAt: null }, data: { consumedAt: now } });
+    await tx.flightEmail.updateMany({ where: { userId: record.userId, reference: { startsWith: `verify:${hashToken(record.userId)}:` }, status: "PENDING" }, data: { status: "CANCELLED" } });
+    await enqueueWalletEmail(tx, { userId: record.userId, reference: `welcome:${hashToken(record.userId)}`, subject: "Your Nister Flight email is confirmed", body: "Your email address has been confirmed. You can sign in to your Nister Flight account and manage your wallet. Paid play remains subject to your account's eligibility review." });
+    return true;
+  });
+  if (!accepted) return { ok: false as const, reason: "used" };
 
   return {
     ok: true as const,

@@ -366,7 +366,7 @@ export async function loginAction(formData: FormData) {
       redirect(notice ? pathWithNotice(nextPath, notice.key, notice.message) : nextPath);
     }
 
-    if (readBooleanSetting(settings, "enforceVerifiedEmailForActivation") && !user.emailVerifiedAt) {
+    if (!user.emailVerifiedAt) {
       stage = "send-verification-email-enforced";
       const sent = await sendVerificationEmail({
         userId: user.id,
@@ -510,10 +510,7 @@ export async function signupAction(formData: FormData) {
       email: parsed.data.email,
       passwordHash,
       referredById: referrerId,
-      emailVerifiedAt:
-        readBooleanSetting(settings, "requireEmailVerification") || readBooleanSetting(settings, "enforceVerifiedEmailForActivation")
-          ? null
-          : new Date(),
+      emailVerifiedAt: null,
     },
   });
 
@@ -574,10 +571,7 @@ export async function signupAction(formData: FormData) {
     });
   }
 
-  if (
-    readBooleanSetting(settings, "requireEmailVerification") ||
-    readBooleanSetting(settings, "enforceVerifiedEmailForActivation")
-  ) {
+  if (!user.emailVerifiedAt) {
     const sent = await sendVerificationEmail({
       userId: user.id,
       email: user.email,

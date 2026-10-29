@@ -842,6 +842,26 @@ model EmailSetting {
   updatedAt          DateTime @updatedAt
 }
 
+model FlightEmail {
+  id            String    @id @default(cuid())
+  reference     String    @unique
+  userId        String
+  toEmail       String
+  subject       String
+  text          String    @db.Text
+  html          String    @db.LongText
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lockedAt      DateTime?
+  sentAt        DateTime?
+  lastError     String?
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+  @@index([status, nextAttemptAt])
+  @@index([userId, createdAt])
+}
+
 model EmailVerificationToken {
   id         String    @id @default(cuid())
   userId     String
@@ -1047,6 +1067,8 @@ model PaymentOrder {
   currency               String                     @default("USDT")
   network                String                     @default("TRC20")
   merchantReceiveAddress String
+  receivingWalletId      String?
+  receivingWallet        FlightReceivingWallet?     @relation(fields: [receivingWalletId], references: [id], onDelete: Restrict)
   declaredSenderAddress  String?
   status                 PaymentOrderStatus         @default(PENDING)
   createdAt              DateTime                   @default(now())
@@ -1066,7 +1088,22 @@ model PaymentOrder {
   @@index([status, graceExpiresAt])
   @@index([userId, status, createdAt])
   @@index([invoiceAmountMicros])
+  @@index([receivingWalletId])
+  @@index([merchantReceiveAddress])
   @@index([createdAt])
+}
+
+model FlightReceivingWallet {
+  id          String   @id @default(cuid())
+  label       String
+  address     String   @unique
+  active      Boolean  @default(true)
+  defaultKey  String?  @unique
+  qrImageData String?  @db.LongText
+  hasCustomQr Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orders      PaymentOrder[]
 }
 
 model InvoiceAmountReservation {

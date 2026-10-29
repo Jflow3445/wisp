@@ -19,6 +19,7 @@ commands = ([] if (release / "node_modules/.bin/next").exists() else [["npm", "c
     ["node", "--env-file=.env.test", "--import", "tsx", "scripts/flight-integration.ts"],
     ["node", "--env-file=.env.test", "--import", "tsx", "scripts/flight-draw-integration.ts"],
     ["node", "--env-file=.env.test", "--import", "tsx", "scripts/flight-mlm-integration.ts"],
+    ["node", "--env-file=.env.test", "--import", "tsx", "scripts/flight-operations-integration.ts"],
     ["npm", "run", "typecheck"],
     ["npm", "run", "build"],
 ]

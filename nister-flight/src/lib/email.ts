@@ -100,6 +100,35 @@ export async function getEmailSettings(): Promise<EmailSettingsView> {
   const settings = await loadEmailSettingsWithSecret();
   return toView(settings);
 }
+function emailTransport(settings: EmailSettingsWithSecret) {
+  return nodemailer.createTransport({ host: settings.host, port: settings.port, secure: settings.secure, requireTLS: !settings.secure, connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 12000, auth: { user: settings.username, pass: settings.password } });
+}
+function isolatedEmailTest() {
+  try { return new URL(process.env.DATABASE_URL || "").pathname === "/nister_flight_test" && process.env.FLIGHT_TEST_SMTP_ENABLED !== "1"; } catch { return false; }
+}
+export async function verifyEmailTransport() {
+  if (isolatedEmailTest()) throw new Error("SMTP connection tests are disabled in the isolated test environment.");
+  const settings = await loadEmailSettingsWithSecret();
+  if (!settings.enabled || !settings.host || !settings.username || !settings.password || !settings.fromEmail) throw new Error("Enable SMTP and complete its settings first.");
+  const transport = emailTransport(settings);
+  try { await transport.verify(); return true; }
+  catch (error) {
+    throw new Error((error as { code?: string }).code === "EAUTH" ? "SMTP authentication failed. Check the username and password or app password." : "SMTP connection failed. Check the host, port, TLS mode and provider permissions.");
+  } finally { transport.close(); }
+}
+export async function saveEmailSettings(actorId: string, input: Omit<EmailSettingsView, "hasPassword"> & { password?: string; note: string }) {
+  const current = await loadEmailSettingsWithSecret(), password = input.password || current.password;
+  if (input.enabled && (!input.host || !input.username || !password || !input.fromEmail)) throw new Error("SMTP host, username, password and sender address are required when email is enabled.");
+  const secret = password ? encryptSecret(password) : null;
+  const values = { enabled: input.enabled, host: input.host, port: input.port, username: input.username, password: secret?.ciphertext || "", passwordKeyVersion: secret?.keyVersion ?? null, fromEmail: input.fromEmail, fromName: input.fromName, secure: input.secure };
+  await prisma.$transaction(async tx => {
+    if ((await tx.user.findUniqueOrThrow({ where: { id: actorId }, select: { role: true } })).role !== "ADMIN") throw new Error("Administrator access required.");
+    await tx.emailSetting.upsert({ where: { id: 1 }, create: { id: 1, ...values }, update: values });
+    await tx.flightEmail.updateMany({ where: { status: "PENDING" }, data: { nextAttemptAt: new Date() } });
+    await tx.flightAudit.create({ data: { actorId, action: "SMTP_SETTINGS_SAVED", subjectId: "email", details: { enabled: input.enabled, host: input.host, port: input.port, username: input.username, fromEmail: input.fromEmail, secure: input.secure, passwordChanged: !!input.password, note: input.note } } });
+  });
+  return getEmailSettings();
+}
 
 export async function sendEmail(input: {
   to: string;
@@ -109,6 +138,7 @@ export async function sendEmail(input: {
   headers?: Record<string, string | string[]>;
 }) {
   const settings = await loadEmailSettingsWithSecret();
+  if (isolatedEmailTest()) return false;
   if (!settings.enabled) {
     return false;
   }
@@ -117,24 +147,16 @@ export async function sendEmail(input: {
     return false;
   }
 
-  const transporter = nodemailer.createTransport({
-    host: settings.host,
-    port: settings.port,
-    secure: settings.secure,
-    auth: {
-      user: settings.username,
-      pass: settings.password,
-    },
-  });
+  const transporter = emailTransport(settings);
 
-  await transporter.sendMail({
+  try { const result = await transporter.sendMail({
     from: settings.fromName ? `${settings.fromName} <${settings.fromEmail}>` : settings.fromEmail,
     to: input.to,
     subject: input.subject,
     text: input.text,
     html: input.html,
     headers: input.headers,
-  });
+  }); if (Array.isArray(result.accepted) && result.accepted.length === 0) throw new Error("SMTP rejected the recipient."); } finally { transporter.close(); }
 
   return true;
 }
