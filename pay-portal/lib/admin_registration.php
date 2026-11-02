@@ -24,10 +24,14 @@ function admin_register_account(PDO $db,array $input,array $location): array {
     }
     $expiry=(new DateTimeImmutable('now',new DateTimeZone('UTC')))->modify('+3650 days')->setTime(23,59,59)->format('d M Y H:i:s');
     $insert=$db->prepare('INSERT INTO radcheck(username,attribute,op,value) VALUES (?,?,?,?)');
+    $unpaidGroup=$db->prepare("SELECT 1 FROM radusergroup WHERE username=? AND groupname='HS_NOPAID' LIMIT 1");
+    $insertUnpaidGroup=$db->prepare("INSERT INTO radusergroup(username,groupname,priority) VALUES (?,'HS_NOPAID',1)");
     foreach ($users as $user) {
       foreach (['Cleartext-Password'=>$password,'Expiration'=>$expiry,'Simultaneous-Use'=>'2'] as $attribute=>$value) $insert->execute([$user,$attribute,':=',$value]);
       $db->prepare("INSERT INTO radreply(username,attribute,op,value) VALUES (?,'Mikrotik-Address-List',':=','HS_NOPAID')")->execute([$user]);
-      $db->prepare("INSERT INTO radusergroup(username,groupname,priority) VALUES (?,'HS_NOPAID',1)")->execute([$user]);
+      // The production password-insert trigger may already have assigned this group.
+      $unpaidGroup->execute([$user]);
+      if (!$unpaidGroup->fetchColumn()) $insertUnpaidGroup->execute([$user]);
     }
     $db->prepare('INSERT INTO accounts(msisdn,balance_cents) VALUES (?,0)')->execute([$users[0]]);
     $parts=preg_split('/\s+/',$name,2);

@@ -1,0 +1,55 @@
+Admin registration duplicate unpaid-group fix — 2 November 2026 (UTC)
+
+The admin registration form reported "Registration could not be completed.
+Please try again." The Apache error log showed MariaDB error 1062 on the
+radusergroup insertion immediately before the generic registration failure.
+
+The production trg_nopaid_default_group trigger inserts HS_NOPAID when the first
+Cleartext-Password row is created. The registration transaction then inserted
+that same (username, groupname) pair, violating ux_radusergroup_user_group and
+rolling back the account. Earlier tests used tables without this trigger.
+
+The registration helper now checks whether the current transaction already has
+the unpaid group for each alias and inserts it only when absent. The canonical
+account lock, pre-existing-account rejection and transaction boundaries remain.
+No trigger, index, schema, account, wallet or payment policy was changed.
+Both aliases still receive unpaid access, a two-device limit and a zero balance.
+Optional welcome SMS continues to use the existing pause/gateway policy.
+
+Regression coverage now models the production unique index and password-insert
+trigger. The original implementation failed that fixture with the same duplicate
+constraint violation; the corrected implementation passes. The test also covers
+installations without the trigger and rollback of trigger-created group rows.
+
+Validation:
+- Full local regression suite: all 236 groups passed.
+- Registration suite: all 13 checks passed locally.
+- Exact deployed library: all 13 checks passed on production PHP using only an
+  in-memory SQLite fixture, without connecting the fixture to production data.
+- PHP syntax passed as the web-service user; deployed bytes match local source.
+- The last failed registration left no records in credentials, replies, groups,
+  wallet, userinfo or location-profile tables; the customer can retry.
+- Anonymous registration requests still redirect to the admin login.
+- Payment and Wi-Fi pages return HTTP 200; Apache/MariaDB/FreeRADIUS are active.
+
+Only /srv/nister-wisp-repo/pay-portal/lib/admin_registration.php was deployed.
+Original owner/mode were preserved. The admin route and runtime configuration
+hashes are unchanged. No real test subscriber was created and no SMS was sent.
+
+Protected server backup and exact-file rollback:
+/root/nister-admin-registration-fix-20261102-iirmpg_8/
+  manifest.json
+  admin_registration.php.before
+  rollback.py
+
+Rollback command (refuses to overwrite a later changed file):
+sudo -n python3 /root/nister-admin-registration-fix-20261102-iirmpg_8/rollback.py
+
+Original SHA256:
+150ed507478b9f7bd56e9c4ac6ef390e2a43007045bf715ff48fa5cfec339d50
+Deployed SHA256:
+8558719cdac3f4528b28343ae779209153a6f3d95d75ccda78304e398c36ccd6
+
+An authenticated customer submission was not performed by the agent because the
+customer's intended registration details were not supplied. Verification used
+the reproduced database-trigger failure, isolated fixtures and live health checks.

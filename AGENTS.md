@@ -3,6 +3,24 @@
 These rules are production boundaries. Do not weaken them while making UI,
 copy, captive portal, payment, or deployment changes.
 
+## Development Synchronization
+
+- Keep completed development work synchronized with
+  `https://github.com/Jflow3445/wisp.git`. The active branch is `commerce`.
+- Fetch the remote and check branch differences before starting work. Preserve
+  separate feature branches; do not merge them or force-push as routine syncing.
+- Commit and publish completed source changes, regression coverage and relevant
+  operations notes before reporting a development task complete. Verify that
+  the local branch and GitHub have the same commit and the working tree is clean.
+- If terminal Git authentication is unavailable, use the connected GitHub tools
+  when available, then reconcile the local checkout with the published commit.
+  Report any remaining synchronization failure explicitly.
+- Keep deployed fixes reflected in the source repository. Compare and back up
+  live variants before targeted deployment; do not overwrite the live tree as
+  part of synchronization.
+- Keep private keys, runtime configuration, credentials, customer data and
+  ignored operational material outside GitHub.
+
 ## Brand Expansion Boundary
 
 - Treat the current WISP implementation as a fully functional production
