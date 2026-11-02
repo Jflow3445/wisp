@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__.'/account_access.php';
 
 /** Atomic creation on the shared portal/RADIUS connection; no credit or paid access. */
-function admin_register_account(PDO $db,array $input,array $location): array {
+function admin_register_account(PDO $db,array $input,array $location,?callable $authorize=null): array {
   $phone=trim((string)($input['phone'] ?? ''));
   if (!preg_match('/^\+?[0-9 ()-]+$/D',$phone)) throw new InvalidArgumentException('invalid_phone');
   $users=account_access_users($phone);
@@ -22,6 +22,7 @@ function admin_register_account(PDO $db,array $input,array $location): array {
       $st=$db->prepare("SELECT 1 FROM $table WHERE $field IN ($ph) LIMIT 1"); $st->execute($users);
       if ($st->fetchColumn()) throw new RuntimeException('account_exists');
     }
+    if ($authorize) $authorize($db,$users[0]);
     $expiry=(new DateTimeImmutable('now',new DateTimeZone('UTC')))->modify('+3650 days')->setTime(23,59,59)->format('d M Y H:i:s');
     $insert=$db->prepare('INSERT INTO radcheck(username,attribute,op,value) VALUES (?,?,?,?)');
     $unpaidGroup=$db->prepare("SELECT 1 FROM radusergroup WHERE username=? AND groupname='HS_NOPAID' LIMIT 1");

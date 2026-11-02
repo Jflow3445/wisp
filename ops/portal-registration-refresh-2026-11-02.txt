@@ -1,0 +1,75 @@
+Nister portal registration and interface refresh - 2026-11-02
+
+Public registration: https://pay.nister.org/register.php
+Canonical signup API: https://api.nister.org/hotspot/signup.php
+
+An explicit global SMS pause now permits NEW-account registration without an
+OTP. Resuming SMS restores verification automatically. Account creation reads
+the current switch under a shared transaction lock; a stale form or forged
+client flag cannot retain the bypass. Provider outages and missing settings do
+not bypass verification. Password reset remains protected while SMS is paused.
+
+The public pay-site form and router captive form share atomic account creation,
+phone-bound single-use OTP tokens, rate limits and duplicate protection. Accounts
+start unpaid with zero wallet balance and the existing two-device policy. Welcome
+SMS delivery failures cannot turn a committed registration into a reported failure.
+
+Flight now has a prominent portal navigation entry, an overview card, and a
+persistent, nonmodal captive status card. Discovery still respects manager
+readiness and ghost mode. Stakes, payouts and play authorization are unchanged.
+
+Game management, withdrawals, SMS gateways and customer registration now share
+a responsive admin shell, consistent navigation and polished form/table styling.
+Existing action handlers, permissions, CSRF tokens and financial controls remain.
+
+Validation
+- Full regression suite: all 237 groups passed, including 29 self-registration,
+  13 admin-registration and 36 SMS gateway behavioral checks.
+- Ten browser cases passed across desktop and mobile using isolated MariaDB
+  fixtures: public/captive signup, SMS pause/resume, stale bypass rejection,
+  login, all four admin screens and Flight visibility controls.
+- PHP and JavaScript syntax checks passed. Candidate registration tests also
+  passed on the production PHP runtime using SQLite memory fixtures only.
+- Production customer accounts, payments and SMS switches were not changed for
+  verification; no customer wager, payment or welcome message was submitted.
+- After deployment, all 39 file hashes and protected configuration checks passed.
+  Fourteen public/admin route checks, pay/captive OTP CORS preflights, 42 deployed
+  SQLite registration checks, API host boundaries and the strict-host-key Winbox
+  tunnel check passed. Apache, MariaDB, FreeRADIUS and the public site are active.
+
+Deployment
+- 39 exact portal/API/source/runtime-helper/routing targets installed with preserved
+  ownership and modes. Live owner-platform additions in admin/index.php were
+  preserved by applying only the navigation change to the existing live file.
+- nister-org-web.service was restarted to discover the new static asset. Apache
+  was gracefully reloaded after its configuration test passed; the API endpoint
+  allowlist gained only signup_policy.php. Other API host boundaries remain.
+- The active API Alias resolves to /srv/nister-wisp-repo/api/hotspot. Both this
+  location and the legacy /var/www/api/hotspot copy received the three changed
+  API scripts. Confirm the active vhost Alias before future API deployments.
+- Four router files were uploaded and read back with matching SHA-256 hashes.
+  RouterOS sizes and modification times:
+    signup.js       7624 bytes   2026-11-02 09:03:42
+    spin-notice.js  3431 bytes   2026-11-02 09:03:47
+    signup.html    4711 bytes   2026-11-02 09:03:51
+    status.html   38415 bytes   2026-11-02 09:03:56
+- The router's existing status page was patched only for its discovery-script
+  cache version; the live status-page variant was preserved.
+- /etc/pay.env and /etc/nister/radius_db.php checksums remained unchanged.
+
+Private production backup and evidence (excluded from GitHub):
+  /root/nister-portal-upgrade-20261102-913a7db2
+  deploy-manifest.json, router-deployed.json, protected.json, verified.json
+
+Rollback: sudo python3 /root/nister-portal-upgrade-20261102-913a7db2/rollback.py
+This restores the prior exact files, ownership and router pages, reloads Apache
+after a configuration test and restarts the public-site service. A newly uploaded
+but unused router signup.js may remain after rollback without changing the
+restored page behavior.
+
+Browser suite:
+  powershell -NoProfile -ExecutionPolicy Bypass -File tests/spin/local.ps1 -Action Start
+  node nister-org/node_modules/@playwright/test/cli.js test -c tests/portal/playwright.config.cjs
+The fixture commands reject non-loopback connections and any schema other than
+nister_spin_test. They reset the isolated fixture; do not use against a database
+whose test history must be retained. PORTAL_TEST_BROWSER overrides the Edge path.

@@ -398,10 +398,10 @@ PHP
 )"
 assert_eq "radius_session_limit_is_two" "$session_limit_value" "2"
 
-signup_content="$(cat api/hotspot/signup.php)"
-assert_contains "signup_session_limit_is_two" "$signup_content" '$SIMULTANEOUS_USE = 2;'
-assert_not_contains "signup_session_limit_never_one" "$signup_content" '$SIMULTANEOUS_USE = 1;'
-assert_not_contains "signup_session_limit_never_three" "$signup_content" '$SIMULTANEOUS_USE = 3;'
+signup_content="$(cat pay-portal/lib/admin_registration.php)"
+assert_contains "signup_session_limit_is_two" "$signup_content" "'Simultaneous-Use'=>'2'"
+assert_not_contains "signup_session_limit_never_one" "$signup_content" "'Simultaneous-Use'=>'1'"
+assert_not_contains "signup_session_limit_never_three" "$signup_content" "'Simultaneous-Use'=>'3'"
 
 hotspot_errors_content="$(cat hotspot/errors.txt)"
 assert_contains "hotspot_user_session_limit_mentions_two_devices" "$hotspot_errors_content" 'user-session-limit = This account is already active on 2 devices. Log out on one device and try again.'
@@ -581,5 +581,7 @@ php tests/regression/sms_gateways.php
 pass "sms_gateway_failover_behavior"
 php tests/regression/admin_registration.php
 pass "admin_registration_behavior"
+php tests/regression/self_registration.php
+pass "self_registration_policy_behavior"
 
 printf 'All regression tests passed (%d).\n' "$pass_count"

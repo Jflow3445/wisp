@@ -258,6 +258,8 @@ files=(
   reset-password.html
   rlogin.html
   signup.html
+  signup.js
+  spin-notice.js
   status.html
   error.html
 )

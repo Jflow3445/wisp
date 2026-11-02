@@ -122,6 +122,7 @@ header('Content-Type: application/json; charset=utf-8');
 try {
   hotspot_require_paylib('referrals.php');
   hotspot_require_paylib('sms.php');
+  hotspot_require_paylib('registration.php');
 } catch (Throwable $e) {
   http_response_code(500);
   echo json_encode(['ok'=>false, 'error'=>'server_misconfigured'], JSON_UNESCAPED_SLASHES);
@@ -148,6 +149,11 @@ $ip = hotspot_client_ip();
 $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
 
 try {
+  if (!registration_policy()['otp_required']) {
+    if ($purpose==='signup') echo json_encode(['ok'=>true,'otp_required'=>false]);
+    else { http_response_code(503); echo json_encode(['ok'=>false,'error'=>'sms_paused']); }
+    exit;
+  }
   if ($purpose === 'password_reset' && !hotspot_otp_account_exists($username)) {
     http_response_code(404);
     echo json_encode(['ok'=>false, 'error'=>'account_not_found'], JSON_UNESCAPED_SLASHES);

@@ -107,7 +107,12 @@ For rollback, ghost/disable NEW play and keep the settlement worker running unti
 
 ## Captive announcement
 
-Both router status-page copies load the matching `spin-notice.js`. Authenticated users see a dismissible Flight notice once per account/device when play is available. It offers Try Flight and Keep browsing, supports keyboard dismissal, and does not redirect or force another captive login.
+Both router status-page copies load the matching `spin-notice.js`. Authenticated
+users see a persistent, non-modal Flight card while the game is visible. The pay
+portal also has a prominent Flight entry in its header, account menu and overview.
+The cards explain optional paid play and the risk of losing the stake. They do not
+redirect users, take focus or force another captive login. Existing ghost-mode,
+manager-readiness, age/consent and financial controls remain authoritative.
 
 The notice reads only public feature availability from `https://pay.nister.org/spin-feature.php`. Existing hotspot API actions/candidates remain on `api.nister.org` or permitted router-local routes. The 2026-10-28 rollout uploaded the notice and the two-line status-page hook to the live router, verified by exact content hash, byte size and last-modified timestamp. The public Next.js runtime mirror was updated separately from the source checkout, with its existing service restarted to discover the new static asset. No VPN, Winbox, cookie-policy or forensic retention changes are needed.
 

@@ -1312,6 +1312,8 @@ function initMenu(){
   });
   let saved = 'overview';
   try { saved = localStorage.getItem('admin_section') || 'overview'; } catch (e) {}
+  const requested = new URLSearchParams(location.search).get('section');
+  if (['overview','billing','plans','settings','alerts','users','owners','forensics','all'].includes(requested)) saved = requested;
   setSection(saved);
 }
 

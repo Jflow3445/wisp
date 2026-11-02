@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/../lib/admin_auth.php';
 $ENV=admin_boot(); admin_require_login();
+require_once __DIR__.'/../views/admin-shell.php';
 require_once __DIR__.'/../lib/db.php';
 require_once __DIR__.'/../lib/radius.php';
 require_once __DIR__.'/../lib/location.php';
@@ -38,16 +39,15 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 $notice=(string)($_SESSION['registration_notice'] ?? ''); unset($_SESSION['registration_notice']);
 function reg_h($s): string { return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8'); }
 ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Register user · Nister Admin</title><link rel="stylesheet" href="/assets/admin-operations.css"></head><body><main class="registration">
-<nav><a href="/admin/">← Admin portal</a><a href="/admin/sms.php">SMS delivery</a></nav><h1>Register a user</h1>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Register user · Nister Admin</title><link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9"><link rel="stylesheet" href="/assets/admin-shell.css?v=20261102"></head><body class="admin-console ops-page ops-register"><?php admin_shell_start('register','Register a user','Create an unpaid account when assisting a customer, using the same access and billing rules.',$ENV); ?>
 <?php if ($notice): ?><p class="notice" role="status"><?=reg_h($notice)?></p><?php endif; ?>
 <?php if ($error): ?><p class="error" role="alert"><?=reg_h($error)?></p><?php endif; ?>
 <p>Create an account directly when assisting a customer. Admin registration does not require an SMS OTP. The account starts unpaid with a zero balance; normal plan and payment rules apply.</p>
-<section><form method="post"><input type="hidden" name="_csrf" value="<?=reg_h(admin_csrf_token())?>">
+<section class="ops-form-grid"><form method="post"><input type="hidden" name="_csrf" value="<?=reg_h(admin_csrf_token())?>">
 <label for="name">Full name</label><input id="name" name="name" autocomplete="name" required minlength="2" maxlength="80" value="<?=reg_h($_POST['name'] ?? '')?>">
 <label for="phone">Ghana phone number</label><input id="phone" name="phone" type="tel" autocomplete="tel" required placeholder="0241234567" value="<?=reg_h($_POST['phone'] ?? '')?>">
 <label for="password">Wi-Fi password</label><input id="password" name="password" type="password" autocomplete="new-password" required minlength="6" maxlength="128"><p class="hint">Give this password to the user securely. Passwords are never included in welcome SMS.</p>
 <label for="location_id">Site</label><select id="location_id" name="location_id" required><?php foreach ($locations as $loc): if (empty($loc['active'])) continue; ?><option value="<?=(int)$loc['id']?>" <?=((int)($_POST['location_id'] ?? location_default_id())===(int)$loc['id']) ? 'selected' : ''?>><?=reg_h($loc['name'])?></option><?php endforeach; ?></select>
 <label class="check"><input type="checkbox" name="welcome_sms" value="1" <?=!empty($_POST['welcome_sms']) ? 'checked' : ''?>> Send a welcome SMS using the enabled gateways</label>
-<p class="hint">SMS pause and gateway controls also apply here. A failed or paused welcome SMS does not cancel registration.</p><button type="submit">Create unpaid account</button></form></section>
-</main></body></html>
+<p class="hint">SMS pause and gateway controls also apply here. A failed or paused welcome SMS does not cancel registration.</p><button type="submit">Create unpaid account</button></form><aside><h3>Ready for their first connection</h3><p>The customer uses this phone number and password for Wi-Fi and their Nister account.</p><h3>Access starts unpaid</h3><p>The wallet starts at GHS 0.00. A plan purchase is still required for internet access, with up to two devices per account.</p><h3>Welcome message</h3><p>An optional welcome SMS follows your delivery settings. A paused or failed message never cancels the new account.</p></aside></section>
+<?php admin_shell_end(); ?></body></html>

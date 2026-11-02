@@ -39,7 +39,8 @@ copy, captive portal, payment, or deployment changes.
 - `api.nister.org` is the canonical host for hotspot API services:
   signup, OTP, password reset/change, autopost bridges, and hotspot status.
 - `pay.nister.org` is the payment and admin portal. It serves payment/config
-  surfaces only. Do not use it as a captive API fallback; fallback hosts must
+  surfaces and public account-registration pages. Its public signup uses the
+  shared unpaid-account service. Do not use it as a captive API fallback; fallback hosts must
   implement the same API contract as the primary host.
 - `wifi.nister.org` is the public Wi-Fi site and CAPPORT `/api.json` host. It is
   not a backend API host; public `wifi.nister.org/hotspot-api/status.php` can be
@@ -95,6 +96,18 @@ code lives under `pay-portal/`, but the public hotspot API contract remains
   reconciliation.
 - Pending Paystack attempts that verify as `failed`, `reversed`, or `abandoned`
   should be closed as declined, not left in the manual deposit review queue.
+
+## Registration and SMS
+
+- An explicit global SMS pause allows only NEW-account signup without an OTP.
+  Resuming SMS automatically requires phone verification again. Recheck this
+  setting on the server at account creation; client flags never authorize a bypass.
+- Provider failures, missing gateways and settings-read failures must not disable
+  verification. Password resets and existing-account access retain verification.
+- Public pay-site and captive signup share atomic unpaid-account creation,
+  duplicate protection, zero starting balance and the two-device policy.
+- Keep game discovery subject to the existing visibility/ghost-mode and manager
+  readiness controls. Presentation changes must not alter stakes, payouts or consent.
 
 ## Required Checks
 

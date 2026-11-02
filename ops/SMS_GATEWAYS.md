@@ -4,8 +4,10 @@ Open **https://pay.nister.org/admin/sms.php** from the admin menu.
 
 - **Pause all SMS** stops new sends from OTP, signup, payment messages, quota/expiry
   notifications and admin broadcasts. Already accepted messages cannot be recalled.
-  Paused messages are skipped; they are not held for a later bulk replay. OTP-based
-  signup and password reset cannot finish while SMS is paused.
+  Paused messages are skipped; they are not held for a later bulk replay. New
+  accounts can register without an OTP during an explicit global pause. Resuming
+  delivery automatically restores OTP verification for new signup. Password
+  resets still require verification; missing or failed gateways never bypass it.
 - Each gateway has its own enable switch, API key, approved Sender ID and priority.
   Lower priority numbers are tried first. Disabled or incomplete gateways are not
   contacted. A blank key field preserves a saved key; removal is explicit. Keys are
@@ -45,6 +47,13 @@ Reference: [Arkesel API](https://docs-staging.arkesel.com/),
 [mNotify API](https://developer.bms.africa/).
 
 ## Registering users
+
+Public signup is available at **https://pay.nister.org/register.php**, including
+from outside the Wi-Fi network. Login and account pages link to it. Captive signup
+and the public form share atomic unpaid-account creation and the same SMS policy.
+The setting is checked again inside the creation transaction. Forged browser flags
+and stale forms cannot bypass verification after SMS is resumed. Rate limits,
+duplicate-account protection and the ordinary payment/device rules apply.
 
 Open **https://pay.nister.org/admin/register.php**. Enter the customer's name,
 Ghana phone number, Wi-Fi password and site. Admin registration does not require

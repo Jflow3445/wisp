@@ -47,6 +47,7 @@ done
 expect_code "api_status_reachable" 400 GET "${BASE}/hotspot-api/status.php" -H 'Origin: null'
 expect_code "otp_send_preflight" 204 OPTIONS "${BASE}/hotspot/otp_send.php" -H 'Origin: https://wifi.nister.org'
 expect_code "otp_verify_preflight" 204 OPTIONS "${BASE}/hotspot/otp_verify.php" -H 'Origin: https://wifi.nister.org'
+expect_code "signup_policy_reachable" 200 GET "${BASE}/hotspot/signup_policy.php"
 expect_code "signup_endpoint_reachable" 303 GET "${BASE}/hotspot/signup.php"
 
 printf 'API host boundary checks passed for %s.\n' "$API_HOST"

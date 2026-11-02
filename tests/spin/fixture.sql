@@ -4,7 +4,8 @@ CREATE TABLE wallet_promo_grants(id INT AUTO_INCREMENT PRIMARY KEY,msisdn VARCHA
 CREATE TABLE purchases(id BIGINT AUTO_INCREMENT PRIMARY KEY,msisdn VARCHAR(32),location_id INT,plan_code VARCHAR(64),price_cents INT,status VARCHAR(32),created_at DATETIME DEFAULT CURRENT_TIMESTAMP,activated_at DATETIME,expires_at DATETIME) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 CREATE TABLE radcheck(id INT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),attribute VARCHAR(64),op VARCHAR(2),value VARCHAR(253),UNIQUE KEY uq_radcheck(username,attribute)) ENGINE=InnoDB;
 CREATE TABLE radreply(id INT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),attribute VARCHAR(64),op VARCHAR(2),value VARCHAR(253)) ENGINE=InnoDB;
-CREATE TABLE radusergroup(id INT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),groupname VARCHAR(64),priority INT) ENGINE=InnoDB;
+CREATE TABLE radusergroup(id INT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),groupname VARCHAR(64),priority INT,UNIQUE KEY ux_radusergroup_user_group(username,groupname)) ENGINE=InnoDB;
+CREATE TABLE userinfo(id INT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(128),firstname VARCHAR(200),lastname VARCHAR(200)) ENGINE=InnoDB;
 CREATE TABLE radgroupreply(id INT AUTO_INCREMENT PRIMARY KEY,groupname VARCHAR(64),attribute VARCHAR(64),op VARCHAR(2),value VARCHAR(253)) ENGINE=InnoDB;
 CREATE TABLE radgroupcheck(id INT AUTO_INCREMENT PRIMARY KEY,groupname VARCHAR(64),attribute VARCHAR(64),op VARCHAR(2),value VARCHAR(253)) ENGINE=InnoDB;
 CREATE TABLE radacct(radacctid BIGINT AUTO_INCREMENT PRIMARY KEY,username VARCHAR(64),acctsessionid VARCHAR(64),callingstationid VARCHAR(64),framedipaddress VARCHAR(64),acctstarttime DATETIME,acctstoptime DATETIME,acctupdatetime DATETIME,acctinputoctets BIGINT,acctoutputoctets BIGINT) ENGINE=InnoDB;

@@ -151,6 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
     <h1>Welcome back</h1>
     <div class="muted">Enter the phone number and password you use on the hotspot login page.</div>
+    <?php if ($msg === 'registered'): ?><div class="msg ok">Your account is ready. Sign in with your phone number and the password you chose.</div><?php endif; ?>
     <?php if ($msg === 'logged_out'): ?>
       <div class="msg ok">You have logged out of the pay portal.</div>
     <?php endif; ?>
@@ -174,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
       <button class="btn" type="submit">Open my portal</button>
     </form>
-    <div class="links">
+    <div class="links"><p>New to Nister? <a href="/register.php<?= $locationCode!=='' ? '?location_code='.rawurlencode($locationCode) : '' ?>">Create an account</a></p>
       <a href="/portal.php">Return to pay portal</a>
       <span aria-hidden="true"> | </span>
       <a href="https://wifi.nister.org/">Get online help</a>

@@ -19,12 +19,12 @@ $minTopupCents = (int)$get('TOPUP_MIN_CENTS', 3000);
 if ($minTopupCents <= 0) $minTopupCents = 3000;
 $loggedIn = user_logged_in();
 if ($loggedIn) require_once __DIR__.'/lib/withdrawal_http.php';
-$spinVisible = false;
+$spinVisible = false; $spinCanPlay = false;
 // Additive game discovery fails closed without affecting ordinary WISP billing.
 try {
   require_once __DIR__.'/lib/spin/service.php';
   $spinService = new SpinService($PDO, $ENV);
-  $spinVisible = $spinService->availability()['visible'];
+  $spinAvailability=$spinService->availability(); $spinVisible=$spinAvailability['visible']; $spinCanPlay=$spinAvailability['can_play'];
   if ($loggedIn) $spinService->consolidateCredits(normalize_msisdn(user_msisdn()));
 } catch (Throwable $e) { /* Optional module may not be migrated on this deployment. */ }
 $userMsisdn = $loggedIn ? user_msisdn_display() : '';
@@ -40,7 +40,7 @@ if ($siteCode !== null && $siteCode !== '') {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nister Wi-Fi | Manage Access</title>
-  <?php if ($spinVisible): ?><script src="/assets/spin-discovery.js?v=1" defer></script><?php endif; ?>
+  <?php if ($spinVisible): ?><script src="/assets/spin-discovery.js?v=20261102" defer></script><?php endif; ?>
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -245,6 +245,7 @@ if ($siteCode !== null && $siteCode !== '') {
   </style>
   <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
   <?php if ($loggedIn): ?><link rel="stylesheet" href="/assets/withdrawals.css?v=2"><script src="/assets/withdrawals.js?v=3" defer></script><?php endif; ?>
+  <link rel="stylesheet" href="/assets/portal-discovery.css?v=20261102">
 </head>
 <body class="pay-portal">
   <div class="page user-page">
@@ -262,11 +263,13 @@ if ($siteCode !== null && $siteCode !== '') {
         <a class="active" aria-current="page" href="https://pay.nister.org/">Manage Access</a>
       </nav>
       <nav class="user-top-actions" aria-label="Account actions">
+        <?php if ($spinVisible): ?><a class="btn flight-nav" data-spin-discovery href="/spin.php">Flight game ↗</a><?php endif; ?>
         <a class="btn ghost" data-menu-link href="#plans_section">Plans</a>
         <a class="btn ghost" data-menu-link href="#activity_section">Activity</a>
         <button class="btn primary" id="topup_now" type="button"<?= $loggedIn ? '' : ' disabled' ?>>Top up</button>
         <?php if (!$loggedIn): ?>
           <a class="btn ghost" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a>
+          <a class="btn ghost" href="/register.php">Create account</a>
         <?php else: ?>
           <a class="btn ghost" href="/logout.php">Logout</a>
         <?php endif; ?>
@@ -282,7 +285,7 @@ if ($siteCode !== null && $siteCode !== '') {
             <a class="btn" data-menu-link href="#wallet_section">Wallet</a>
             <a class="btn" data-menu-link href="#plans_section">Plans</a>
             <a class="btn" data-menu-link href="#rewards_section">Rewards</a>
-            <?php if ($spinVisible): ?><a class="btn" data-spin-discovery href="/spin.php">Flight</a><?php endif; ?>
+            <?php if ($spinVisible): ?><a class="btn flight-menu" data-spin-discovery href="/spin.php">Flight game ↗</a><?php endif; ?>
             <a class="btn" data-menu-link href="#activity_section">Activity</a>
           </nav>
         </div>
@@ -312,6 +315,7 @@ if ($siteCode !== null && $siteCode !== '') {
               <a class="btn ghost" data-menu-link href="#plans_section">Choose a plan</a>
               <?php if (!$loggedIn): ?>
                 <a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login to your account</a>
+                <a class="btn signup-link" href="/register.php">Create an account</a>
               <?php endif; ?>
             </div>
             <div class="trust">
@@ -319,6 +323,7 @@ if ($siteCode !== null && $siteCode !== '') {
               <div class="trust-item">Plans activate instantly</div>
               <div class="trust-item">WhatsApp support</div>
             </div>
+            <?php require __DIR__.'/views/flight-promo.php'; ?>
           </div>
           <div class="hero-cards">
             <div class="card overview">

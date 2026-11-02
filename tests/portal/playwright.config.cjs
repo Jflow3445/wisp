@@ -1,0 +1,2 @@
+const {defineConfig}=require('../../nister-org/node_modules/@playwright/test');
+module.exports=defineConfig({testDir:'.',testMatch:'ui.spec.cjs',timeout:60000,workers:1,reporter:'list',outputDir:'../../artifacts/spin/portal-results',use:{baseURL:'http://127.0.0.1:8037',launchOptions:{executablePath:process.env.PORTAL_TEST_BROWSER||'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'},trace:'retain-on-failure'},projects:[{name:'desktop',use:{viewport:{width:1440,height:1080}}},{name:'mobile',use:{viewport:{width:390,height:844},isMobile:true,hasTouch:true}}]});

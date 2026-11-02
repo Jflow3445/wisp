@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/../lib/admin_auth.php';
 $ENV=admin_boot(); admin_require_login();
+require_once __DIR__.'/../views/admin-shell.php';
 require_once __DIR__.'/../lib/sms.php';
 header('Cache-Control: no-store');
 $notice=''; $error='';
@@ -11,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     $action=(string)($_POST['action'] ?? '');
     if ($action==='pause' || $action==='resume') {
       settings_set('SMS_ENABLED',$action==='resume' ? '1' : '0');
-      $notice=$action==='resume' ? 'SMS delivery resumed.' : 'All SMS delivery paused. OTP requests cannot complete while delivery is paused.';
+      $notice=$action==='resume' ? 'SMS delivery resumed. New registrations require phone verification again.' : 'SMS delivery paused. New accounts can register without an SMS code; password resets still require verification.';
     } elseif ($action==='save') {
       sms_admin_save_gateways($_POST); $notice='Gateway settings saved.';
     } elseif ($action==='probe') {
@@ -32,13 +33,11 @@ function sms_h($s): string { return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-
 function sms_admin_time(int $epoch): string { return $epoch>0 ? gmdate('Y-m-d H:i:s',$epoch).' UTC' : '—'; }
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SMS gateways · Nister Admin</title><link rel="stylesheet" href="/assets/admin-operations.css"></head><body><main>
-<nav><a href="/admin/">← Admin portal</a><a href="/admin/register.php">Register a user</a></nav>
-<h1>SMS delivery</h1>
+<title>SMS gateways · Nister Admin</title><link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9"><link rel="stylesheet" href="/assets/admin-shell.css?v=20261102"></head><body class="admin-console ops-page ops-sms"><?php admin_shell_start('sms','SMS gateways','Manage message delivery, provider priority and gateway health in one place.',$ENV); ?>
 <?php if ($notice): ?><p class="notice" role="status"><?=sms_h($notice)?></p><?php endif; ?>
 <?php if ($error): ?><p class="error" role="alert"><?=sms_h($error)?></p><?php endif; ?>
 <section><h2><?= $status['enabled'] ? 'Delivery is on' : 'Delivery is paused' ?></h2>
-<p>Pause stops new SMS attempts everywhere: signup, password reset, payments, quota alerts and admin messages. Messages already accepted by a provider cannot be recalled. Paused messages are skipped and are not queued for later delivery.</p>
+<p>Pausing stops new SMS attempts across Nister. New users can still create an account without a code while delivery is paused. Resuming automatically restores phone verification for new registrations. Password resets continue to require verification. Messages already accepted by a provider cannot be recalled. Paused messages are skipped and are not queued for later delivery.</p>
 <form method="post"><input type="hidden" name="_csrf" value="<?=sms_h($csrf)?>"><button name="action" value="<?=$status['enabled'] ? 'pause' : 'resume'?>"><?=$status['enabled'] ? 'Pause all SMS' : 'Resume SMS delivery'?></button></form></section>
 <h2>Gateways</h2><p>Enable the gateways to use and set their priority (1 goes first). A rejected request falls back to the next available gateway. Failures temporarily put a gateway on cooldown; it is retried automatically afterward. A timeout has an uncertain outcome, so that message is not resent through another gateway. Later messages can use the backup.</p>
 <form method="post" autocomplete="off"><input type="hidden" name="_csrf" value="<?=sms_h($csrf)?>"><input type="hidden" name="action" value="save">
@@ -52,7 +51,7 @@ function sms_admin_time(int $epoch): string { return $epoch>0 ? gmdate('Y-m-d H:
 <label for="key_<?=sms_h($id)?>">API key</label><input id="key_<?=sms_h($id)?>" name="key_<?=sms_h($id)?>" type="password" autocomplete="new-password" maxlength="512" placeholder="<?=$g['has_key'] ? 'Saved — leave blank to keep' : 'Enter API key'?>">
 <label class="check"><input type="checkbox" name="clear_key_<?=sms_h($id)?>" value="1"> Remove saved API key</label>
 <dl><dt>Last check</dt><dd><?=sms_h(sms_admin_time($g['last_checked']))?></dd><dt>Last accepted SMS</dt><dd><?=sms_h(sms_admin_time($g['last_accepted']))?></dd><dt>Last issue</dt><dd><?=sms_h($g['last_error'] ?? '—')?></dd><dt>Retry after</dt><dd><?=sms_h(sms_admin_time($g['retry_after']))?></dd></dl>
-</section><?php endforeach; ?></div><button type="submit">Save gateways</button></form>
+</section><?php endforeach; ?></div><div class="ops-actionbar"><p>Blank API keys keep the saved credentials.</p><button type="submit">Save gateway settings</button></div></form>
 <section><h2>Check gateway connections</h2><p>Balance checks use saved settings and do not send SMS. Only enabled, configured gateways are checked. Gateway acceptance does not guarantee delivery to the recipient.</p>
 <?php foreach ($status['gateways'] as $g): ?><form method="post" class="inline"><input type="hidden" name="_csrf" value="<?=sms_h($csrf)?>"><input type="hidden" name="provider" value="<?=sms_h($g['id'])?>"><button name="action" value="probe" <?=!$g['enabled'] || !$g['configured'] ? 'disabled' : ''?>>Check <?=sms_h($g['id'])?></button></form><?php endforeach; ?></section>
-</main></body></html>
+<?php admin_shell_end(); ?></body></html>

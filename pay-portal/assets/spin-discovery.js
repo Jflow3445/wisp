@@ -1,11 +1,14 @@
-'use strict';
-(() => {
-  const links = document.querySelectorAll('[data-spin-discovery]'); if (!links.length) return;
-  async function update() {
-    if (document.hidden) return;
-    try { const response = await fetch('/spin-feature.php', { cache: 'no-store', credentials: 'same-origin' }); const feature = await response.json(); if (!feature.visible) { links.forEach(link => link.remove()); clearInterval(timer); } }
-    catch (_) { links.forEach(link => link.remove()); clearInterval(timer); }
+(function(){
+  'use strict';
+  var nodes=document.querySelectorAll('[data-spin-discovery]');if(!nodes.length)return;
+  function update(){
+    if(document.hidden)return;
+    fetch('/spin-feature.php',{cache:'no-store',credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('unavailable');return r.json();}).then(function(feature){
+      nodes.forEach(function(node){node.hidden=!feature.visible;});
+      document.querySelectorAll('.flight-availability').forEach(function(node){node.textContent=feature.can_play?'Ready when you are':'New flights temporarily paused';});
+    }).catch(function(){nodes.forEach(function(node){node.hidden=true;});});
   }
-  const timer = setInterval(update, 15000);
-  document.addEventListener('visibilitychange', update);
+  var timer=null;
+  function resume(){update();if(!timer)timer=setInterval(update,15000);}
+  document.addEventListener('visibilitychange',update);window.addEventListener('pageshow',resume);window.addEventListener('pagehide',function(){clearInterval(timer);timer=null;});resume();
 })();
