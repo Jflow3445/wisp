@@ -5,7 +5,7 @@ $ENV = user_boot();
 
 $err = '';
 $msg = (string)($_GET['msg'] ?? '');
-$prefill = (string)($_GET['username'] ?? $_GET['user'] ?? $_GET['msisdn'] ?? '');
+$prefill = (string)($_POST['msisdn'] ?? $_GET['username'] ?? $_GET['user'] ?? $_GET['msisdn'] ?? '');
 $prefill = msisdn_display(normalize_msisdn($prefill)) ?: $prefill;
 $locationCode = location_normalize_code((string)($_GET['location_code'] ?? $_GET['site_code'] ?? $_POST['location_code'] ?? ''));
 if ($locationCode === '') {
@@ -106,6 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .msg.ok{background:#f1fbf7;border:1px solid #bfe8d7;color:#0f5132}
     .links{margin-top:14px;text-align:center;font-size:.9rem}
     .links a{color:var(--accent);text-decoration:none;font-weight:600}
+    .password-recovery{margin:4px 0 12px;text-align:right;font-size:.9rem}
+    .password-recovery a{display:inline-block;padding:8px 0;color:var(--accent)}
   </style>
   <link rel="stylesheet" href="/assets/premium.css?v=20261103">
 </head>
@@ -121,6 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
     <h1>Sign in</h1>
 <?php if ($msg === 'registered'): ?><div class="msg ok">Your account is ready.</div><?php endif; ?>
+    <?php if ($msg === 'password_reset'): ?><div class="msg ok" role="status">Password reset. Sign in with your new password.</div><?php endif; ?>
     <?php if ($msg === 'logged_out'): ?>
       <div class="msg ok">Signed out.</div>
     <?php endif; ?>
@@ -142,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <button class="password-toggle" type="button" data-password-toggle="password" aria-controls="password" aria-pressed="false">Show</button>
         </div>
       </div>
+      <p class="password-recovery"><a id="reset_link" href="/reset-password.php<?= ($prefill !== '' || $locationCode !== '') ? '?'.htmlspecialchars(http_build_query(array_filter(['username'=>$prefill,'location_code'=>$locationCode], static fn($value) => $value !== '')), ENT_QUOTES, 'UTF-8') : '' ?>">Forgot password?</a></p>
       <button class="btn" type="submit">Open my portal</button>
     </form>
     <div class="links"><p>New to Nister? <a href="/register.php<?= $locationCode!=='' ? '?location_code='.rawurlencode($locationCode) : '' ?>">Create an account</a></p>
@@ -153,6 +157,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </main>
   <script>
     (function(){
+      var recovery = document.getElementById('reset_link');
+      if (recovery) recovery.addEventListener('click', function(){
+        var phone = document.getElementById('msisdn');
+        var destination = new URL(recovery.href, location.href);
+        if (phone && phone.value.trim()) destination.searchParams.set('username', phone.value.trim());
+        else destination.searchParams.delete('username');
+        recovery.href = destination.href;
+      });
       var btn = document.querySelector('[data-password-toggle]');
       if (!btn) return;
       var input = document.getElementById(btn.getAttribute('data-password-toggle'));

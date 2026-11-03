@@ -31,6 +31,11 @@ Use one page title per visible task, persistent field labels, visible keyboard
 focus and comfortable touch targets. Avoid placeholder-only names, ambiguous
 icon buttons, decorative status claims, moving buttons and unnecessary motion.
 Use optional factual metadata only where it identifies the record or decision.
+Customer password sign-in must expose recovery on that surface. Verify the
+click-through from both the account portal and captive login. Public users must
+reach a public recovery form; router-only URLs cannot serve that purpose. WISP
+recovery shares the captive form and existing verified-OTP API, including SMS
+pause handling and fixed return destinations.
 Menu text must maintain at least 4.5:1 contrast in its normal and selected states.
 Changing a surface color also requires checking every foreground on that surface.
 Parse styles and inspect rendered screens: a successful build alone cannot catch
@@ -45,13 +50,17 @@ replacement across nested blocks can remove working controls or closing braces.
 | Router captive login, signup, reset, status, logout, results and redirects | `hotspot/*.html`, `hotspot/common.css`; copy changed assets to `nister-org/public/router-sync/` |
 | Public coverage and network sites | `nister-org/src/components`, `nister-org/src/app/globals.css` |
 | Static public fallback | `wifi-portal/index.html` |
-| Customer portal and signed-out account pages | `pay-portal/index.php`, `login.php`, `register.php`, `assets/` |
+| Customer portal and signed-out account pages | `pay-portal/index.php`, `login.php`, `register.php`, `reset-password.php`, `assets/` |
 | WISP administration and game management | `pay-portal/admin/`, `views/admin-shell.php`, `views/spin*.php`, shared assets |
 | Flight public, account, recovery and administration | `nister-flight/src/components/flight`, route pages and `flight.css` |
 | Marketplace storefront, vendor, admin and mobile roles | `commerce-platform/apps/`; keep its services and WISP isolated |
 
 Vendor libraries, router XML protocol responses and backend endpoints are not
 presentation templates. Do not rewrite them to enforce a visual preference.
+
+Account recovery renders the committed captive recovery template, stylesheet and
+configuration script. Keep `hotspot/reset-password.html`, `common.css` and
+`config.js` beside `pay-portal/` when packaging or deploying that portal.
 
 ## Required review
 

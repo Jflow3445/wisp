@@ -58,6 +58,60 @@ test('captive signup respects SMS pause while password reset stays protected',as
   const created=await page.request.post('/hotspot/signup.php',{form:{name:'Captive Fixture',username:'0190000003',password:'fixture-password',link_login_only:'http://192.168.88.1/login'},headers:{Origin:'https://wifi.nister.org'},maxRedirects:0});
   expect(created.status()).toBe(200);expect(await created.text()).toContain('http://192.168.88.1/login.html');expect(fixture('account','233190000003').balance).toBe(0);
 });
+
+test('account and captive logins expose working password recovery pages',async({page},info)=>{
+  await page.goto('/login.php?location_code=default');
+  await page.getByLabel('Phone number',{exact:true}).fill('0201234567');
+  await expect(page.getByRole('link',{name:'Forgot password?'})).toBeInViewport();
+  await page.getByRole('link',{name:'Forgot password?'}).click();
+  await expect(page).toHaveURL(/reset-password\.php\?.*username=0201234567/);
+  await expect(page.getByRole('heading',{level:1,name:'Reset password',exact:true})).toBeVisible();
+  await expect(page.locator('#user')).toHaveValue('0201234567');
+  await expect(page.locator('[name=recovery_context]')).toHaveValue('portal');
+  await expect(page.locator('#login_link')).toHaveAttribute('href',/\/login\.php\?location_code=/);
+  await page.getByRole('button',{name:'Send code',exact:true}).click();
+  await expect(page.locator('#banner')).toContainText('SMS delivery is paused');
+  await screenshot(page,'account-recovery-paused',info);
+  await page.goto('/captive/login.html');
+  await page.getByRole('link',{name:'Reset password',exact:true}).click();
+  await expect(page).toHaveURL(/\/captive\/reset-password\.html/);
+  await expect(page.locator('[name=recovery_context]')).toHaveCount(0);
+  await expect(page.locator('#login_link')).toHaveAttribute('href',/^login\.html/);
+  await expect(page.getByLabel('New password',{exact:true})).toBeVisible();
+  await screenshot(page,'captive-recovery',info);
+});
+
+test('password recovery rejects missing and forged verification without changing credentials',async({page})=>{
+  const response=await page.goto('/reset-password.php?username=0201234567');
+  expect(response.headers()['cache-control']).toContain('no-store');
+  await page.locator('#pass').fill('changed-fixture-password');await page.locator('#pass2').fill('changed-fixture-password');
+  await page.getByRole('button',{name:'Reset password',exact:true}).click();
+  await expect(page.locator('#banner')).toContainText('Verify your phone');
+  expect(fixture('reset-state').passwords_match).toBe(true);
+  const failed=await page.request.post('/hotspot/reset_password.php',{form:{recovery_context:'portal',username:'0201234567',password:'changed-fixture-password',password2:'changed-fixture-password',otp_token:'f'.repeat(64),return_url:'https://example.invalid/',location_code:'default'}});
+  expect(failed.status()).toBe(400);expect(await failed.text()).toContain('https://pay.nister.org/reset-password.php?username=0201234567');
+  expect(await failed.text()).not.toContain('https://example.invalid/');expect(fixture('reset-state').passwords_match).toBe(true);
+});
+
+test('verified recovery changes the shared password once and returns to account sign-in',async({page},info)=>{
+  const {code}=fixture('reset-code'),before=fixture('reset-state');
+  await page.goto('/reset-password.php?username=0201234567&location_code=default');
+  await page.locator('#otp_code').fill(code);await page.getByRole('button',{name:'Verify',exact:true}).click();
+  await expect(page.locator('#otp_status')).toHaveText('Phone number verified.');
+  const token=await page.locator('#otp_token').inputValue();expect(token).not.toBe('');
+  await page.locator('#pass').fill('changed-fixture-password');await page.locator('#pass2').fill('changed-fixture-password');
+  await page.getByRole('button',{name:'Reset password',exact:true}).click();
+  await expect(page.getByRole('heading',{level:1,name:'Password reset',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Sign in',exact:true})).toHaveAttribute('href',/^https:\/\/pay\.nister\.org\/login\.php\?username=0201234567&msg=password_reset&location_code=default$/);
+  const after=fixture('reset-state','changed-fixture-password');expect(after.passwords_match).toBe(true);expect(after.balance).toBe(before.balance);expect(after.groups).toEqual(before.groups);expect(after.consumed).toBe(1);
+  const replay=await page.request.post('/hotspot/reset_password.php',{form:{recovery_context:'portal',username:'0201234567',password:'replayed-fixture-password',password2:'replayed-fixture-password',otp_token:token}});
+  expect(replay.status()).toBe(400);expect(fixture('reset-state','changed-fixture-password').passwords_match).toBe(true);
+  await page.goto('/login.php?username=0201234567&msg=password_reset');await expect(page.locator('.msg.ok')).toContainText('Sign in with your new password');
+  await page.locator('#password').fill('test-customer-password');await page.getByRole('button',{name:'Open my portal',exact:true}).click();await expect(page.locator('.msg.err')).toContainText('Login failed');
+  await expect(page.locator('#msisdn')).toHaveValue('0201234567');
+  await page.locator('#password').fill('changed-fixture-password');await Promise.all([page.waitForURL(/portal\.php/),page.getByRole('button',{name:'Open my portal',exact:true}).click()]);
+  await screenshot(page,'account-after-recovery',info);
+});
 test('four admin modules share navigation and fit desktop and mobile',async({page},info)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));await admin(page);
   for(const [url,heading,key] of [['/admin/sms.php','SMS gateways','sms'],['/admin/register.php','Register a user','register'],['/admin/withdrawals.php','Withdrawals','withdrawals'],['/admin/spin.php','Game management','game']]){

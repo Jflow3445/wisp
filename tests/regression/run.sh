@@ -257,6 +257,17 @@ PHP
 assert_contains "reset_password_falls_back_to_router_relative_page" "$reset_password_fallback" "/reset-password.html"
 assert_not_contains "reset_password_no_public_wifi_fallback" "$reset_password_fallback" "https://wifi.nister.org/reset-password.html"
 
+reset_password_portal="$(php_run <<'PHP'
+<?php
+$_SERVER = ['REQUEST_METHOD' => 'POST'];
+$_POST = ['recovery_context'=>'portal', 'username'=>'0201234567', 'location_code'=>'hostel-a', 'return_url'=>'https://example.invalid/'];
+include getcwd() . '/api/hotspot/reset_password.php';
+PHP
+)"
+assert_contains "reset_password_portal_returns_to_public_form" "$reset_password_portal" "https://pay.nister.org/reset-password.php?username=0201234567"
+assert_contains "reset_password_preserves_location" "$reset_password_portal" "location_code=hostel-a"
+assert_not_contains "reset_password_ignores_arbitrary_return_urls" "$reset_password_portal" "https://example.invalid/"
+
 autopost_fallback="$(php_run <<'PHP'
 <?php
 $_SERVER = ['REQUEST_METHOD' => 'POST'];

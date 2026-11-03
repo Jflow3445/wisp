@@ -5,6 +5,7 @@ error_reporting(E_ERROR | E_PARSE);
 
 require_once __DIR__ . '/_db.php';
 require_once __DIR__ . '/_paylib.php';
+header('Cache-Control: no-store');
 
 function portal_base_from_link(string $link, string $fallback): string {
   $link = trim($link);
@@ -29,6 +30,13 @@ $linkLoginOnly = (string)($_POST['link_login_only'] ?? '');
 $PORTAL_BASE = portal_base_from_link($linkLoginOnly, '');
 $LOGIN_URL = $PORTAL_BASE . '/login.html';
 $RESET_URL = $PORTAL_BASE . '/reset-password.html';
+$isAccountPortal = (string)($_POST['recovery_context'] ?? '') === 'portal';
+if ($isAccountPortal) {
+  // Presentation context selects fixed destinations, never a caller-supplied URL.
+  $LOGIN_URL = 'https://pay.nister.org/login.php';
+  $RESET_URL = 'https://pay.nister.org/reset-password.php';
+}
+$locationCode = substr(trim((string)($_POST['location_code'] ?? '')), 0, 128);
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 
@@ -124,9 +132,10 @@ function pick(array $src, array $keys): string {
 
 function fail(string $msg, string $user = ''): void {
   http_response_code(400);
-  global $RESET_URL;
+  global $RESET_URL, $locationCode;
   $back = $RESET_URL;
   if ($user !== '') $back .= '?username=' . rawurlencode($user);
+  if ($locationCode !== '') $back .= ($user !== '' ? '&' : '?').'location_code='.rawurlencode($locationCode);
   echo "<!doctype html><meta charset='utf-8'><title>Password reset failed</title>
   <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:2rem}
@@ -134,7 +143,7 @@ function fail(string $msg, string $user = ''): void {
   .err{background:#fee;border:1px solid #f88;padding:12px;border-radius:8px;margin-bottom:16px;color:#900}
   .btn{display:inline-block;padding:10px 16px;border-radius:8px;border:1px solid #888;text-decoration:none}
   </style>
-  <div class='card'><h2>Could not reset password</h2>
+  <div class='card'><h1>Could not reset password</h1>
   <div class='err'>".h($msg)."</div>
   <p><a class='btn' href='".h($back)."'>Go back</a></p></div>";
   exit;
@@ -213,8 +222,6 @@ if (strlen($pass) > 128) {
   fail('New password is too long.', $user);
 }
 
-header('Cache-Control: no-store');
-
 $clientIp = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
 if (!filter_var($clientIp, FILTER_VALIDATE_IP)) $clientIp = 'unknown';
 $userKey = strtolower($user);
@@ -280,7 +287,9 @@ try {
   header("Content-Type: text/html; charset=utf-8");
   $safe = h($user);
   $deviceMessage = $access['pending'] ? 'Some devices could not be signed out yet. We will keep trying automatically.' : 'All existing devices have been signed out. Please log in with your new password.';
-  $login = $LOGIN_URL . '?username=' . rawurlencode($user) . '&msg=' . rawurlencode('Password reset. Please log in with your new password.');
+  $login = $LOGIN_URL . '?username=' . rawurlencode($user) . '&msg=' . rawurlencode($isAccountPortal ? 'password_reset' : 'Password reset. Please log in with your new password.');
+  if ($locationCode !== '') $login .= '&location_code='.rawurlencode($locationCode);
+  $loginLabel = $isAccountPortal ? 'Sign in' : 'Go to Wi-Fi login';
   echo "<!doctype html><meta charset='utf-8'><title>Password reset</title>
   <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:2rem}
@@ -288,10 +297,10 @@ try {
   .ok{background:#e7f8ee;border:1px solid #9ad9b3;padding:12px;border-radius:8px;margin-bottom:16px;color:#0f5132}
   .btn{display:inline-block;padding:10px 16px;border-radius:8px;border:1px solid #888;text-decoration:none}
   </style>
-  <div class='card'><h2>Password reset</h2>
+  <div class='card'><h1>Password reset</h1>
   <div class='ok'>Your password for <b>".$safe."</b> has been reset.</div>
   <p>".h($deviceMessage)."</p>
-  <p><a class='btn' href='".h($login)."'>Go to Wi-Fi login</a></p></div>";
+  <p><a class='btn' href='".h($login)."'>".h($loginLabel)."</a></p></div>";
   exit;
 } catch (Throwable $e) {
   if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
