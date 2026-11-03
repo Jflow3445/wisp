@@ -37,6 +37,10 @@ copy, captive portal, payment, or deployment changes.
 - Keep deployed fixes reflected in the source repository. Compare and back up
   live variants before targeted deployment; do not overwrite the live tree as
   part of synchronization.
+- When a task is intended to change existing live screens, carry it through
+  targeted deployment and live verification when access is available. A source
+  push alone does not finish that task. Honor an explicit source-only request
+  and report any concrete deployment blocker instead of silently stopping.
 - Keep private keys, runtime configuration, credentials, customer data and
   ignored operational material outside GitHub.
 

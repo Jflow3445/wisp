@@ -78,7 +78,7 @@ if (is_dir($dir)) {
   h1 .muted{color:var(--muted)}
   code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 </style>
-<link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
+<link rel="stylesheet" href="/assets/premium.css?v=20261103">
 </head>
 <body class="admin-console legacy-deposits">
 

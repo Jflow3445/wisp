@@ -68,6 +68,10 @@ presentation templates. Do not rewrite them to enforce a visual preference.
 - Record what was verified and any limitation. Do not claim that a source sync
   is a live deployment. Follow existing backup and host/router verification
   rules whenever deployment is separately performed.
+- Before replacing a public release, inventory its routes as well as its files.
+  Preserve live request forms, information pages and role-specific destinations
+  even when the current development branch lacks them. Keep their source in the
+  repository so the next build does not silently remove them.
 
 Reject a change that only looks simpler because it hides information or makes
 the implementation harder to understand. Review new work against this contract

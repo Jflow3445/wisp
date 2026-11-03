@@ -43,7 +43,7 @@ test("external links point to the approved Nister Wi-Fi destinations", () => {
   assert.equal(EXTERNAL_LINKS.network, "https://wifi.nister.org/");
   assert.equal(EXTERNAL_LINKS.login, "https://pay.nister.org/");
   assert.equal(EXTERNAL_LINKS.support, "https://wa.me/233530488905");
-  assert.match(EXTERNAL_LINKS.coverageRequest, /^https:\/\/wa\.me\/233530488905\?text=/);
+  assert.equal(EXTERNAL_LINKS.coverageRequest, "https://nister.org/request-installation");
   assert.match(EXTERNAL_LINKS.partnershipRequest, /^https:\/\/wa\.me\/233530488905\?text=/);
 });
 

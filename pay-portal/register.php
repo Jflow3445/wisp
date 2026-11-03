@@ -27,7 +27,7 @@ function signup_h($v): string { return htmlspecialchars((string)$v,ENT_QUOTES,'U
 <title>Create an account | Nister Wi-Fi</title><link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
 
 
-<link rel="stylesheet" href="/assets/signup.css?v=20261103"><script src="/assets/signup.js?v=20261102" defer></script></head>
+<link rel="stylesheet" href="/assets/signup.css?v=20261103"><script src="/assets/signup.js?v=20261103" defer></script></head>
 <body class="signup-page"><main class="signup-layout">
 <section class="signup-panel"><nav><a href="/">Manage Access</a><a href="/login.php">Sign in ↗</a></nav><div class="signup-form-wrap"><a class="signup-brand" href="https://nister.org/">Nister Wi-Fi</a><h1>Create account</h1>
 <div id="banner" class="signup-banner" role="alert" <?=$error===''?'hidden':''?>><span id="banner-text"><?=signup_h($error)?></span></div>

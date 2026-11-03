@@ -106,7 +106,7 @@ test("nister.org offers coverage and access", async ({ browser }, testInfo) => {
   const nav = page.getByLabel("Primary navigation");
   await expect(nav.getByRole("link", { name: "Get Online" })).toHaveAttribute("href", "https://wifi.nister.org/");
   await expect(nav.getByRole("link", { name: "Manage Access" })).toHaveAttribute("href", "https://pay.nister.org/");
-  await expect(page.getByRole("link", { name: "Request coverage" }).first()).toHaveAttribute("href", /https:\/\/wa\.me\/233530488905/);
+  await expect(page.getByRole("link", { name: "Request coverage" }).first()).toHaveAttribute("href", "https://nister.org/request-installation");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("nister-org-home.png"), fullPage: true });
   await context.close();
@@ -119,12 +119,55 @@ test("wifi.nister.org guides connection and exposes recovery on demand", async (
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Get online");
   await expect(page.getByLabel("Network access steps").locator("li")).toHaveCount(4);
   await expect(page.getByRole("link", { name: "Manage access", exact: true }).first()).toHaveAttribute("href", "https://pay.nister.org/");
-  const recovery = page.locator("details").first();
+  const recovery = page.locator(".troubleshooting-list details").first();
   await expect(recovery.locator("p")).toBeHidden();
   await recovery.locator("summary").click();
   await expect(recovery.locator("p")).toBeVisible();
   await expect(page.getByRole("link", { name: "WhatsApp support" })).toHaveAttribute("href", "https://wa.me/233530488905");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("wifi-network-guide.png"), fullPage: true });
+  await context.close();
+});
+
+test("existing public pages and the information menu remain available", async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const context = await browser.newContext({ extraHTTPHeaders: { "x-forwarded-host": "nister.org" } });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  for (const route of ["about", "coverage", "faq", "for-hostels", "how-it-works", "plans", "request-installation", "resources", "resources/why-wifi-works-in-the-hallway-but-not-rooms"]) {
+    const response = await page.goto(`/${route}`);
+    expect(response?.status(), route).toBe(200);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), route).toBe(true);
+  }
+  await page.goto("/plans");
+  await page.locator(".nav-more summary").click();
+  const menu = page.locator(".nav-more-links");
+  await expect(menu.getByRole("link", { name: "Plans", exact: true })).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Plans", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(menu.getByRole("link")).toHaveCount(7);
+  for (const link of await menu.getByRole("link").all()) await expect(link).toBeInViewport({ ratio: 1 });
+  await page.screenshot({ path: testInfo.outputPath("public-menu.png"), fullPage: true });
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test("coverage requests retain the live form contract", async ({ browser }) => {
+  const context = await browser.newContext({ extraHTTPHeaders: { "x-forwarded-host": "nister.org" } });
+  const page = await context.newPage();
+  await page.goto("/request-installation");
+  const form = page.locator("form.lead-form");
+  await expect(form).toHaveAttribute("action", "https://pay.nister.org/owner/lead.php");
+  await expect(form).toHaveAttribute("method", "post");
+  for (const name of ["contact_name", "contact_phone", "property_name", "region", "town", "number_of_rooms", "estimated_residents"]) {
+    const field = form.locator(`[name="${name}"]`);
+    await expect(field).toBeVisible();
+    if (!["number_of_rooms", "estimated_residents"].includes(name)) await expect(field).toHaveAttribute("required", "");
+    else await expect(field).not.toHaveAttribute("required", "");
+    const id = await field.getAttribute("id");
+    await expect(form.locator(`label[for="${id}"]`)).toBeVisible();
+  }
+  await expect(form.getByRole("button", { name: "Request coverage" })).toBeVisible();
   await context.close();
 });

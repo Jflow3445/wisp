@@ -1,0 +1,81 @@
+Nister presentation deployment - 2026-11-03 (Africa/Accra / UTC)
+
+The source-only checkpoint in ui-simplicity-2026-11-03.txt is followed by this
+production rollout. Existing live WISP and crypto Flight services are the targets.
+Marketplace web/mobile work remains in source: no marketplace production service
+or hosting target is configured on this server. This does not launch its unfinished
+production integrations or publish mobile applications.
+
+Source reconciliation
+  Presentation baseline: 7d6caec on commerce.
+  Live PHP administration includes owner-platform additions and noindex controls.
+  These were retained by a three-way file comparison against the presentation
+  change's parent; no feature branch was merged or reset.
+  The router's account-status cache and refresh fallback were retained while its
+  presentation was updated. The served public router-sync distribution carries
+  the same deployed captive bytes. The canonical source mirror remains identical
+  to hotspot/ under the repository presentation contract.
+  Public information, guide, coverage and installation-request routes were present
+  in the live release but absent from commerce. Their existing source was recovered
+  from 3be2d15 without a branch merge. Task headings and shared navigation were
+  simplified; the live form endpoint, field names, required/optional constraints,
+  article URLs, robots rules and sitemap routes remain. Unused marketing data was
+  excluded. The Request coverage action now opens the existing request form.
+  Changed shared asset URLs use v=20261103 so browsers request the new bytes.
+
+Release method
+  Portal templates, assets and server captive sources: 36 targeted files, installed
+  atomically with existing ownership/modes and exact before/after hash checks.
+  Public website: a separate standalone release, validated on Linux against the
+  unchanged pinned 16.2.0 runtime dependencies before swapping its app symlink.
+  Flight: a separate source release copied from the actual active release, retaining
+  unrelated live code, package lock, generated dependencies, Prisma schema and env.
+  Typecheck and production build run on the server before its app symlink changes.
+  Existing services and ports remain. No schema migration or financial-data restore.
+  Captive changes use existing pinned-host SSH access through the VPS. Each router
+  file is read back after upload; SHA-256, byte size and RouterOS modification time
+  are recorded. Router configuration, profiles, cookies and sessions are retained.
+
+Protected production backup and rollback
+  /root/nister-ui-20261103-7d6caec/
+  protected.json, portal-deploy-manifest.json, before/, router-before/,
+  router-deploy-manifest.json, router-after-list.txt, releases.json,
+  public-preview-passed.json, flight-build.log and final verification records.
+  Individual rollback commands preserve later source changes and financial data:
+    sudo -n python3 /root/nister-ui-20261103-7d6caec/rollback-portal.py
+    sudo -n python3 /root/nister-ui-20261103-7d6caec/rollback-router.py
+    sudo -n python3 /root/nister-ui-20261103-7d6caec/rollback-public.py
+    sudo -n python3 /root/nister-ui-20261103-7d6caec/rollback-flight.py
+  A matched captive rollback should restore both router and public release.
+
+Validation
+  The baseline source suites are recorded in ui-simplicity-2026-11-03.txt.
+  Deployment follow-up: WISP regression 238, public unit tests 16, typecheck,
+  lint and standalone build passed. Additional desktop/phone coverage verifies
+  all preserved public routes, the visible information menu and form constraints.
+  Public Linux preview: 16 route/host checks and every referenced static asset 200;
+  its captive distribution matches the merged router candidates exactly.
+  Public browser suite: 16 desktop/phone checks passed. Two additional menu
+  viewport checks passed after correcting the mobile dropdown's left edge.
+  Webpack is explicit in the browser runner to avoid the workstation's unsupported
+  Turbopack BMI2 instruction path. The production builds already use Webpack.
+  Live WISP browser checks: 14 passed across desktop and phone, with no browser
+  errors. Menu text meets 4.5:1 contrast and all dropdown links stay in the viewport.
+  Live Flight browser checks: 8 passed across desktop and phone, with no browser
+  errors. Its Linux preview passed 8 public/account-recovery/legal page checks.
+  Flight's server typecheck, production build and final release packaging passed.
+  Final live HTTP checks: all 24 expected statuses passed, including protected
+  account/admin redirects, API-host exclusions and denied environment-file access.
+  All 36 portal/server-source hashes, 23 changed Flight source hashes, 14 served
+  captive hashes and 4 served shared stylesheet hashes match their candidates.
+  Apache, MariaDB, FreeRADIUS and both website services are active. WISP Flight
+  settlement, crypto Flight settlement and chain-watcher service results are success.
+  Existing pay/database/Flight environment hashes are unchanged. No production
+  registration, password reset, email/SMS, payment or wager was submitted. Signed-in
+  interactions were verified with the isolated fixtures recorded in the baseline;
+  production browser checks used public pages and protected-route redirects.
+
+Standing workflow
+  A request intended to change existing live screens includes deployment and live
+  verification when access is available. Root AGENTS.md now records this explicitly.
+  DESIGN.md remains the presentation contract for future development.

@@ -204,7 +204,7 @@ $ADMIN_CSRF = admin_csrf_token();
     .actions .btn{flex:1 1 140px}
   }
 </style>
-<link rel="stylesheet" href="/assets/premium.css?v=20260603-premium5">
+<link rel="stylesheet" href="/assets/premium.css?v=20261103">
 </head>
 <body class="admin-console">
 <div class="wrap">

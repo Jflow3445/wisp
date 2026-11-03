@@ -23,7 +23,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3020",
+    command: "node node_modules/next/dist/bin/next dev --webpack --hostname 127.0.0.1 --port 3020",
     url: "http://127.0.0.1:3020",
     reuseExistingServer: true,
     timeout: 180_000,
