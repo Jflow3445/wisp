@@ -16,7 +16,7 @@ export default function PermissionsScreen() {
   useEffect(() => { void Promise.all([Location.getForegroundPermissionsAsync(), ImagePicker.getCameraPermissionsAsync()]).then(([locationResult, cameraResult]) => { setLocation(locationResult.granted ? "GRANTED" : locationResult.canAskAgain ? "UNKNOWN" : "DENIED"); setCamera(cameraResult.granted ? "GRANTED" : cameraResult.canAskAgain ? "UNKNOWN" : "DENIED"); }); }, []);
   const requestLocation = async () => { const result = await Location.requestForegroundPermissionsAsync(); setLocation(result.granted ? "GRANTED" : "DENIED"); };
   const requestCamera = async () => { const result = await ImagePicker.requestCameraPermissionsAsync(); setCamera(result.granted ? "GRANTED" : "DENIED"); };
-  return <Screen><PageHeader title="Before a shift" subtitle="Permissions are requested only after their operational purpose is explained." />
+  return <Screen><PageHeader title="Before a shift" />
     <PermissionCard icon={LocateFixed} title="Location while using the app" detail="Used for route progress, arrival evidence, and delivery support. Location is not proof of delivery by itself." state={location} onPress={() => void requestLocation()} />
     <PermissionCard icon={MapPinned} title="Background location" detail="Required only during an active shift. It needs a signed development or store build and is never requested by this preview." state="UNKNOWN" disabled />
     <PermissionCard icon={Camera} title="Camera" detail="Used for package condition and proof-of-delivery photographs when policy requires them. Manual codes remain available." state={camera} onPress={() => void requestCamera()} />

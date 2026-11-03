@@ -16,7 +16,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.screen}>
-      <PageHeader title="Shop nearby" subtitle="Everyday products from verified local sellers." />
+      <PageHeader title="Shop nearby" />
       {dataMode === "demo" ? <StatusBadge label="Demo catalogue" tone="warning" /> : null}
       <Button label="Search products" icon={Search} variant="secondary" onPress={() => router.push("/(tabs)/search")} />
 

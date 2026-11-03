@@ -17,7 +17,7 @@ export default function SearchScreen() {
 
   return (
     <View style={styles.screen}>
-      <PageHeader title="Find products" subtitle="Search is submitted only when you ask, reducing network use." />
+      <PageHeader title="Find products" />
       <View style={styles.searchRow}>
         <View style={styles.inputWrap}>
           <SearchIcon color={colors.muted} size={19} />

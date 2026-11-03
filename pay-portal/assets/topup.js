@@ -644,7 +644,10 @@
         panel.classList.toggle('is-active', active);
       });
       links.forEach(function(link){
-        link.classList.toggle('active', String(link.getAttribute('href') || '') === '#' + id);
+        var current = String(link.getAttribute('href') || '') === '#' + id;
+        link.classList.toggle('active', current);
+        if (current) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
       });
       if (writeHash && history && history.pushState) history.pushState(null, '', '#' + id);
     }

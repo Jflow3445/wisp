@@ -98,50 +98,33 @@ test("router-sync serves the router hotspot source files", async ({ request }) =
   expect(capportBody).toContain("$(if logged-in == 'yes')");
 });
 
-test("nister.org renders the grant-ready Wi-Fi homepage", async ({ browser }, testInfo) => {
-  const context = await browser.newContext({
-    extraHTTPHeaders: {
-      "x-forwarded-host": "nister.org",
-    },
-  });
+test("nister.org offers coverage and access", async ({ browser }, testInfo) => {
+  const context = await browser.newContext({ extraHTTPHeaders: { "x-forwarded-host": "nister.org" } });
   const page = await context.newPage();
-
   await page.goto("/");
-  const primaryNav = page.getByLabel("Primary navigation");
-  await expect(page.getByRole("heading", { level: 1, name: /internet access should not depend/i })).toBeVisible();
-  await expect(primaryNav.getByRole("link", { name: "Network" })).toHaveAttribute("href", "https://wifi.nister.org/");
-  await expect(primaryNav.getByRole("link", { name: "Login" })).toHaveAttribute("href", "https://pay.nister.org/");
-  await expect(page.getByText("2.2B")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Request Coverage" }).first()).toHaveAttribute(
-    "href",
-    /https:\/\/wa\.me\/233530488905/,
-  );
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Wi-Fi for hostels and communities.");
+  const nav = page.getByLabel("Primary navigation");
+  await expect(nav.getByRole("link", { name: "Get Online" })).toHaveAttribute("href", "https://wifi.nister.org/");
+  await expect(nav.getByRole("link", { name: "Manage Access" })).toHaveAttribute("href", "https://pay.nister.org/");
+  await expect(page.getByRole("link", { name: "Request coverage" }).first()).toHaveAttribute("href", /https:\/\/wa\.me\/233530488905/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("nister-org-home.png"), fullPage: true });
-
   await context.close();
 });
 
-test("wifi.nister.org renders the public network access guide", async ({ browser }, testInfo) => {
-  const context = await browser.newContext({
-    extraHTTPHeaders: {
-      "x-forwarded-host": "wifi.nister.org",
-    },
-  });
+test("wifi.nister.org guides connection and exposes recovery on demand", async ({ browser }, testInfo) => {
+  const context = await browser.newContext({ extraHTTPHeaders: { "x-forwarded-host": "wifi.nister.org" } });
   const page = await context.newPage();
-
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /get online where you are/i })).toBeVisible();
-  await expect(page.getByLabel("Network access steps").getByText("Connect to Nister Wi-Fi")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /start here if you need internet now/i })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /check these before you login/i })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /if the login page does not open/i })).toBeVisible();
-  await expect(page.getByText(/you are close/i)).toBeVisible();
-  await expect(page.getByRole("link", { name: "Login / Manage Access" })).toHaveAttribute("href", "https://pay.nister.org/");
-  await expect(page.getByRole("link", { name: "WhatsApp support" })).toHaveAttribute(
-    "href",
-    "https://wa.me/233530488905",
-  );
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Get online");
+  await expect(page.getByLabel("Network access steps").locator("li")).toHaveCount(4);
+  await expect(page.getByRole("link", { name: "Manage access", exact: true }).first()).toHaveAttribute("href", "https://pay.nister.org/");
+  const recovery = page.locator("details").first();
+  await expect(recovery.locator("p")).toBeHidden();
+  await recovery.locator("summary").click();
+  await expect(recovery.locator("p")).toBeVisible();
+  await expect(page.getByRole("link", { name: "WhatsApp support" })).toHaveAttribute("href", "https://wa.me/233530488905");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("wifi-network-guide.png"), fullPage: true });
-
   await context.close();
 });

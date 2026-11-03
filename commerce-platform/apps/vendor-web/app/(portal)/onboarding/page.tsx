@@ -18,7 +18,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const steps = await apiGet<OnboardingStep[]>("/vendor/onboarding");
   return (
     <>
-      <PageHeader title="Onboarding" description="Approval requirements for Nana's Pantry" />
+      <PageHeader title="Onboarding" />
       <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6 lg:p-8">
         {state !== "ready" ? <PageState state={state} resetHref="/onboarding" /> : <>
           <section className="panel overflow-hidden">

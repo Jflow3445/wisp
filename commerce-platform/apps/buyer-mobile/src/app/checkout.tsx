@@ -83,7 +83,7 @@ export default function CheckoutScreen() {
   if (checkout.step === "delivery") {
     return (
       <Screen>
-        <PageHeader title="Delivery details" subtitle="This progress is saved automatically on this device." />
+        <PageHeader title="Delivery details" />
         <Card>
           <Controller control={control} name="recipientName" render={({ field, fieldState }) => <TextField label="Recipient name" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />} />
           <Controller control={control} name="phone" render={({ field, fieldState }) => <TextField label="Mobile number" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} keyboardType="phone-pad" autoCapitalize="none" />} />
@@ -98,7 +98,7 @@ export default function CheckoutScreen() {
 
   return (
     <Screen>
-      <PageHeader title="Review and pay" subtitle="Confirm your address and payment method." />
+      <PageHeader title="Review and pay" />
       <Card>
         <SectionHeader title="Delivery" action={<Pressable accessibilityRole="button" onPress={() => patchCheckout({ step: "delivery" })}><Text style={styles.edit}>Edit</Text></Pressable>} />
         <Text style={styles.strong}>{checkout.recipientName} · {checkout.phone}</Text>

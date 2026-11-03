@@ -45,9 +45,9 @@ if (is_dir($dir)) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Admin - Pending Top-Ups</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+
+
 <style>
   :root{
     --bg:#f4f1ea;--surface:#172025;--ink:#1c2329;--muted:#5f6a76;--line:#e2d6c8;
@@ -82,9 +82,9 @@ if (is_dir($dir)) {
 </head>
 <body class="admin-console legacy-deposits">
 
-<h1>Pending Top-Ups <span class="muted">(DB + File queue)</span></h1>
+<h1>Pending top-ups</h1>
 
-<h2>DB: payments (status=pending)</h2>
+<h2>Payments</h2>
 <table>
   <tr>
     <th>#</th><th>Ref</th><th>MSISDN (normalized)</th><th>Typed</th><th>Payer</th><th>Amount</th><th>Created</th><th>Actions</th>
@@ -116,7 +116,7 @@ if (is_dir($dir)) {
   <?php endforeach; ?>
 </table>
 
-<h2>File queue: data/manual_deposits/pending</h2>
+<h2>Manual requests</h2>
 <table>
   <tr>
     <th>File ID</th><th>MSISDN</th><th>Payer</th><th>Amount (cents)</th><th>TxRef</th><th>Created</th><th>Actions</th>

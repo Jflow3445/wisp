@@ -1,0 +1,54 @@
+Nister presentation simplification - 2026-11-03
+
+Scope
+  First-party captive and public pages, customer/account/recovery screens,
+  WISP administration and game surfaces, Flight public/member/admin routes,
+  marketplace storefront/vendor/admin and mobile role headings.
+
+Standing direction
+  DESIGN.md records the user-requested simplicity contract. Root and application
+  AGENTS.md files point future development at it. Titles and controls name tasks;
+  decorative introductions, repeated subtitles and auth marketing panels are
+  removed. Prices, fees, limits, eligibility, verification, consent, errors and
+  recovery remain visible where they affect decisions.
+
+Implementation
+  Reuse each application's shared layouts and headers. No new runtime dependency
+  or cross-product framework. The public Wi-Fi site uses a small stylesheet and
+  direct coverage/access actions. PHP and captive screens use system fonts.
+  Captive sources and router distribution copies remain identical.
+  Account summary controls, conditional game discovery, payment handlers and
+  session behavior remain intact. No runtime credentials or customer data are
+  part of this source change.
+
+Regression protection
+  tests/regression/ui_contract.js checks balanced stylesheet blocks, captive task
+  headings, persistent field labels, unique control IDs and recursive router
+  mirror parity without needing frontend dependencies.
+  Portal browser screenshots verify navigation text at a minimum 4.5:1 contrast,
+  selected/current-page state and horizontal overflow on desktop and phone.
+  The review caught and corrected an account overview omission, white menu text
+  on a white surface and a missing responsive-block closing brace.
+
+Validation
+  WISP regression suite: 238 checks passed.
+  Changed PHP templates: 14 syntax checks passed.
+  All 8 changed stylesheets: parsed successfully.
+  Public site: typecheck, lint, 16 unit tests, production build and 12 browser
+  checks passed.
+  Portal: 14 browser checks passed; 6 additional contrast/navigation checks passed
+  after the menu and responsive-style corrections.
+  Flight: typecheck, lint, 47 unit tests and 54 isolated MariaDB integration checks
+  passed. All 31 expanded browser checks passed, covering public/recovery/legal
+  pages, member sections, admin sections, mobile navigation, real password login,
+  role boundaries and cross-origin protection, with no browser errors.
+  Marketplace: 81 unit tests, 21 lint tasks, 21 typecheck tasks, 16 build tasks and
+  9 integration tasks passed. All three mobile apps exported for iOS/Android/web.
+  Marketplace browsers: admin 8, vendor 8 and storefront 6 passed, including
+  basket persistence, demo checkout and registration validation.
+  Final Flight lint and production rebuild passed after the last copy changes.
+
+Deployment
+  This is a source change. No VPS, router, service, firewall, production database
+  or hosted deployment was changed. Future deployment must compare and back up
+  actual live variants and verify router uploads under the existing guardrails.

@@ -152,7 +152,7 @@ export function LegacyFlightDeck({ accountId, onExit }: { accountId: string; onE
   const objectiveDescription = objective?.phase === "CHECKPOINT" ? `${objective.low}-${objective.high} m altitude - ${objective.distance} m ahead` : "Land between the runway flags - descend gently";
   const advertisedPrize = mission ? mission.mode === "PVP" ? mission.prizes.contestCents ?? 0 : mission.prizes.soloCents : 0;
   return <>
-    <div className="f-deck-heading"><div><div className="f-eyebrow">NISTER AIRSPACE / FLIGHT DECK</div><h1>Fly the mission<span>.</span></h1></div><div className="f-deck-balance"><small>AVAILABLE - USD</small><strong>${data ? money(data.availableCents) : "--"}</strong><Link href="/dashboard/wallet">Add funds &#8599;</Link></div></div>
+    <div className="f-deck-heading"><div><h1>Mission</h1></div><div className="f-deck-balance"><small>AVAILABLE - USD</small><strong>${data ? money(data.availableCents) : "--"}</strong><Link href="/dashboard/wallet">Add funds &#8599;</Link></div></div>
     <Notice error>{message || error}</Notice>
     {data?.isTestAccount && <div className="f-session-label">Test session - Gameplay balance - Cleared at public launch</div>}
     <section ref={cockpit} className="f-cockpit" aria-label="Flight game">

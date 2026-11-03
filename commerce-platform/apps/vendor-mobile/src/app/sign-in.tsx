@@ -23,7 +23,7 @@ export default function SignInScreen() {
   if (session) return <Redirect href="/" />;
   return (
     <Screen contentStyle={styles.screen}>
-      <View style={styles.brand}><View style={styles.mark}><Store color={colors.primary} size={28} /></View><PageHeader title="NISTER Vendor" subtitle="Run orders, stock, and payouts for your store." />{dataMode === "demo" ? <StatusBadge label="Development demo data" tone="warning" /> : null}</View>
+      <View style={styles.brand}><View style={styles.mark}><Store color={colors.primary} size={28} /></View><PageHeader title="NISTER Vendor" />{dataMode === "demo" ? <StatusBadge label="Development demo data" tone="warning" /> : null}</View>
       <Card>
         <Controller control={control} name="email" render={({ field, fieldState }) => <TextField label="Work email" keyboardType="email-address" autoCapitalize="none" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />} />
         <Controller control={control} name="password" render={({ field, fieldState }) => <TextField label="Password" secureTextEntry autoCapitalize="none" value={field.value} onChangeText={field.onChange} error={fieldState.error?.message} />} />

@@ -1,6 +1,6 @@
 # Marketplace Implementation Status
 
-Last updated: 2026-08-02
+Last updated: 2026-11-03
 
 This is the handoff ledger for all future agents. Update it with every material
 marketplace change. The production WISP remains outside this directory and has
@@ -17,6 +17,27 @@ The original documents were supplied outside the repository. Their mandatory
 architecture and integrity rules are recorded in `AGENTS.md` and the ADRs.
 
 ## Current Checkpoint
+
+2026-11-03 presentation update:
+
+- All web and mobile roles follow the root [design contract](../../DESIGN.md).
+  Removed decorative page descriptions, auth story panels, redundant storefront
+  copy and mobile subtitles that restated the task. Record dates, vendor scope,
+  warnings, fees, validation and action consequences remain.
+- Vendor and admin pages share task headers with optional factual metadata.
+  Shared navigation now exposes the current page to assistive tools and agents.
+- Browser runners support installed Edge on Windows and pass storefront demo
+  configuration through the server environment. This does not enable demo mode
+  in production. Browser assertions use the final task titles.
+- The installed Swagger package exports `OpenAPIObject` but not the two types
+  previously imported by the documentation generator. Derive them from the
+  public exported type; there is no runtime or API contract change.
+- Marketplace business services, permissions, money, ledger and state machines
+  retain their existing behavior. The WISP presentation changes in this same
+  repository task are separately scoped under the root design contract.
+- Validation is recorded in the [change record](../../ops/ui-simplicity-2026-11-03.txt).
+
+The earlier implementation checkpoint and its outstanding product work follow.
 
 The marketplace is implemented as an isolated additive workspace under
 `commerce-platform/`. Current uncommitted work is commerce-only; a manual

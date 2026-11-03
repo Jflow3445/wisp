@@ -33,7 +33,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <PageHeader title="Orders" description="Respond, prepare, and hand over marketplace orders" />
+      <PageHeader title="Orders" />
       <div className="mx-auto max-w-[1600px] space-y-4 p-4 sm:p-6 lg:p-8">
         <div className="panel overflow-hidden">
           <div className="grid grid-cols-2 divide-x divide-line sm:grid-cols-4">

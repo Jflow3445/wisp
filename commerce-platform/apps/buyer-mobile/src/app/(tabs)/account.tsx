@@ -15,7 +15,7 @@ export default function AccountScreen() {
 
   return (
     <View style={styles.screen}>
-      <PageHeader title="Account" subtitle="Profile and app access." />
+      <PageHeader title="Account" />
       <Card>
         <View style={styles.profileRow}>
           <View style={styles.avatar}><UserRound color={colors.primary} size={26} /></View>

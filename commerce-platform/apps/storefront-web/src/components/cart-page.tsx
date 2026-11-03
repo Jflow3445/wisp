@@ -26,7 +26,7 @@ export function CartPage() {
 
   return (
     <div className="page-shell py-8 md:py-12">
-      <div className="flex items-end justify-between border-b border-[var(--border)] pb-6"><div><p className="eyebrow">Your order</p><h1 className="page-title mt-2">Basket <span className="text-[var(--muted)]">({cart.itemCount})</span></h1></div><button type="button" onClick={cart.clearCart} className="button-danger"><Trash2 className="size-4" />Clear</button></div>
+      <div className="flex items-end justify-between border-b border-[var(--border)] pb-6"><div><h1 className="page-title mt-2">Basket <span className="text-[var(--muted)]">({cart.itemCount})</span></h1></div><button type="button" onClick={cart.clearCart} className="button-danger"><Trash2 className="size-4" />Clear</button></div>
       <div className="mt-7 grid gap-10 lg:grid-cols-[1fr_22rem] lg:items-start">
         <section aria-label="Basket items" className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
           {lines.map(({ product, quantity }) => {

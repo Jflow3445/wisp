@@ -84,7 +84,7 @@ export function FlightDeck({ accountId }: { accountId: string }) {
   const won = done && (round.payoutCents ?? 0) > round.totalCostCents, net = round ? (round.payoutCents ?? 0) - round.totalCostCents : 0;
   if (legacyId) return <Suspense fallback={<p className="f-muted">Loading your accepted flight...</p>}><LegacyDeck accountId={accountId} onExit={() => { setDismissedLegacy(legacyId); setLegacyId(""); }}/></Suspense>;
   return <>
-    <div className="f-deck-heading"><div><div className="f-eyebrow">NISTER FLIGHT / YOUR NEXT MOMENT</div><h1>Ready for takeoff<span>?</span></h1></div><div className="f-deck-balance"><small>AVAILABLE - USD</small><strong>${data ? money(data.availableCents) : "--"}</strong><Link href="/dashboard/wallet">Add funds &#8599;</Link></div></div>
+    <div className="f-deck-heading"><div><h1>Flight</h1></div><div className="f-deck-balance"><small>AVAILABLE - USD</small><strong>${data ? money(data.availableCents) : "--"}</strong><Link href="/dashboard/wallet">Add funds &#8599;</Link></div></div>
     <Notice error>{message || error}</Notice>
     {data?.isTestAccount && <div className="f-session-label">Test session - Gameplay balance - Cleared at public launch</div>}
     <section ref={scene} className="f-draw-game" aria-label="Flight draw"><div className="f-draw-stage">

@@ -40,7 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <div className="px-3 py-4">
-        <div className="mb-2 px-2 text-[10px] font-bold uppercase text-slate-500">Workspace</div>
+
         <nav className="space-y-1" aria-label="Vendor navigation">
           {navItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -49,6 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 onClick={() => setOpen(false)}
                 className={`flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition ${active ? "bg-white text-ink" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
               >

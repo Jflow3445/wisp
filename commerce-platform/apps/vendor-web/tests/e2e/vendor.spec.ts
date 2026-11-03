@@ -4,7 +4,7 @@ test("signs into the vendor workspace", async ({ page }) => {
   await page.goto("/login");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Operations overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });
 
 test("enforces a reason for order rejection", async ({ page }) => {

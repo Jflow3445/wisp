@@ -5,23 +5,35 @@ import { readFile, mkdir } from "node:fs/promises";
 const env = Object.fromEntries((await readFile(".env.test", "utf8")).split(/\r?\n/).filter(line => line.includes("=")).map(line => { const index = line.indexOf("="); return [line.slice(0, index), line.slice(index + 1).replace(/^"|"$/g, "")]; }));
 const out = "artifacts/browser";
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === "win32" ? "msedge" : undefined) });
 const errors = [], checks = [];
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce" });
 const page = await context.newPage();
 page.on("pageerror", error => errors.push(error.message));
 const base = process.env.FLIGHT_PREVIEW_URL || "http://localhost:3330";
 async function shot(path, name) {
-  const response = await page.goto(base + path, { waitUntil: "networkidle", timeout: 90000 });
+  console.log(`Checking ${name}`);
+  const response = await page.goto(base + path, { waitUntil: "domcontentloaded", timeout: 90000 });
   if (!response?.ok()) throw new Error(`${path}: HTTP ${response?.status()}`);
-  if (page.url().includes("/legal/accept")) {
+  if (/^\/(dashboard|admin)(\/|$)/.test(path)) await page.locator('.f-app, input[name="legalConsent"]').first().waitFor({ timeout: 90000 });
+  if (/^\/(dashboard|admin)(\/|$)/.test(path) && await page.locator('input[name="legalConsent"]').isVisible()) {
     await page.locator('input[name="legalConsent"]').check();
     await page.getByRole("button", { name: "Accept and continue" }).click();
-    await page.waitForURL(/\/dashboard/, { timeout: 45000 });
-    await page.goto(base + path, { waitUntil: "networkidle", timeout: 90000 });
+    await page.locator(".f-app").waitFor({ timeout: 90000 });
+    await page.goto(base + path, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.locator(".f-app").waitFor({ timeout: 90000 });
   }
-  await page.screenshot({ path: `${out}/${name}.png`, fullPage: true });
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
+  await page.locator("h1").first().waitFor({ timeout: 90000 });
+  if (/^\/(dashboard|admin)(\/|$)/.test(path)) await page.waitForLoadState("networkidle");
+  await page.screenshot({ path: `${out}/${name}.png`, fullPage: true, caret: "initial" });
+  let overflow;
+  for (let attempt = 0; ; attempt++) {
+    try { overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2); break; }
+    catch (error) {
+      if (attempt || !String(error.message).includes("Execution context was destroyed")) throw error;
+      await page.waitForLoadState("networkidle");
+    }
+  }
   if (overflow) throw new Error(`${path}: horizontal overflow`);
   checks.push(`${name}: rendered without overflow`);
 }
@@ -29,6 +41,7 @@ await shot("/", "landing-desktop");
 await page.setViewportSize({ width: 390, height: 844 });
 await shot("/", "landing-mobile");
 await shot("/login", "login-mobile");
+for (const route of ["signup", "forgot-password", "reset-password", "verify-email", "terms", "privacy", "risk-disclosure"]) await shot(`/${route}`, `${route}-mobile`);
 if (process.env.FLIGHT_BROWSER_AUTH === "1") {
   const secret = new TextEncoder().encode(env.SESSION_SECRET);
   for (const role of ["MEMBER", "ADMIN"]) {
@@ -43,6 +56,7 @@ if (process.env.FLIGHT_BROWSER_AUTH === "1") {
       if (await page.getByRole("button", { name: /accept the rules/ }).count()) await page.getByRole("button", { name: /accept the rules/ }).click();
       await page.getByRole("button", { name: "Start flight", exact: true }).waitFor();
       await shot("/dashboard/wallet", "wallet-desktop");
+      for (const route of ["activity", "referrals", "settings", "help"]) await shot(`/dashboard/${route}`, `member-${route}-desktop`);
       await page.setViewportSize({ width: 390, height: 844 });
       await shot("/dashboard", "member-mobile");
       await page.getByRole("button", { name: "Toggle navigation" }).click();
@@ -52,6 +66,7 @@ if (process.env.FLIGHT_BROWSER_AUTH === "1") {
       await shot("/dashboard/wallet", "wallet-mobile");
     } else {
       await shot("/admin/settings", "admin-controls");
+      for (const route of ["users", "payments", "audit"]) await shot(`/admin/${route}`, `admin-${route}-desktop`);
       await page.setViewportSize({ width: 390, height: 844 });
       await shot("/admin", "admin-mobile");
       await shot("/admin/users", "admin-users-mobile");
@@ -63,11 +78,7 @@ if (process.env.FLIGHT_BROWSER_AUTH === "1") {
   await page.getByLabel("Password", { exact: true }).fill(env.FLIGHT_TEST_PASSWORD);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(/\/(dashboard|legal\/accept)/, { timeout: 60000 });
-  if (page.url().includes("legal/accept")) {
-    await page.locator('input[name="legalConsent"]').check();
-    await page.getByRole("button", { name: "Accept and continue" }).click();
-    await page.waitForURL(/\/dashboard/, { timeout: 45000 });
-  }
+  await shot("/dashboard", "password-signin");
   checks.push("existing member signs in through the real password flow");
   const response = await context.request.get(base + "/api/flight/admin");
   if (response.status() !== 403) throw new Error("A member can access admin data");

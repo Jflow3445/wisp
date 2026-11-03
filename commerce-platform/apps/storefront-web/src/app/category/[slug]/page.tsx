@@ -7,5 +7,5 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
   const { slug } = await params;
   const category = categories.find((item) => item.slug === slug);
   if (!category) notFound();
-  return <Suspense><CatalogView title={category.name} description={category.description} filters={{ category: slug }} /></Suspense>;
+  return <Suspense><CatalogView title={category.name} filters={{ category: slug }} /></Suspense>;
 }

@@ -66,9 +66,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+
+
   <style>
     :root{
       --bg:#f4f1ea;--surface:#172025;--surface-2:#202b31;--ink:#1c2329;--muted:#5f6a76;--accent:#0f766e;--accent-2:#b45309;--green:#0f766e;--card:#fffdfa;--line:#e2d6c8;--line-dark:#334047;--shadow:0 20px 60px rgba(27,35,42,.16);--radius:18px;--font-display:"Fraunces",serif;--font-body:"Sora",sans-serif;
@@ -78,12 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       margin:0;font-family:var(--font-body);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;letter-spacing:0;
       background:linear-gradient(180deg,var(--bg) 0%,#efe8de 100%);
     }
-    body::before{
-      content:"";position:fixed;inset:0;z-index:-1;
-      background:
-        radial-gradient(900px 480px at 8% -10%,rgba(15,118,110,.18),transparent 60%),
-        radial-gradient(760px 420px at 92% 0%,rgba(180,83,9,.14),transparent 60%);
-    }
+
     .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);width:min(430px,100%)}
     .brand-row{display:flex;align-items:center;gap:12px;margin-bottom:18px}
     .mark{width:38px;height:38px;border-radius:12px;display:grid;grid-template-columns:repeat(3,1fr);align-items:end;gap:3px;background:linear-gradient(135deg,var(--accent),var(--accent-2));border:1px solid rgba(15,118,110,.22);padding:7px;box-shadow:0 12px 24px rgba(15,118,110,.22)}
@@ -112,36 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .links{margin-top:14px;text-align:center;font-size:.9rem}
     .links a{color:var(--accent);text-decoration:none;font-weight:600}
   </style>
-  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
+  <link rel="stylesheet" href="/assets/premium.css?v=20261103">
 </head>
 <body class="pay-auth">
   <main class="auth-shell">
-    <section class="auth-brand" aria-label="Nister Wi-Fi manage access">
-      <div class="auth-brand-top">
-        <a class="brand-row auth-brand-link" href="https://nister.org/" aria-label="Nister Wi-Fi home">
-          <div class="mark"><span></span></div>
-          <div>
-            <div class="brand-name">Nister Wi-Fi</div>
-            <div class="brand-tag">Manage Access</div>
-          </div>
-        </a>
-        <nav class="nister-auth-nav" aria-label="Nister site navigation">
-          <a href="https://nister.org/">Home</a>
-          <a href="https://wifi.nister.org/">Get Online</a>
-          <a class="active" aria-current="page" href="https://pay.nister.org/">Manage Access</a>
-        </nav>
-      </div>
-      <div>
-        <h2>Get back to your Wi-Fi faster.</h2>
-        <p>Use your hotspot login to top up your wallet, buy plans, manage auto-renew, and check rewards in one secure place.</p>
-      </div>
-      <div class="auth-meta" aria-hidden="true">
-        <span>Wallet</span>
-        <span>Plans</span>
-        <span>Support</span>
-      </div>
-    </section>
-    <section class="card auth-card">
+<section class="card auth-card">
     <div class="brand-row">
       <div class="mark"><span></span></div>
       <div>
@@ -149,11 +119,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="brand-tag">Manage Access</div>
       </div>
     </div>
-    <h1>Welcome back</h1>
-    <div class="muted">Enter the phone number and password you use on the hotspot login page.</div>
-    <?php if ($msg === 'registered'): ?><div class="msg ok">Your account is ready. Sign in with your phone number and the password you chose.</div><?php endif; ?>
+    <h1>Sign in</h1>
+<?php if ($msg === 'registered'): ?><div class="msg ok">Your account is ready.</div><?php endif; ?>
     <?php if ($msg === 'logged_out'): ?>
-      <div class="msg ok">You have logged out of the pay portal.</div>
+      <div class="msg ok">Signed out.</div>
     <?php endif; ?>
     <?php if ($err !== ''): ?>
       <div class="msg err"><?=htmlspecialchars($err, ENT_QUOTES, 'UTF-8')?></div>
@@ -164,12 +133,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php endif; ?>
       <div class="field">
         <label class="label" for="msisdn">Phone number</label>
-        <input id="msisdn" name="msisdn" type="tel" placeholder="e.g. 059xxxxxxx" value="<?=htmlspecialchars($prefill, ENT_QUOTES, 'UTF-8')?>" required>
+        <input id="msisdn" name="msisdn" type="tel" placeholder="0241234567" autocomplete="username" value="<?=htmlspecialchars($prefill, ENT_QUOTES, 'UTF-8')?>" required>
       </div>
       <div class="field">
         <label class="label" for="password">Password</label>
         <div class="password-wrap">
-          <input id="password" name="password" type="password" placeholder="Hotspot password" autocomplete="current-password" required>
+          <input id="password" name="password" type="password"  autocomplete="current-password" required>
           <button class="password-toggle" type="button" data-password-toggle="password" aria-controls="password" aria-pressed="false">Show</button>
         </div>
       </div>

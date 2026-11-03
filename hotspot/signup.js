@@ -45,8 +45,6 @@
     function applyPolicy(policy) {
       if (typeof policy.otp_required !== 'boolean') throw new Error('Invalid registration policy');
       required = policy.otp_required; fields.hidden = !required;
-      var note = get('signup-policy-note');
-      if (note) note.textContent = required ? 'We’ll send a code to confirm this number.' : 'You can create your account without an SMS code right now.';
       if (!required) { token.value = ''; if (cooldown) clearInterval(cooldown); cooldown = null; get('otp_send_btn').disabled = false; get('otp_send_btn').textContent = 'Send code'; }
       return policy;
     }

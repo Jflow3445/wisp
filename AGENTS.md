@@ -3,6 +3,25 @@
 These rules are production boundaries. Do not weaken them while making UI,
 copy, captive portal, payment, or deployment changes.
 
+## Product Simplicity Contract
+
+- Read `DESIGN.md` before changing any first-party screen, shared component,
+  navigation, or user-facing copy. This applies to captive, public, signed-out,
+  signed-in, customer, operator, admin, Flight and marketplace surfaces.
+- Give each screen one clear purpose, a direct title and an obvious next action.
+  Remove taglines, repeated introductions and captions that restate controls.
+  When a screen needs explanatory copy to be understood, fix its layout first.
+- Preserve field labels, accessible names, meaningful state, errors, recovery
+  actions, prices, units, fees, consent and consequences. Brevity must not obscure
+  a decision or weaken the production boundaries below.
+- Prefer shared layouts within each app and existing platform controls. Remove
+  unused markup and styles instead of hiding clutter with CSS or adding another
+  override layer. Do not introduce a cross-app framework for presentation work.
+- Every UI change must improve usability, maintainability and agent navigation
+  together. Include relevant phone/desktop and role/state verification in the
+  change. Keep captive assets and their `nister-org/public/router-sync` mirrors
+  identical, and run the checks recorded in `DESIGN.md`.
+
 ## Development Synchronization
 
 - Keep completed development work synchronized with

@@ -15,7 +15,7 @@ export function CheckoutShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="page-shell py-7 md:py-10">
       <div className="mb-8 border-b border-[var(--border)] pb-6">
-        <p className="eyebrow">Secure checkout</p>
+
         <ol className="mt-4 flex max-w-xl" aria-label="Checkout progress">
           {steps.map((step, index) => (
             <li key={step.path} className="flex min-w-0 flex-1 items-center last:flex-none" aria-current={index === current ? "step" : undefined}>

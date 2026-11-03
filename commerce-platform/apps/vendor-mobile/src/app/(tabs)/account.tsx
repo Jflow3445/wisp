@@ -22,7 +22,7 @@ export default function AccountScreen() {
   const clearScope = useVendorStore((state) => state.clearScope);
   return (
     <Screen>
-      <PageHeader title="More" subtitle="Store controls and account settings." />
+      <PageHeader title="More" />
       <Card><View style={styles.profile}><View style={styles.avatar}><Store color={colors.primary} size={24} /></View><View style={styles.grow}><Text style={styles.name}>{session?.displayName ?? "Vendor user"}</Text><Text style={styles.meta}>{session?.email}</Text></View><StatusBadge label={scope?.role ?? "Member"} tone="info" /></View></Card>
       <Pressable accessibilityRole="button" accessibilityLabel="Change store" onPress={() => { clearScope(); router.replace("/scope"); }} style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}><Store color={colors.primary} size={20} /><View style={styles.grow}><Text style={styles.rowTitle}>Active store</Text><Text style={styles.meta}>{scope?.vendorName} · {scope?.locationName}</Text></View><ChevronRight color={colors.muted} size={20} /></Pressable>
       {menu.map(({ icon: Icon, label, detail }) => <View key={label} style={[styles.row, styles.disabled]}><Icon color={colors.muted} size={20} /><View style={styles.grow}><Text style={styles.rowTitle}>{label}</Text><Text style={styles.meta}>{detail}</Text></View><StatusBadge label="Web" /></View>)}

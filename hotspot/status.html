@@ -971,18 +971,14 @@ document.addEventListener('DOMContentLoaded', function(){
 <div class="container">
   <div class="card wide">
     <div class="logo">
-      <div class="dot"></div><div class="name">NISTER Wi-Fi</div><span class="tag">status</span>
+      <div class="dot"></div><div class="name">NISTER Wi-Fi</div>
     </div>
 
     <div class="headline">
-      <h2 class="h" id="title">Checking account...</h2>
+      <h1 class="h" id="title">Checking account...</h1>
       <span class="badge" id="statusBadge">Verifying...</span>
     </div>
     <div class="note" id="statusNote"></div>
-    <div class="meta-strip" aria-hidden="true">
-      <span class="meta-pill">Live billing sync</span>
-      <span class="meta-pill">Router session telemetry</span>
-    </div>
 
     <div class="section-title">Session</div>
     <div class="kv">
@@ -996,7 +992,7 @@ document.addEventListener('DOMContentLoaded', function(){
         <span class="chip">Device: $(mac)</span>
         <span class="chip">Hotspot: $(hostname)</span>
       </div>
-      <div class="small" id="debug">build v2026-06-15d</div>
+      <div class="small" id="debug" hidden>build v2026-06-15d</div>
       <div class="small" id="debug3" style="display:none"></div>
       <div class="small" id="debug2" style="display:none"></div>
     </div>
@@ -1007,7 +1003,7 @@ document.addEventListener('DOMContentLoaded', function(){
       <div class="grid"><b>Plan</b><span id="group">N/A</span></div>
       <div class="grid"><b>Quota</b><span id="quota">N/A</span></div>
       <div class="grid"><b>Used</b><span id="used">N/A</span></div>
-      <div class="grid"><b>Remain</b><span id="remain">N/A</span></div>
+      <div class="grid"><b>Remaining</b><span id="remain">N/A</span></div>
       <div class="bar"><i id="barfill"></i></div>
       <div class="muted" id="pct" style="text-align:right;margin-top:4px"></div>
       <div class="grid" style="margin-top:8px"><b>Period</b><span id="period">N/A</span></div>
@@ -1049,7 +1045,6 @@ document.addEventListener('DOMContentLoaded', function(){
 
     <div class="support">
       <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
-      <span class="note">If something looks wrong, chat with us.</span>
     </div>
   </div>
 </div>

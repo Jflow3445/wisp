@@ -3,6 +3,10 @@
 This directory is the additive NISTER commerce platform. It is intentionally
 isolated from the production WISP implementation in the repository root.
 
+All marketplace web and mobile screens follow the root `../DESIGN.md` product
+simplicity contract. Headers name tasks; optional metadata identifies records.
+Do not restore marketing panels on sign-in screens or require page descriptions.
+
 ## Hard Boundary
 
 - Do not modify `../hotspot`, `../api`, `../pay-portal`, `../wifi-portal`,

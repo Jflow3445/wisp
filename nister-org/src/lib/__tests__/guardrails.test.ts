@@ -4,10 +4,7 @@ import { join, relative } from "node:path";
 import test from "node:test";
 import {
   EXTERNAL_LINKS,
-  homeSections,
   networkAccessSteps,
-  networkExperiencePanels,
-  networkPreLoginChecks,
   networkTroubleshootingSteps,
 } from "../content";
 
@@ -81,8 +78,6 @@ test("network access steps explain the required public flow", () => {
 test("network page copy speaks to the person trying to get online", () => {
   const allNetworkCopy = [
     ...networkAccessSteps.flatMap((step) => [step.title, step.body]),
-    ...networkExperiencePanels.flatMap((panel) => [panel.eyebrow, panel.title, panel.body]),
-    ...networkPreLoginChecks,
     ...networkTroubleshootingSteps.flatMap((step) => [step.title, step.body]),
   ].join(" ");
 
@@ -109,14 +104,12 @@ test("network page does not include removed outside-coverage explainer", () => {
   );
 });
 
-test("homepage content stays focused on Wi-Fi access for hostels and remote communities", () => {
-  const allHomeCopy = homeSections.map((section) => `${section.eyebrow} ${section.title} ${section.body}`).join(" ");
-
-  assert.match(allHomeCopy, /hostels/i);
-  assert.match(allHomeCopy, /remote communities/i);
-  assert.match(allHomeCopy, /2\.2 billion/i);
-  assert.match(allHomeCopy, /83%/i);
-  assert.match(allHomeCopy, /48%/i);
+test("homepage stays focused on coverage and access", () => {
+  const source = readFileSync(join(sourceRoot, "components/home/nister-wifi-home.tsx"), "utf8");
+  assert.match(source, /hostels/i);
+  assert.match(source, /remote communities/i);
+  assert.match(source, /EXTERNAL_LINKS.coverageRequest/);
+  assert.match(source, /EXTERNAL_LINKS.network/);
 });
 
 test("source files do not contain forbidden legacy product references", () => {

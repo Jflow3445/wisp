@@ -7,7 +7,6 @@ export function Footer() {
       <div className="page-shell grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
         <div className="space-y-4">
           <Logo />
-          <p className="max-w-sm text-sm leading-6 text-[var(--muted)]">Shop trusted Ghanaian vendors with clear prices, secure payments and delivery updates from order to doorstep.</p>
         </div>
         <div>
           <h2 className="text-sm font-bold">Shop</h2>

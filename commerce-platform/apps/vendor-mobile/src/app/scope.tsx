@@ -17,7 +17,7 @@ export default function ScopeScreen() {
   if (!session) return <Redirect href="/sign-in" />;
   return (
     <Screen>
-      <PageHeader title="Choose a store" subtitle="All actions and totals will use this vendor and location scope." />
+      <PageHeader title="Choose a store" />
       <QueryState loading={scopes.isLoading} error={scopes.error} empty={scopes.data?.length === 0} emptyLabel="Your account has no assigned store locations." onRetry={() => void scopes.refetch()} />
       {scopes.data?.map((scope) => (
         <Pressable key={`${scope.vendorId}-${scope.locationId}`} accessibilityRole="button" accessibilityLabel={`${scope.vendorName}, ${scope.locationName}, ${scope.role}`} onPress={() => { setScope(scope); router.replace("/(tabs)"); }} style={({ pressed }) => pressed ? styles.pressed : null}>

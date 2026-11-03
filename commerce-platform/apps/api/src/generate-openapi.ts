@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
-import type { OpenAPIObject, OperationObject, PathItemObject } from "@nestjs/swagger";
+import type { OpenAPIObject } from "@nestjs/swagger";
 import { AppModule } from "./app.module.js";
 import { createMarketplaceOpenApiDocument } from "./openapi.js";
 
@@ -16,6 +16,8 @@ const routeRegistryOutput = path.join(workspaceRoot, "packages/api-client/src/ge
 const httpMethods = ["get", "post", "put", "patch", "delete", "options", "head", "trace"] as const;
 
 type HttpMethod = Uppercase<(typeof httpMethods)[number]>;
+type PathItemObject = OpenAPIObject["paths"][string];
+type OperationObject = NonNullable<PathItemObject["get"]>;
 type ContractRoute = { method: HttpMethod; path: string; operationId: string };
 
 function isOperation(value: unknown): value is OperationObject {

@@ -10,8 +10,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("shops the home, category, search and product routes", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: /Good finds/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Picked for your basket" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Shop", level: 1, exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Products", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Fresh food", exact: true }).first()).toBeVisible();
 
   await page.goto("/category/electronics");

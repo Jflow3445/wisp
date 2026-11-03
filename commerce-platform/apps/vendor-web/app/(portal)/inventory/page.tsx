@@ -33,7 +33,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const displayed = state === "empty" ? [] : filtered;
   return (
     <>
-      <PageHeader title="Inventory" description="Authoritative stock positions and controlled adjustments" />
+      <PageHeader title="Inventory" />
       <div className="mx-auto max-w-[1600px] space-y-4 p-4 sm:p-6 lg:p-8">
         {state === "error" || state === "permission" ? <PageState state={state} resetHref="/inventory" /> : <>
           <section className="grid gap-3 sm:grid-cols-3"><MetricCard label="Tracked SKUs" value="6" change="East Legon location" tone="neutral" /><MetricCard label="Low stock" value="3" change="Action recommended" tone="warning" /><MetricCard label="Stock accuracy" value="98.6%" change="Last 30 days" tone="good" /></section>

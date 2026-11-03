@@ -13,7 +13,7 @@ export default function FinanceScreen() {
   const finance = useQuery({ queryKey: ["vendor-finance", scope?.vendorId], queryFn: () => vendorData.finance(scope!), enabled: Boolean(scope) });
   return (
     <Screen>
-      <PageHeader title="Finance" subtitle="Read-only earnings and payout position." />
+      <PageHeader title="Finance" />
       <QueryState loading={finance.isLoading} error={finance.error} onRetry={() => void finance.refetch()} />
       {finance.data ? <>
         <View style={styles.metrics}>

@@ -33,7 +33,7 @@ function sms_h($s): string { return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-
 function sms_admin_time(int $epoch): string { return $epoch>0 ? gmdate('Y-m-d H:i:s',$epoch).' UTC' : '—'; }
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SMS gateways · Nister Admin</title><link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@400;500;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9"><link rel="stylesheet" href="/assets/admin-shell.css?v=20261102"></head><body class="admin-console ops-page ops-sms"><?php admin_shell_start('sms','SMS gateways','Manage message delivery, provider priority and gateway health in one place.',$ENV); ?>
+<title>SMS gateways · Nister Admin</title><link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/assets/premium.css?v=20261103"><link rel="stylesheet" href="/assets/admin-shell.css?v=20261103"></head><body class="admin-console ops-page ops-sms"><?php admin_shell_start('sms','SMS gateways',$ENV); ?>
 <?php if ($notice): ?><p class="notice" role="status"><?=sms_h($notice)?></p><?php endif; ?>
 <?php if ($error): ?><p class="error" role="alert"><?=sms_h($error)?></p><?php endif; ?>
 <section><h2><?= $status['enabled'] ? 'Delivery is on' : 'Delivery is paused' ?></h2>

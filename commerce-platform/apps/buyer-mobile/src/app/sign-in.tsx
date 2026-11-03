@@ -39,7 +39,7 @@ export default function SignInScreen() {
     <Screen contentStyle={styles.screen}>
       <View style={styles.brand}>
         <View style={styles.brandMark}><LockKeyhole color={colors.primary} size={28} /></View>
-        <PageHeader title="NISTER Market" subtitle="Sign in to shop and track your deliveries." />
+        <PageHeader title="NISTER Market" />
         {dataMode === "demo" ? <StatusBadge label="Development demo data" tone="warning" /> : null}
       </View>
       <Card>

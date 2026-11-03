@@ -12,12 +12,7 @@ function UnknownHostFallback() {
     <main className="site-page site-page-light">
       <SiteNav active="home" />
       <section className="fallback-section shell">
-        <p className="eyebrow">Nister Wi-Fi</p>
-        <h1>Open Nister Wi-Fi from the right address.</h1>
-        <p>
-          Use nister.org to learn about coverage and partnerships. Use wifi.nister.org when you are on-site and need to
-          connect, log in, or manage access.
-        </p>
+        <h1>Nister Wi-Fi</h1>
         <div className="button-row">
           <a className="button button-primary" href="https://nister.org/">
             Open Nister Wi-Fi

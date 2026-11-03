@@ -7,7 +7,7 @@ import { CatalogView } from "@/components/catalog-view";
 function SearchResults() {
   const params = useSearchParams();
   const query = params.get("q")?.trim() ?? "";
-  return <CatalogView title={query ? `Results for “${query}”` : "Explore the market"} description={query ? "Products and shops matching your search." : "Browse every product from verified shops on NISTER Market."} query={query || undefined} />;
+  return <CatalogView title={query ? `Results for “${query}”` : "Explore the market"} query={query || undefined} />;
 }
 
 export default function SearchPage() {

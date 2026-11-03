@@ -20,7 +20,7 @@ export default function OrdersScreen() {
   const orders = useQuery({ queryKey: ["buyer-orders"], queryFn: buyerData.listOrders });
   return (
     <View style={styles.screen}>
-      <PageHeader title="Orders" subtitle="Open an order for its latest delivery status." />
+      <PageHeader title="Orders" />
       <QueryState loading={orders.isLoading} error={orders.error} empty={orders.data?.length === 0} emptyLabel="You have not placed an order yet." onRetry={() => void orders.refetch()} />
       {orders.data?.map((order) => (
         <Pressable

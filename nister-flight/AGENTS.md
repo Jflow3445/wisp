@@ -1,3 +1,8 @@
+Product presentation follows `../DESIGN.md`: direct task titles, one clear
+action, labelled controls and no decorative introductions. Keep financial,
+eligibility and consent information beside the relevant action. Shared Flight
+page headings live in `src/components/flight/page-heading.tsx`.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know

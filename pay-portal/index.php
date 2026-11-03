@@ -44,9 +44,9 @@ if ($siteCode !== null && $siteCode !== '') {
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+
+
   <style>
     :root{
       --bg:#f4f1ea;
@@ -77,25 +77,7 @@ if ($siteCode !== null && $siteCode !== '') {
       min-height:100vh;
       letter-spacing:0;
     }
-    body::before{
-      content:"";
-      position:fixed;
-      inset:0;
-      background:
-        radial-gradient(1000px 520px at 5% -10%,rgba(15,118,110,.18),transparent 60%),
-        radial-gradient(900px 500px at 95% 0%,rgba(180,83,9,.16),transparent 60%),
-        radial-gradient(700px 420px at 40% 100%,rgba(15,118,110,.08),transparent 70%);
-      z-index:-2;
-    }
-    body::after{
-      content:"";
-      position:fixed;
-      inset:-20%;
-      background:repeating-linear-gradient(120deg,rgba(0,0,0,.025) 0,rgba(0,0,0,.025) 1px,transparent 1px,transparent 14px);
-      opacity:.45;
-      z-index:-1;
-      pointer-events:none;
-    }
+
     .page{max-width:1200px;margin:0 auto;padding:32px 24px 64px}
     .brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
     .mark{
@@ -243,9 +225,9 @@ if ($siteCode !== null && $siteCode !== '') {
       .hero-actions .btn{width:100%}
     }
   </style>
-  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
+  <link rel="stylesheet" href="/assets/premium.css?v=20261103">
   <?php if ($loggedIn): ?><link rel="stylesheet" href="/assets/withdrawals.css?v=2"><script src="/assets/withdrawals.js?v=3" defer></script><?php endif; ?>
-  <link rel="stylesheet" href="/assets/portal-discovery.css?v=20261102">
+  <link rel="stylesheet" href="/assets/portal-discovery.css?v=20261103">
 </head>
 <body class="pay-portal">
   <div class="page user-page">
@@ -264,9 +246,6 @@ if ($siteCode !== null && $siteCode !== '') {
       </nav>
       <nav class="user-top-actions" aria-label="Account actions">
         <?php if ($spinVisible): ?><a class="btn flight-nav" data-spin-discovery href="/spin.php">Flight game ↗</a><?php endif; ?>
-        <a class="btn ghost" data-menu-link href="#plans_section">Plans</a>
-        <a class="btn ghost" data-menu-link href="#activity_section">Activity</a>
-        <button class="btn primary" id="topup_now" type="button"<?= $loggedIn ? '' : ' disabled' ?>>Top up</button>
         <?php if (!$loggedIn): ?>
           <a class="btn ghost" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a>
           <a class="btn ghost" href="/register.php">Create account</a>
@@ -279,7 +258,7 @@ if ($siteCode !== null && $siteCode !== '') {
     <div class="user-layout">
       <aside class="user-side">
         <div class="side-card user-menu-card">
-          <div class="muted menu-title">Account menu</div>
+
           <nav class="user-menu" aria-label="Pay portal menu">
             <a class="btn active" data-menu-link href="#account_section">Overview</a>
             <a class="btn" data-menu-link href="#wallet_section">Wallet</a>
@@ -290,7 +269,7 @@ if ($siteCode !== null && $siteCode !== '') {
           </nav>
         </div>
         <div class="side-card user-pocket">
-          <div class="pill">Live account</div>
+
           <div class="side-label">Current number</div>
           <div class="side-value"><?= $loggedIn ? htmlspecialchars($userMsisdn, ENT_QUOTES, 'UTF-8') : 'Not logged in' ?></div>
           <div class="side-label">Payments</div>
@@ -301,27 +280,14 @@ if ($siteCode !== null && $siteCode !== '') {
       <main class="user-content">
         <section class="hero user-overview portal-panel is-active" id="account_section">
           <div class="hero-copy">
-            <div class="brand">
-              <div class="mark"><span></span></div>
-              <div class="brand-text">
-                <span class="name">Nister Wi-Fi</span>
-                <span class="tag">Manage Access</span>
-              </div>
-            </div>
-            <h1>Manage your access and get back online.</h1>
-            <p class="lead">Check your wallet, buy a plan, turn on auto-renew, track rewards, and reach support from one secure portal.</p>
+            <h1>Your account</h1>
             <div class="hero-actions">
-              <button class="btn primary" data-topup-open type="button">Top up wallet</button>
+              <button class="btn primary" id="topup_now" type="button"<?= $loggedIn ? '' : ' disabled' ?>>Top up wallet</button>
               <a class="btn ghost" data-menu-link href="#plans_section">Choose a plan</a>
               <?php if (!$loggedIn): ?>
                 <a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login to your account</a>
                 <a class="btn signup-link" href="/register.php">Create an account</a>
               <?php endif; ?>
-            </div>
-            <div class="trust">
-              <div class="trust-item">Pay with MoMo</div>
-              <div class="trust-item">Plans activate instantly</div>
-              <div class="trust-item">WhatsApp support</div>
             </div>
             <?php require __DIR__.'/views/flight-promo.php'; ?>
           </div>
@@ -329,12 +295,12 @@ if ($siteCode !== null && $siteCode !== '') {
             <div class="card overview">
               <div class="card-head">
                 <h3>Account overview</h3>
-                <span class="pill">Live</span>
+
               </div>
               <?php if (!$loggedIn): ?>
                 <div class="callout" style="margin-bottom:12px">
                   <div class="callout-title">Login required</div>
-                  <div class="sub">Sign in with your hotspot number and password to see your wallet, plans, and purchases.</div>
+                  <div class="sub">Sign in to view your account.</div>
                   <div style="margin-top:8px"><a class="btn outline" href="<?=htmlspecialchars($loginHref, ENT_QUOTES, 'UTF-8')?>">Login</a></div>
                 </div>
               <?php endif; ?>
@@ -343,7 +309,7 @@ if ($siteCode !== null && $siteCode !== '') {
                 <div id="who" class="value"><?= $loggedIn ? htmlspecialchars($userMsisdn, ENT_QUOTES, 'UTF-8') : 'Not logged in' ?></div>
               </div>
               <div class="manual" id="manual_row"<?= $loggedIn ? ' style="display:none"' : '' ?>>
-                <input id="msisdn_in" class="input" type="tel" placeholder="Enter your phone number">
+                <input id="msisdn_in" class="input" type="tel" aria-label="Phone number" placeholder="Enter your phone number">
                 <button class="btn outline" id="load_btn" type="button">Load account</button>
               </div>
               <div class="stats">
@@ -358,7 +324,7 @@ if ($siteCode !== null && $siteCode !== '') {
               </div>
               <div class="support">
                 <a id="wa_link" class="link" href="<?=htmlspecialchars($waHref, ENT_QUOTES, 'UTF-8')?>" target="_blank" rel="noopener">WhatsApp support</a>
-                <span class="sub">Need help with a payment or plan? Message support with your phone number and Transaction ID.</span>
+                <span class="sub">Include your phone number and transaction ID.</span>
                 <?php if ($loggedIn): ?>
                   <a class="link" href="/logout.php">Logout</a>
                 <?php endif; ?>
@@ -370,10 +336,10 @@ if ($siteCode !== null && $siteCode !== '') {
         <section class="section user-section split portal-panel" id="wallet_section">
           <div class="card highlight" id="auto_renew_card">
             <div class="card-head">
-              <h3>Wallet and auto-renew</h3>
+              <h1>Wallet</h1>
               <span class="pill soft" id="auto_renew_badge">Off</span>
             </div>
-            <p class="muted">Keep money in your wallet so your next plan can renew before your data finishes or your time expires.</p>
+
             <?php if (!$loggedIn): ?>
               <div class="callout">
                 <div class="callout-title">Login required</div>
@@ -412,8 +378,8 @@ if ($siteCode !== null && $siteCode !== '') {
         <section class="section user-section portal-panel" id="plans_section">
           <div class="section-head">
             <div>
-              <h2>Choose your next plan</h2>
-              <p class="muted">Buy with your wallet balance and get online right away.</p>
+              <h1>Plans</h1>
+
             </div>
             <div class="pill soft">Paid from wallet</div>
           </div>
@@ -425,15 +391,15 @@ if ($siteCode !== null && $siteCode !== '') {
         <section class="section user-section portal-panel" id="rewards_section">
           <div class="section-head">
             <div>
-              <h2>Referral rewards</h2>
-              <p class="muted">Share your code, then track pending and released bonus credit.</p>
+              <h1>Rewards</h1>
+
             </div>
-            <div class="pill">Earn</div>
+
           </div>
           <div class="card" id="referral_card">
             <div class="card-head">
               <h3>Rewards overview</h3>
-              <span class="pill">Earn</span>
+
             </div>
             <?php if (!$loggedIn): ?>
               <div class="callout" style="margin-bottom:12px">
@@ -469,27 +435,17 @@ if ($siteCode !== null && $siteCode !== '') {
 
         <section class="section user-section split portal-panel" id="activity_section">
           <div class="card">
-            <h3>Recent activity</h3>
+            <h1>Activity</h1>
             <ul id="recent" class="list">
               <li class="muted">No activity yet.</li>
             </ul>
-          </div>
-          <div class="card steps">
-            <h3>Support</h3>
-            <ol>
-              <li>Log in with your hotspot number.</li>
-              <li>Top up your wallet if the balance is low.</li>
-              <li>Choose a plan and pay from wallet.</li>
-              <li>Use Get Online or WhatsApp support if a payment or login needs checking.</li>
-            </ol>
-            <div class="note">Tip: Keep your MoMo Transaction ID until the wallet credit appears.</div>
           </div>
         </section>
 
         <footer class="footer">
           <div>
             <span class="brand-mini">Nister Wi-Fi</span>
-            <span class="muted">Wallet, plans, and support</span>
+
           </div>
           <nav class="footer-site-links" aria-label="Nister footer navigation">
             <a href="https://nister.org/">Home</a>

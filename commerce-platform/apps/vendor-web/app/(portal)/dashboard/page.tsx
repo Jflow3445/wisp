@@ -28,7 +28,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <PageHeader title="Operations overview" description="Monday, 20 July - Nana's Pantry" actions={<Link href="/orders" className="btn-secondary">View all orders <ArrowRight className="h-4 w-4" /></Link>} />
+      <PageHeader title="Dashboard" actions={<Link href="/orders" className="btn-secondary">View all orders <ArrowRight className="h-4 w-4" /></Link>} />
       <div className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-6 lg:p-8">
         {state !== "ready" ? <PageState state={state} resetHref="/dashboard" /> : (
           <>

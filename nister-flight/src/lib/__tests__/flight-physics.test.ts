@@ -53,7 +53,7 @@ test("server-timestamped controls replay exactly regardless of polling partition
 });
 test("missing control heartbeat returns elevator to neutral after one second", () => {
   const a = initialPilot(); a.elevator = .35;
-  let neutral = advancePilot(a, 1000, 24000, path, "heartbeat");
+  const neutral = advancePilot(a, 1000, 24000, path, "heartbeat");
   neutral.elevator = 0;
   assert.deepEqual(advancePilot(a, 3000, 24000, path, "heartbeat").aircraft, advancePilot(neutral, 3000, 24000, path, "heartbeat").aircraft);
 });

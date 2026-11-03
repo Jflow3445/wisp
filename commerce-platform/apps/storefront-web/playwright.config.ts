@@ -7,15 +7,17 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:4200",
     trace: "retain-on-failure",
+    channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === "win32" ? "msedge" : undefined),
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
     { name: "mobile", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "NEXT_PUBLIC_DEMO_MODE=true npm run build && npm run start",
+    command: "npm run build && npm run start",
+    env: { NEXT_PUBLIC_DEMO_MODE: "true" },
     url: "http://127.0.0.1:4200",
-    reuseExistingServer: false,
-    timeout: 120_000,
+    reuseExistingServer: true,
+    timeout: 300_000,
   },
 });

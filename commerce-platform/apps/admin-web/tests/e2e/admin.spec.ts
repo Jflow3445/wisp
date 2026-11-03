@@ -4,7 +4,7 @@ test("signs into marketplace control", async ({ page }) => {
   await page.goto("/login");
   await page.getByRole("button", { name: "Continue securely" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Marketplace control" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });
 
 test("requires evidence for a vendor approval", async ({ page }) => {

@@ -2,9 +2,9 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Flight | Nister Wi-Fi</title><meta name="robots" content="noindex,nofollow,noarchive">
 <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/spin.css?v=6"><link rel="stylesheet" href="/assets/spin-portal.css?v=1"><link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
+
+
+<link rel="stylesheet" href="/assets/spin.css?v=6"><link rel="stylesheet" href="/assets/spin-portal.css?v=1"><link rel="stylesheet" href="/assets/premium.css?v=20261103">
 <script src="/assets/flight-motion.js?v=6" defer></script><script src="/assets/spin.js?v=7" defer></script></head>
 <body class="spin-body spin-customer pay-portal"><a class="skip" href="#game-main">Skip to game</a>
 <div id="spin-app" class="page user-page" data-csrf="<?=spin_html($csrf)?>" data-account="<?=spin_html($accountHash)?>">
@@ -13,8 +13,8 @@
 <nav class="user-top-actions" aria-label="Account actions"><a class="btn ghost" href="/portal.php#plans_section">Plans</a><a class="btn ghost" href="/portal.php#activity_section">Activity</a><a class="btn primary" href="/portal.php#wallet_section">Top up</a><a class="btn ghost" href="/logout.php">Logout</a></nav></header>
 <div class="user-layout"><aside class="user-side"><div class="side-card user-menu-card"><div class="muted menu-title">Account menu</div><nav class="user-menu" aria-label="Pay portal menu"><a class="btn" href="/portal.php#account_section">Overview</a><a class="btn" href="/portal.php#wallet_section">Wallet</a><a class="btn" href="/portal.php#plans_section">Plans</a><a class="btn" href="/portal.php#rewards_section">Rewards</a><a class="btn active" href="/spin.php" aria-current="page" data-game-navigation>Flight</a><a class="btn" href="/portal.php#activity_section">Activity</a></nav></div><div class="side-card user-pocket"><div class="pill">Live account</div><div class="side-label">Current number</div><div class="side-value" id="account-number"><?=spin_html('0'.substr($user,3))?></div><div class="side-label">Your wallet</div><div class="side-value">One balance for plans &amp; play</div></div></aside>
 <main class="game-main user-content" id="game-main"><div id="game-content">
-<div class="game-overline"><span class="eyebrow">YOUR ACCOUNT / FLIGHT</span><span class="live-badge" id="game-state">Loading</span></div>
-<section class="game-intro"><div><h1>Catch your moment<span>.</span></h1><p>Rise, dip, or reach zero. Collect up to <strong>2x your stake</strong>.<br>Stop &amp; Collect to secure the current return.</p></div>
+<div class="game-overline"><span class="live-badge" id="game-state">Loading</span></div>
+<section class="game-intro"><div><h1>Flight</h1><p>Rise, dip, or reach zero. Collect up to <strong>2x your stake</strong>.<br>Stop &amp; Collect to secure the current return.</p></div>
 <div class="balance-strip" aria-label="Your wallet"><span class="balance-label">AVAILABLE WALLET</span><strong id="cash-balance">&mdash;</strong><span id="held-balance">No stake held</span><a href="/portal.php#wallet_section">Add funds &#8599;</a></div></section>
 <p class="notice" id="availability-message" role="status" hidden></p>
 <section class="play-layout flight-layout" aria-label="Flight and stake">
@@ -28,7 +28,7 @@
 <path id="flight-area" fill="url(#trail-fill)"/><path id="flight-trail-glow" class="flight-trail-glow"/><path id="flight-trail" class="flight-trail"/>
 <g id="flight-plane" transform="translate(80 160)" aria-hidden="true"><circle class="flight-aura" r="29" fill="#b3edce" opacity=".09"/><g id="flight-plane-body"><path class="flight-exhaust" d="M-34 -3H-55 M-34 3H-49" fill="none" stroke="#bdf2d0" stroke-width="2" stroke-linecap="round"/><path d="M33 0Q29 -4 5 -5L-8 -23H-16L-10 -4L-28 -3L-35 -11H-41L-36 0L-41 11H-35L-28 3L-10 4L-16 23H-8L5 5Q29 4 33 0Z" fill="url(#flight-metal)" stroke="#fff5db" stroke-width="1"/><path d="M20 -2Q25 -2 27 0Q25 2 20 2Z" fill="#245649"/><path d="M-21 0H17 M-9 -5L-2 -17 M-9 5L-2 17" fill="none" stroke="#ad8c58" stroke-width=".8"/></g></g></svg>
 <div class="flight-stage-bottom"><span id="flight-caption">The return can rise or fall. Zero ends the flight.</span><span class="flight-brand">NISTER / FLIGHT</span></div></div>
-<aside class="stake-panel"><span class="eyebrow">YOUR NEXT FLIGHT</span><h2>Choose your stake.</h2><p>The stake is held when you take off.</p>
+<aside class="stake-panel"><h2>Stake</h2><p>The stake is held when you take off.</p>
 <form id="stake-form"><label for="stake">Amount</label><div class="money-input"><span>GHS</span><input id="stake" name="stake" inputmode="decimal" autocomplete="off" value="5.00" required aria-describedby="stake-hint"></div><p class="input-hint" id="stake-hint">Loading minimum stake...</p>
 <div class="stake-shortcuts" aria-label="Quick amounts"><button type="button" data-stake="500">GHS 5</button><button type="button" data-stake="1000">GHS 10</button><button type="button" data-stake="2000">GHS 20</button><button type="button" data-stake="5000">GHS 50</button></div>
 <button class="btn primary primary-btn" id="review-stake" type="submit" disabled>Take off &#8599;</button></form>

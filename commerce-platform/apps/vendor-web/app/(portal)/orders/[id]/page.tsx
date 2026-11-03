@@ -19,7 +19,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   return (
     <>
-      <PageHeader title={order.reference} description={`Placed ${formatDateTime(order.placedAt)} - ${order.itemCount} items`} actions={<OrderActions order={order} />} />
+      <PageHeader title={order.reference} meta={`Placed ${formatDateTime(order.placedAt)} - ${order.itemCount} items`} actions={<OrderActions order={order} />} />
       <div className="mx-auto max-w-[1400px] space-y-4 p-4 sm:p-6 lg:p-8">
         <Link href="/orders" className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-forest"><ArrowLeft className="h-3.5 w-3.5" />Back to orders</Link>
         {order.status === "AWAITING_VENDOR_RESPONSE" ? <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center"><Clock3 className="h-4 w-4 shrink-0" /><span className="font-semibold">Response due in 9 minutes.</span><span className="text-amber-800">Unanswered orders are automatically rejected when the reservation window closes.</span></div> : null}

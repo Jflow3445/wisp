@@ -31,7 +31,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const displayed = state === "empty" ? [] : filtered;
   return (
     <>
-      <PageHeader title="Products" description="Catalogue listings and moderation status" actions={<ActionDialog endpoint="/vendor/products" action="CREATE_DRAFT" title="Create product draft?" description="A new private draft will be created. Complete required product data before submitting it for moderation." confirmLabel="Create draft" trigger={<span className="btn-primary"><FilePlus2 className="h-4 w-4" />New product</span>} />} />
+      <PageHeader title="Products" actions={<ActionDialog endpoint="/vendor/products" action="CREATE_DRAFT" title="Create product draft?" description="A new private draft will be created. Complete required product data before submitting it for moderation." confirmLabel="Create draft" trigger={<span className="btn-primary"><FilePlus2 className="h-4 w-4" />New product</span>} />} />
       <div className="mx-auto max-w-[1600px] space-y-4 p-4 sm:p-6 lg:p-8">
         {state === "error" || state === "permission" ? <PageState state={state} resetHref="/products" /> : <>
           <div className="panel overflow-hidden"><FilterBar placeholder="Search name or SKU" defaultQuery={query.q}><select className="field w-auto min-w-40" name="status" defaultValue={query.status ?? ""} aria-label="Moderation status"><option value="">All statuses</option><option value="APPROVED">Approved</option><option value="SUBMITTED">Submitted</option><option value="CHANGES_REQUESTED">Changes requested</option><option value="DRAFT">Draft</option></select></FilterBar></div>

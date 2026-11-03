@@ -12,9 +12,9 @@ $ADMIN_CSRF = admin_csrf_token();
 <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+
+
 <style>
   :root{
     --bg:#f4f1ea;
@@ -44,15 +44,7 @@ $ADMIN_CSRF = admin_csrf_token();
     min-height:100vh;
     letter-spacing:0;
   }
-  body::before{
-    content:"";
-    position:fixed;
-    inset:0;
-    background:
-      radial-gradient(980px 520px at 6% -10%,rgba(15,118,110,.18),transparent 60%),
-      radial-gradient(820px 440px at 96% 0%,rgba(180,83,9,.14),transparent 60%);
-    z-index:-1;
-  }
+
   .wrap{max-width:1240px;margin:0 auto;padding:24px 24px 48px}
   .topbar{
     display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px;
@@ -220,7 +212,7 @@ $ADMIN_CSRF = admin_csrf_token();
     <div class="brand-lockup">
       <div class="mark"><span></span></div>
       <div>
-        <h1 class="brand">Nister Admin</h1>
+        <div class="brand">Nister Admin</div>
         <div class="muted" id="whoami">...</div>
       </div>
     </div>
@@ -239,7 +231,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="layout">
     <aside class="side">
       <div class="side-card">
-        <div class="muted" style="margin-bottom:8px;font-weight:600">Admin sections</div>
+
         <div class="menu" id="menu">
           <button class="btn" data-section="overview" type="button" onclick="setSection('overview')">Overview</button>
           <button class="btn" data-section="billing" type="button" onclick="setSection('billing')">Billing</button>
@@ -259,11 +251,12 @@ $ADMIN_CSRF = admin_csrf_token();
       </div>
     </aside>
     <main class="content">
+      <h1 id="section_title" class="admin-page-title">Overview</h1>
 
   <div class="card" data-section="overview">
     <div class="section-head">
-      <h2>Operations overview</h2>
-      <span class="badge">Current snapshot</span>
+      <h2>Account totals</h2>
+
     </div>
     <div class="grid">
       <div class="kpi">
@@ -334,7 +327,7 @@ $ADMIN_CSRF = admin_csrf_token();
     </div>
     <div class="section-head" style="margin-top:14px">
       <h3>Access enforcement</h3>
-      <div class="muted">Confirm that paid users can browse and limited users stay limited.</div>
+
     </div>
     <div class="grid" id="enforcement_grid">
       <div class="kpi compact">
@@ -373,7 +366,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="settings">
     <div class="section-head">
       <h2>Portal settings</h2>
-      <div class="muted">Control payment methods, support contacts, referral rules, and SMS templates shown to customers.</div>
+
     </div>
     <div class="form-grid">
       <div class="field">
@@ -701,7 +694,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Plan purchases</h2>
-      <div class="muted">Track plan sales, pending activation, and failed purchases.</div>
+
     </div>
     <div class="grid">
       <div class="kpi"><div class="label">Total sales</div><div class="value" id="purchase_total">GHS 0.00</div></div>
@@ -715,7 +708,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="plans">
     <div class="section-head">
       <h2>Plan catalog</h2>
-      <div class="muted">Create, edit, or retire the plans customers can buy for the selected site.</div>
+
     </div>
     <div class="form-grid">
       <div class="field">
@@ -772,7 +765,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Top plans, last 30 days</h2>
-      <div class="muted">See which plans customers buy most and how much they bring in.</div>
+
     </div>
     <div class="table-wrap">
       <table class="table small" id="top_plans_tbl">
@@ -789,7 +782,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="billing">
     <div class="section-head">
       <h2>Daily money flow, last 14 days</h2>
-      <div class="muted">Compare approved deposits with plans actually applied.</div>
+
     </div>
     <div class="table-wrap">
       <table class="table small" id="series_tbl">
@@ -823,7 +816,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="alerts">
     <div class="section-head">
       <h2>Alerts</h2>
-      <div class="muted">Watch CoA failures, limit events, and health outages that need operator action.</div>
+
     </div>
     <div class="form-grid" style="margin-bottom:10px">
       <div class="field">
@@ -842,7 +835,7 @@ $ADMIN_CSRF = admin_csrf_token();
     </div>
     <div class="section-head" style="margin-top:14px">
       <h3>Downtime timeline</h3>
-      <div class="muted">Health outages detected by scheduled checks.</div>
+
     </div>
     <div class="table-wrap">
       <table class="table small" id="health_downtime_tbl">
@@ -859,7 +852,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="users">
     <div class="section-head">
       <h2>User access states</h2>
-      <div class="muted">Scan expiry, quota, rate, and HS_* policy state for each user.</div>
+
     </div>
     <div class="form-grid" style="margin-bottom:10px">
       <div class="field">
@@ -897,7 +890,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="users">
     <div class="section-head">
       <h2>User tools</h2>
-      <div class="muted">Lookup a user, adjust wallet or access, reset login, disconnect sessions, or remove records.</div>
+
     </div>
     <div class="split">
       <div>
@@ -1181,7 +1174,7 @@ $ADMIN_CSRF = admin_csrf_token();
   <div class="card" data-section="users">
     <div class="section-head">
       <h2>SMS broadcast</h2>
-      <div class="muted">Send operational messages to a specific list, all users, or one HS_* group.</div>
+
     </div>
     <div class="form-grid">
       <div class="field">
@@ -1290,7 +1283,7 @@ async function api(fn, body){
 }
 
 function setSection(sec){
-  const cards = document.querySelectorAll('[data-section]');
+  const cards = document.querySelectorAll('.content [data-section]');
   cards.forEach(c=>{
     const show = (sec === 'all' || c.dataset.section === sec);
     c.classList.toggle('section-hidden', !show);
@@ -1299,8 +1292,13 @@ function setSection(sec){
   if (menu){
     menu.querySelectorAll('button[data-section]').forEach(b=>{
       b.classList.toggle('active', b.dataset.section === sec);
+      if (b.dataset.section === sec) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
     });
   }
+  const activeButton = menu && menu.querySelector('button[aria-current=page]');
+  const title = document.getElementById('section_title');
+  if (title) title.textContent = activeButton ? activeButton.textContent : 'Overview';
   try { localStorage.setItem('admin_section', sec); } catch (e) {}
 }
 

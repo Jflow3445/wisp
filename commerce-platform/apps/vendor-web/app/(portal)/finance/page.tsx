@@ -26,7 +26,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
   const entries = await apiGet<FinanceEntry[]>("/vendor/finance");
   return (
     <>
-      <PageHeader title="Finance" description="Settlements, fees, refunds, and payout history" actions={<button type="button" className="btn-secondary"><Download className="h-4 w-4" />Export CSV</button>} />
+      <PageHeader title="Finance" actions={<button type="button" className="btn-secondary"><Download className="h-4 w-4" />Export CSV</button>} />
       <div className="mx-auto max-w-[1600px] space-y-5 p-4 sm:p-6 lg:p-8">
         {state !== "ready" ? <PageState state={state} resetHref="/finance" /> : <>
           <section className="grid gap-3 sm:grid-cols-3"><MetricCard label="Available to settle" value="GHS 8,642.30" change="52 completed orders" tone="good" /><MetricCard label="Pending clearance" value="GHS 1,126.40" change="7 active orders" tone="warning" /><MetricCard label="Fees this month" value="GHS 946.18" change="10.0% effective rate" tone="neutral" /></section>

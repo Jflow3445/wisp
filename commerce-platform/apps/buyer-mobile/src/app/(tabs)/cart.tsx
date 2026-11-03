@@ -16,7 +16,7 @@ export default function CartScreen() {
 
   return (
     <View style={styles.screen}>
-      <PageHeader title="Your cart" subtitle="Quantities and checkout details are saved on this device." />
+      <PageHeader title="Your cart" />
       {lines.length === 0 ? <QueryState loading={false} error={null} empty emptyLabel="Your cart is empty." /> : null}
       {lines.map((line) => (
         <Card key={line.offerId}>

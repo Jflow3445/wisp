@@ -531,14 +531,14 @@
       <div class="logo">
         <div class="dot"></div>
         <div class="name">NISTER Wi-Fi</div>
-        <span class="tag">login</span>
+
       </div>
 
-      <h2 class="h">Welcome back</h2>
-      <p class="sub">Sign in to get online. New here? <a class="link" data-signup-link href="signup.html?dst=$(link-orig)">Create an account</a>.</p>
+      <h1 class="h">Log in</h1>
+
 
       <!-- One banner used for success OR error -->
-      <div id="banner" class="banner"><span id="banner-text"></span></div>
+      <div id="banner" class="banner" role="status" aria-live="polite"><span id="banner-text"></span></div>
       <div id="mk-error" data-error="$(error)" style="display:none"></div>
       <noscript><div class="banner err" style="display:block">This page requires JavaScript to log in.</div></noscript>
 
@@ -562,16 +562,16 @@
 
         <label class="small" for="pass">Password</label>
         <div class="input-wrap">
-          <input id="pass" name="password" class="input" type="password" autocomplete="current-password" placeholder="Your password">
+          <input id="pass" name="password" class="input" type="password" autocomplete="current-password" >
           <button class="toggle-btn" id="toggle_pass" type="button" aria-pressed="false">Show</button>
         </div>
 
         <label class="check-row">
           <input id="remember" type="checkbox">
-          <span>Remember me on this device</span>
+          <span>Remember phone number</span>
         </label>
 
-        <div class="helper">If you just signed up, use the same phone number and password.</div>
+
 
         <div style="height:14px"></div>
 
@@ -588,17 +588,11 @@
       </div>
       <div style="height:10px"></div>
       <div class="center small">
-        Already online?
-        <a class="link" href="$(link-status)">Check status / logout</a>
+        <a class="link" href="$(link-status)">Account status</a>
       </div>
 
       <div class="support">
         <a class="support-link" href="https://wa.me/233598544768" target="_blank" rel="noopener">WhatsApp support</a>
-        <span class="note">Need help logging in? Chat with us.</span>
-      </div>
-
-      <div class="footer">
-        Device: <span class="tag">$(mac)</span> | IP: <span class="tag">$(ip)</span>
       </div>
     </div>
   </div>

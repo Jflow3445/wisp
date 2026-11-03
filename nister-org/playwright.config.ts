@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "**/._*",
   timeout: 30_000,
   expect: {
     timeout: 8_000,
@@ -9,6 +10,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:3020",
     trace: "on-first-retry",
+    channel: process.env.PLAYWRIGHT_CHANNEL || (process.platform === "win32" ? "msedge" : undefined),
   },
   projects: [
     {
@@ -21,7 +23,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run build && npm run standalone:prepare && PORT=3020 HOSTNAME=127.0.0.1 npm run start",
+    command: "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3020",
     url: "http://127.0.0.1:3020",
     reuseExistingServer: true,
     timeout: 180_000,

@@ -37,9 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="icon" href="/assets/nister-browser-icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+
+
   <style>
     :root{
       --bg:#f4f1ea;
@@ -68,15 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       padding:24px;
       letter-spacing:0;
     }
-    body::before{
-      content:"";
-      position:fixed;
-      inset:0;
-      z-index:-1;
-      background:
-        radial-gradient(900px 480px at 8% -10%,rgba(15,118,110,.18),transparent 60%),
-        radial-gradient(760px 420px at 92% 0%,rgba(180,83,9,.14),transparent 60%);
-    }
+
     .card{
       background:var(--card);
       border:1px solid var(--line);
@@ -131,36 +123,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .err{color:#b91c1c;margin:.6rem 0}
     .ok{color:#15803d;margin:.6rem 0}
   </style>
-  <link rel="stylesheet" href="/assets/premium.css?v=20260603-premium9">
+  <link rel="stylesheet" href="/assets/premium.css?v=20261103">
 </head>
 <body class="admin-auth">
   <main class="auth-shell">
-    <section class="auth-brand" aria-label="Nister admin portal">
-      <div class="auth-brand-top">
-        <a class="brand-row auth-brand-link" href="https://nister.org/" aria-label="Nister Wi-Fi home">
-          <div class="mark"><span></span></div>
-          <div>
-            <div class="brand-name">Nister Wi-Fi</div>
-            <div class="brand-tag">Admin console</div>
-          </div>
-        </a>
-        <nav class="nister-auth-nav" aria-label="Nister site navigation">
-          <a href="https://nister.org/">Home</a>
-          <a href="https://wifi.nister.org/">Get Online</a>
-          <a href="https://pay.nister.org/">Manage Access</a>
-        </nav>
-      </div>
-      <div>
-        <h2>Run payments and network access.</h2>
-        <p>Review deposits, check service health, manage user access, and keep each site online from one controlled workspace.</p>
-      </div>
-      <div class="auth-meta" aria-hidden="true">
-        <span>Billing</span>
-        <span>Users</span>
-        <span>Network</span>
-      </div>
-    </section>
-    <section class="card auth-card">
+<section class="card auth-card">
     <div class="brand-row">
       <div class="mark"><span></span></div>
       <div>
@@ -169,10 +136,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     </div>
     <h1>Admin sign-in</h1>
-    <div class="muted">Use your operator account to manage deposits, users, plans, and network status.</div>
-
-    <?php if ($msg==='logged_out'): ?>
-      <div class="ok">Signed out. Sign in again to continue.</div>
+<?php if ($msg==='logged_out'): ?>
+      <div class="ok">Signed out.</div>
     <?php endif; ?>
 
     <?php if ($err!==''): ?>

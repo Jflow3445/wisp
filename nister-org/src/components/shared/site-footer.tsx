@@ -6,9 +6,6 @@ export function SiteFooter() {
       <div className="shell footer-grid">
         <div>
           <p className="footer-title">Nister Wi-Fi</p>
-          <p className="footer-copy">
-            Shared internet access for hostels and remote communities where getting online matters every day.
-          </p>
         </div>
         <div className="footer-links" aria-label="Footer links">
           <a href={EXTERNAL_LINKS.main}>Home</a>

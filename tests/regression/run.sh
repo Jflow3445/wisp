@@ -584,4 +584,7 @@ pass "admin_registration_behavior"
 php tests/regression/self_registration.php
 pass "self_registration_policy_behavior"
 
+node tests/regression/ui_contract.js
+pass "captive_presentation_and_router_sync"
+
 printf 'All regression tests passed (%d).\n' "$pass_count"
