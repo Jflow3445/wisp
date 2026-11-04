@@ -100,6 +100,17 @@ code lives under `pay-portal/`, but the public hotspot API contract remains
 
 ## Forensic Log Boundaries
 
+- Before staging or building on the VPS, run `python3 ops/storage_preflight.py /`
+  or the installed `/usr/local/sbin/nister_storage_preflight.py /`. It requires
+  3 GiB free; do not weaken the threshold to make a deployment pass.
+- Retain the running and previous working release. Move older inactive releases
+  and staging directories to private off-server storage after checking process
+  references. Verify every archived file's size and checksum before removing its
+  exact server directory; record the archive location and verification manifest.
+- Quota enforcement must avoid rewriting unchanged quota/group rows. Keep audit
+  triggers and retention intact; do not suppress auditing or purge database
+  history to fix repeated policy writes.
+
 - NetFlow files under `/var/log/netflow` are regulatory forensic records. Do not
   delete, truncate, compress away, or shorten their retention just to reclaim
   disk space.

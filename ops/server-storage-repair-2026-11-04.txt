@@ -1,0 +1,102 @@
+Nister server storage repair - 2026-11-04 (Africa/Accra / UTC)
+
+Initial root disk: 25 GB, 95% used, approximately 1.3 GB available.
+Final root disk: 75% used, 6,675,283,968 bytes available (6.22 GiB).
+Recovered: 5,363,249,152 bytes (approximately 5.00 GiB).
+
+Findings and fixes
+1. Inactive application releases and staging builds accumulated on the VPS.
+   Six exact inactive directories were copied to private off-server storage.
+   Their 153,837 entries were verified by size, SHA-256, type, ownership,
+   permissions and symlink target. Every original was rechecked before removal.
+   App symlinks, process commands, working directories and open descriptors were
+   checked before both inventory and deletion. Shared storage symlinks were not
+   followed. The running and previous working Flight releases remain on the VPS.
+
+   Removed only after verified archival:
+     /home/nisterai.com/releases/20261016-061957-22f992d
+     /home/nisterai.com/releases/20261016-083747-6fbc24d
+     /home/nisterai.com/releases/20261016-090855-fd1de12
+     /home/nisterai.com/releases/rollback-20261016-061957-22f992d-642e233
+     /root/nister-deploy-staging/34c01fae31a6-20260805T055544Z
+     /root/nister-deploy-staging/f62a0f8e3945-20260805T052143Z
+
+2. The quota sweep deleted and reinserted correct quota/group rows every run.
+   A recent sample contained 10,000 quota audit rows in roughly 22 minutes and
+   10,000 group audit rows in roughly 33 minutes. Allocated audit files were
+   approximately 1.6 GB and 0.5 GB respectively.
+
+   The active quota script now checks every alias, required attribute, operator,
+   value, group and priority before writing. Missing or duplicate rows, changed
+   caps and stale address lists still repair through the original transactions.
+   Correct rows retain their IDs. No audit trigger or retention policy changed;
+   no production database history was purged or table rebuilt.
+
+   Production audit IDs remained unchanged for 1877 seconds after deployment:
+     radreply_audit:     41421754 -> 41421754
+     audit_radusergroup: 24050809 -> 24050809
+
+3. A timestamped backup under /etc/logrotate.d was still an ACTIVE capture rule:
+     nister-netflow.bak.20260329_043738
+   Its wildcard targeted 395 NetFlow files, including nfcapd.current remnants.
+   The rule was moved to the root-only task backup outside the include directory.
+   A full dry run now finds zero capture rotation matches. The collector PID
+   stayed unchanged through this fix; no HUP or restart was sent.
+
+   The source installer now quarantines old capture-rule copies and generates a
+   cleanup wrapper using only the existing verifying Google Drive uploader.
+   The older live installer received those targeted changes with its unrelated
+   defaults preserved. The live daily cleanup remains verification-only; no
+   age-only deletion was enabled. Hourly archival, Drive authorization, minimum
+   age and enabled/deletion settings remain under the existing admin controls.
+
+4. Nine operational text logs had no matching rotation rule. Added daily/20 MB
+   scheduled checks, 90 rotations and compression, preserving ownership/modes.
+   The rules exclude NetFlow captures and RADIUS accounting detail. The existing
+   daily logrotate timer remains; no service signal is involved.
+
+5. Added a read-only production-build guard requiring 3 GiB available. Native
+   verification blocked staging before cleanup and passed afterward. Flight's
+   staging/build helpers invoke it; root AGENTS.md also requires it for future
+   builds and requires verified off-server archival of old inactive releases.
+
+Verification
+- All 243 regression groups passed, including the new disk-boundary and NetFlow
+  installer tests. Five focused Python cases passed.
+- Sixteen native MariaDB checks execute the actual quota shell functions in an
+  isolated loopback schema with audit triggers. Repeated limited/active sweeps
+  produce no audit mutations; legitimate state repairs and unrelated rows remain.
+- Nine isolated operational log fixtures passed two rotation/compression cycles
+  with content and mode checks. Full production logrotate dry run passed.
+- Python/PHP/shell syntax and staged whitespace checks passed.
+- Eleven live HTTP checks passed, including public registration, protected admin
+  redirect, API-host exclusion and status validation, and all three public hosts.
+- Apache, MariaDB, FreeRADIUS, NetFlow collector and both website services are
+  active. The scheduled NetFlow archive worker reports success.
+- Protected pay/database configuration hashes match. No customer account,
+  financial table, payment, wager, SMS switch or credential was changed for tests.
+- Active release paths and shared customer storage remain. Router configuration,
+  VPN/Winbox, remembered-device policy, swap files and capture retention remain.
+- No production service restart or server reboot was required.
+
+Private archive (excluded from GitHub)
+  C:\Users\FELIXDOLLADIMADO\Documents\Nister-WISP\Access\storage-repair-20261104\inactive-releases.tar.gz
+  Bytes: 1,988,786,002
+  SHA-256: 448776a436918bca02f933f454fec71bbcd5ec901a07217119a2fa9c3a275786
+  Inventory SHA-256: d35641455489f455a45e1ff7f93df95b133cbc1be07741520c6f80b6bbf2f93d
+  archive-verified.json records all 153,837 verified entries.
+
+Server backup and evidence
+  /root/nister-storage-20261104
+  archive-manifest.json, offserver-archive-verified.json, offload-complete.json,
+  quota-deployed.json, quota-audit-before.tsv, storage-controls.json,
+  netflow-rotation-fixed.json, protected.json and final-verified.json.
+
+Exact-file quota rollback (preserves later changes by checksum guard):
+  sudo python3 /root/nister-storage-20261104/rollback-quota.py
+This restores the previous writer without restoring customer data or restarting
+services; it also restores the previous repeated-write behavior. Do not restore
+the unsafe capture rotation rule. Restore an archived release only when needed
+and with sufficient free space; do not put all obsolete builds back on the VPS.
+
+Operational workflow: ops/STORAGE.md

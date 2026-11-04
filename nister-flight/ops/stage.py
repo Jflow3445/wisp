@@ -31,10 +31,11 @@ with connect() as client:
             sftp.put(str(root / ".env.test"), "/home/wispadmin/flight-test-env")
             sftp.chmod("/home/wispadmin/flight-test-env", 0o600)
     script = f"""
-import hashlib,json,os,shutil,tarfile,fcntl
+import hashlib,json,os,shutil,tarfile,fcntl,subprocess
 from pathlib import Path
 stage_lock=open('/home/nisterai.com/flight-build.lock','w')
 fcntl.flock(stage_lock,fcntl.LOCK_EX)
+subprocess.run(['python3','/usr/local/sbin/nister_storage_preflight.py','/home/nisterai.com'],check=True)
 source=Path('/home/wispadmin/flight-source.tar.gz')
 assert hashlib.sha256(source.read_bytes()).hexdigest()=={digest!r},'source checksum mismatch'
 release=Path({release!r})

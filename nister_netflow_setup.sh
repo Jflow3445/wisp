@@ -196,33 +196,24 @@ cat > "$LOGROTATE_FILE" <<EOF
 EOF
 chmod 0644 "$LOGROTATE_FILE"
 
+# Timestamped backups in logrotate.d are still parsed. Keep old capture rules
+# outside that include directory; their wildcard also matches nfcapd.current.
+for legacy_rule in "${LOGROTATE_FILE}".*; do
+  [[ -f "$legacy_rule" && ! -L "$legacy_rule" ]] || continue
+  if grep -Fq "${NETFLOW_DIR}/nfcapd." "$legacy_rule"; then
+    legacy_backup_dir="/var/backups/nister-netflow-logrotate/$(date -u +%Y%m%dT%H%M%S)-$$"
+    install -d -o root -g root -m 0700 "$legacy_backup_dir"
+    mv -- "$legacy_rule" "$legacy_backup_dir/"
+  fi
+done
+
 cat > "$RETENTION_CRON_FILE" <<EOF
 #!/bin/sh
 set -eu
-
-NETFLOW_DIR="${NETFLOW_DIR}"
-RETENTION_DAYS="${NETFLOW_RETENTION_DAYS}"
-
-capture_list() {
-  find "\$NETFLOW_DIR" -maxdepth 1 -type f -name 'nfcapd.[0-9]*' -printf '%f\\t%s\\t%p\\n' |
-    awk -F '\\t' '
-      {
-        name=\$1
-        stamp=name
-        sub(/^nfcapd\\./, "", stamp)
-        sub(/\\..*$/, "", stamp)
-        if (stamp ~ /^[0-9]{12}\$/) print stamp "\\t" \$2 "\\t" \$3
-      }
-    '
-}
-
-if [ -d "\$NETFLOW_DIR" ]; then
-  cutoff="\$(date -u -d "\$RETENTION_DAYS days ago" +%Y%m%d%H%M)"
-  capture_list | awk -F '\\t' -v cutoff="\$cutoff" '\$1 < cutoff { print \$3 }' |
-    while IFS= read -r file; do
-      rm -f -- "\$file"
-    done
-fi
+# The uploader checks the configured minimum age and remote size/checksum.
+# No age-only deletion is allowed, including when Drive is unavailable.
+test -f "$ARCHIVE_SCRIPT_DST"
+exec /usr/bin/php "$ARCHIVE_SCRIPT_DST"
 EOF
 chown root:root "$RETENTION_CRON_FILE"
 chmod 0755 "$RETENTION_CRON_FILE"
@@ -239,7 +230,7 @@ echo "  dir      : $NETFLOW_DIR"
 echo "  web group: $NETFLOW_WEB_GROUP"
 echo "  port     : $NETFLOW_PORT"
 echo "  interval : $NETFLOW_INTERVAL"
-echo "  retention: $NETFLOW_RETENTION_DAYS days"
+echo "  cleanup  : verified archive only (minimum age is admin-controlled)"
 
 echo
 echo "Collector status:"

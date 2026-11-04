@@ -849,6 +849,16 @@ send_disconnect(){
 
 
 set_cap_zero(){
+  # Repeated sweeps must not delete/reinsert an already-correct zero cap.
+  # Count each alias/attribute pair so missing or duplicate rows still repair.
+  local expected=$(( ${#USERS[@]} * 2 ))
+  if sql_one "SELECT IF(COUNT(*)=${expected}
+      AND COUNT(DISTINCT username,attribute)=${expected}
+      AND COALESCE(SUM(op=':=' AND BINARY value='0'),0)=${expected},1,0)
+    FROM radreply WHERE username IN (${IN_USERS})
+      AND attribute IN ('Mikrotik-Total-Limit','Mikrotik-Total-Limit-Gigawords');" | grep -qx 1; then
+    return 0
+  fi
   local vals=""
   local u
   for u in "${USERS[@]}"; do
@@ -865,7 +875,22 @@ INSERT INTO radreply (username,attribute,op,value) VALUES ${vals};
 COMMIT;"
 }
 
+hs_group_matches(){
+  local group="$1" priority="$2" expected="${#USERS[@]}"
+  sql_one "SELECT IF(COUNT(*)=${expected}
+      AND COUNT(DISTINCT username)=${expected}
+      AND COALESCE(SUM(BINARY groupname='${group}' AND priority=${priority}),0)=${expected},1,0)
+    FROM radusergroup WHERE username IN (${IN_USERS})
+      AND groupname IN ('${HS_ACTIVE}','${HS_LIMITED}','${HS_NOPAID}');" | grep -qx 1
+}
+
 set_hs_limited(){
+  if hs_group_matches "$HS_LIMITED" "$HS_PRIO" &&
+     sql_one "SELECT IF(COUNT(*)=0,1,0) FROM radreply
+       WHERE username IN (${IN_USERS})
+         AND attribute IN ('Mikrotik-Address-List','MT-Address-List');" | grep -qx 1; then
+    return 0
+  fi
   local vals="" u
   for u in "${USERS[@]}"; do
     vals+="('${u}','${HS_LIMITED}',${HS_PRIO}),"
@@ -1030,6 +1055,7 @@ clear_limited_state(){
 }
 
 ensure_hs_active(){
+  if hs_group_matches "$HS_ACTIVE" 0; then return 0; fi
   local vals="" u
   for u in "${USERS[@]}"; do
     vals+="('${u}','${HS_ACTIVE}',0),"

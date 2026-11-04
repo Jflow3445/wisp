@@ -586,6 +586,10 @@ fi
 pass "qos_capacity_and_retirement_behavior"
 "$qos_python" tests/regression/congestion_control.py
 pass "shared_congestion_control_behavior"
+"$qos_python" tests/regression/storage_preflight.py
+pass "deployment_storage_headroom_behavior"
+"$qos_python" tests/regression/netflow_setup.py
+pass "netflow_verified_cleanup_and_rotation_boundary"
 node tests/regression/plan_rate_display.js
 pass "plan_download_upload_display_behavior"
 php tests/regression/sms_gateways.php

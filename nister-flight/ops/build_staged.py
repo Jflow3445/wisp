@@ -10,6 +10,7 @@ release = Path(json.loads(Path("/home/nisterai.com/flight-candidate.json").read_
 assert release.parent == Path("/home/nisterai.com/releases") and release.name.startswith("20261029-flight-")
 build_lock = open("/home/nisterai.com/flight-build.lock", "w")
 fcntl.flock(build_lock, fcntl.LOCK_EX)
+subprocess.run(["python3", "/usr/local/sbin/nister_storage_preflight.py", "/home/nisterai.com"], check=True)
 source = json.loads((release / "flight-source.json").read_text())
 env = dict(os.environ, NODE_OPTIONS="--max-old-space-size=1536", NEXT_TELEMETRY_DISABLED="1")
 dependency_marker = release / "flight-dependencies.json"
