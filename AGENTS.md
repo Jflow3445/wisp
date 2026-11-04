@@ -110,6 +110,11 @@ code lives under `pay-portal/`, but the public hotspot API contract remains
 - Quota enforcement must avoid rewriting unchanged quota/group rows. Keep audit
   triggers and retention intact; do not suppress auditing or purge database
   history to fix repeated policy writes.
+- Flight's complete standalone bundle can run without the release-root build
+  dependencies. Remove reproducible builder files only after a cold standalone
+  boot, route/static/database checks and worker verification. Preserve the
+  standalone bundle's own dependencies, runtime caches, source, lockfiles,
+  environment and shared uploads. Future builds must reinstall missing tools.
 
 - NetFlow files under `/var/log/netflow` are regulatory forensic records. Do not
   delete, truncate, compress away, or shorten their retention just to reclaim

@@ -72,7 +72,7 @@ if not (release/'node_modules').exists():
    break
 # Fall back to the active release, detaching generated Prisma files as needed.
 # Reuse unchanged, generated dependencies without touching the active build.
-if not (release/'node_modules').exists() and (live/'package-lock.json').is_file() and (live/'prisma/schema.prisma').is_file():
+if not (release/'node_modules').exists() and (live/'node_modules/.bin/next').exists() and (live/'package-lock.json').is_file() and (live/'prisma/schema.prisma').is_file():
  if hashlib.sha256((live/'package-lock.json').read_bytes()).hexdigest()=={dependency_digest!r}:
   carry_dependencies(live)
 shutil.copy2(live/'.env',release/'.env')

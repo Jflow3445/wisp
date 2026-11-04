@@ -1,0 +1,71 @@
+NisterAI standalone runtime compaction - 2026-11-04 UTC
+
+This follows server-storage-repair-2026-11-04.txt. That cleanup removed four old
+NisterAI releases and two old staging builds, recovering approximately 5 GiB.
+This pass removes reproducible build tooling from the retained releases.
+
+NisterAI's home directory fell from approximately 2.7 GiB before this pass to
+514,387,968 bytes (490.6 MiB). Available space has increased another
+2,351,566,848 bytes (about 2.19 GiB) since the previous
+completed verification, including normal background disk activity. Final root
+disk usage is 66%, with 9,026,850,816 bytes (8.41 GiB) available.
+
+Removed after cold validation:
+  /home/nisterai.com/releases/20261103-ui-7d6caec
+    node_modules
+    .next/cache/webpack
+    .next/cache/swc
+    .next/cache/.tsbuildinfo
+    tsconfig.typecheck.tsbuildinfo
+  /home/nisterai.com/releases/20261029-flight-ac7aad7eb1
+    node_modules
+    .next/cache/.tsbuildinfo
+    tsconfig.typecheck.tsbuildinfo
+  /home/nisterai.com/releases/20261029-flight-1b75611d30
+    node_modules
+    .next/cache/.tsbuildinfo
+    tsconfig.typecheck.tsbuildinfo
+
+Also removed the reproducible per-user download caches:
+  /home/nisterai.com/.npm/_cacache
+  /home/nisterai.com/.cache/prisma
+
+Validation and preservation
+- Each release was tested with the parent build dependencies hidden before
+  deletion: 10 public/protected routes, all referenced home-page static assets
+  (11/12/12), and a standalone Prisma SELECT 1 database read passed.
+- The cold preview used the actual unprivileged service account and its protected
+  environment loaded in memory. No credentials were logged or placed in arguments.
+- The live service retained PID 1009767; no production restart occurred.
+- 6,875 packaged runtime files and 12 protected environment,
+  lockfile, watcher and service hashes remained unchanged.
+- The normal settlement and payment-watcher timers each completed a successful
+  invocation after compaction. No financial worker was manually triggered.
+- 9 public HTTP checks and 6 core-service checks passed, including WISP.
+- All 244 regression groups and four focused artifact-compaction fixtures passed.
+  Failure fixtures restore the original generated files; incomplete bundles and
+  existing unfinished work block deletion. Python syntax/whitespace checks passed.
+- Standalone node_modules, images/runtime caches, public assets, source, lockfiles,
+  protected environment, shared uploads and private database archives remain.
+  The Nov 3 rollback points to 20261029-flight-ac7aad7eb1, which is retained along
+  with the live release and the earlier 1b75611d30 recovery bundle.
+- No customer account, wager, payment, database schema, router configuration,
+  swap file, certificate or forensic capture was changed by this cleanup.
+
+Future builds
+  nister-flight/ops/compact.py provides artifact quarantine, validation callback,
+  restoration on failure and bounded deletion of generated builder paths only.
+  Flight staging now skips dependency reuse when a runtime was compacted. Build
+  readiness requires both the Next executable and generated Prisma client; a
+  matching dependency marker alone cannot skip installation/generation.
+  Subsequent builds reinstall tools with npm ci and regenerate Prisma as needed.
+  Runtime execution continues through .next/standalone/server.js.
+
+Private evidence
+  /root/nister-runtime-cleanup-20261104
+  verified.json, compacted.json, cold-probes.json, public-verified.json,
+  runtime-before.json, protected.json and per-release cold/Prisma logs.
+  Workstation copy: Access/storage-runtime-20261104 (excluded from GitHub).
+
+Only generated/reinstallable files were discarded; no unique release source or
+runtime bundle was deleted. Current operating instructions are in ops/STORAGE.md.

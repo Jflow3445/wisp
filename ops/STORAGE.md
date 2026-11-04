@@ -11,6 +11,23 @@ The guard requires 3 GiB available and fails if usage cannot be measured. The
 Flight staging and build helpers invoke it automatically. Install or update it
 from `ops/storage_preflight.py` when preparing a replacement server.
 
+Flight runtime releases can be compacted after deployment. The actual web
+service starts `.next/standalone/server.js`, which has its own traced dependency
+tree. `nister-flight/ops/compact.py` hides the release-root `node_modules` and
+compiler-only Webpack/SWC/type caches, calls a supplied cold-runtime verifier,
+then removes those generated builder files. A failed verifier restores them.
+Keep `.next/standalone/node_modules`, public/static assets, runtime caches,
+environment, source, lockfiles and shared uploads. Verify the database engine and
+the normal settlement/payment worker schedules as well as public pages.
+
+This requires a complete standalone bundle. Run compact releases through their
+standalone server; future builds reinstall dependencies with `npm ci` and
+regenerate Prisma. Staging skips dependency reuse when a candidate was compacted;
+a matching old marker alone cannot authorize skipping dependency generation.
+The per-user npm download and Prisma download caches can also be regenerated.
+Keep private database/source archives unless they have their own verified
+off-server backup. Do not automate deletion of unknown release paths.
+
 Retain the running release and the previous working release. Before removing an
 older release or build directory, verify that no app symlink, process working
 directory, command or open descriptor refers to it. Copy it to private storage

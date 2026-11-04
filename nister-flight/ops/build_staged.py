@@ -14,7 +14,12 @@ subprocess.run(["python3", "/usr/local/sbin/nister_storage_preflight.py", "/home
 source = json.loads((release / "flight-source.json").read_text())
 env = dict(os.environ, NODE_OPTIONS="--max-old-space-size=1536", NEXT_TELEMETRY_DISABLED="1")
 dependency_marker = release / "flight-dependencies.json"
-dependency_ready = dependency_marker.is_file() and json.loads(dependency_marker.read_text()) == {"lock": hashlib.sha256((release / "package-lock.json").read_bytes()).hexdigest(), "schema": hashlib.sha256((release / "prisma/schema.prisma").read_bytes()).hexdigest()}
+dependency_ready = (
+    (release / "node_modules/.bin/next").exists()
+    and (release / "node_modules/.prisma/client/index.js").is_file()
+    and dependency_marker.is_file()
+    and json.loads(dependency_marker.read_text()) == {"lock": hashlib.sha256((release / "package-lock.json").read_bytes()).hexdigest(), "schema": hashlib.sha256((release / "prisma/schema.prisma").read_bytes()).hexdigest()}
+)
 commands = ([] if (release / "node_modules/.bin/next").exists() else [["npm", "ci", "--no-audit", "--no-fund"]]) + ([] if dependency_ready else [["npx", "prisma", "generate"]]) + [
     ["node", "--env-file=.env.test", "scripts/flight-test-schema.cjs"],
     ["node", "--env-file=.env.test", "--import", "tsx", "scripts/flight-integration.ts"],

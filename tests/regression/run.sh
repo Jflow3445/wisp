@@ -590,6 +590,8 @@ pass "shared_congestion_control_behavior"
 pass "deployment_storage_headroom_behavior"
 "$qos_python" tests/regression/netflow_setup.py
 pass "netflow_verified_cleanup_and_rotation_boundary"
+"$qos_python" tests/regression/flight_compaction.py
+pass "flight_runtime_artifact_compaction"
 node tests/regression/plan_rate_display.js
 pass "plan_download_upload_display_behavior"
 php tests/regression/sms_gateways.php
